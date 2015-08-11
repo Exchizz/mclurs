@@ -1,0 +1,10 @@
+MCLURS command software
+=======================
+
+  The array-cmd script handles interfacing the hardware and
+snapshotter with incoming instructions to the array.  It handles the
+hardware initialisation, calibration, probing of hardware UUIDs, and
+the set-up of snapshot metadata.
+
+  The script is normally run as a daemon, listening on a UDP socket
+for command messages.

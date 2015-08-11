@@ -1,0 +1,3 @@
+# BEGIN: Kernel modules required by MCLURS ADC programs
+usbduxfast
+# END:   Kernel modules required by MCLURS ADC programs

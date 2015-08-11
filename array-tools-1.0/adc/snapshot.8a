@@ -202,8 +202,23 @@ default value is 10 [s].
 .TP
 .B \-\-rtprio=\fIpri\fP
 If this option is given, the program attempts to set real-time
+scheduling mode for reading data from Comedi and writing to the
+filesystem.  The \fIpri\fP argument must be a valid priority for a
+SCHED_FIFO process; see \fBsched_setscheduler(2)\fP for more
+information.  This option implies the two real-time options below.
+The default is not to request real-time treatment.
+.TP
+.B \-\-rdprio=\fIpri\fP
+If this option is given, the program attempts to set real-time
 scheduling mode for reading data from Comedi.  The \fIpri\fP argument
 must be a valid priority for a SCHED_FIFO process; see
+\fBsched_setscheduler(2)\fP for more information.  The default is not
+to request real-time treatment.
+.TP
+.B \-\-wrprio=\fIpri\fP
+If this option is given, the program attempts to set real-time
+scheduling mode for writing data to the filesystem.  The \fIpri\fP
+argument must be a valid priority for a SCHED_FIFO process; see
 \fBsched_setscheduler(2)\fP for more information.  The default is not
 to request real-time treatment.
 .TP

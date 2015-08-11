@@ -1,0 +1,25 @@
+MCLURS ADC Software
+===================
+
+  The source code here handles the collection of data from the
+USBDUXfast hardware via COMEDI.  It comprises four programs:
+
+snapshot -- the data collection daemon for snapshot capture
+
+grab -- a data collection program for streaming data
+
+snapchat -- a utility program for talking to snapshot
+
+trig -- a utility program for manual pre-triggered snapshots
+
+  The software assumes that the relevant kernel modules are available
+(from the staging section, so you may need to build a kernel with that
+section enabled) and for full-speed capture we recommend using the
+USBDUXfast kernel driver module included in the package extras[1].
+
+  The driver module is coded for a 3.18 version Linux kernel.  To use
+it, replace the upstream source code for usbduxfast.c[2] with the
+supplied module code.
+
+[1] /usr/share/doc/driver/usbduxfast.c
+[2] In .../drivers/staging/comedi/drivers/usbduxfast.c

@@ -16,3 +16,5 @@ extern queue *splice_queue(queue *,queue *);
 
 #define queue_ins_after(q,i)  splice_queue((q), (i))
 #define queue_ins_before(q,i)  splice_queue((i), (q))
+
+#define queue_singleton(q)  ((q)->q_next == (q) && (q)->q_prev == (q))

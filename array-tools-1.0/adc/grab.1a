@@ -1,0 +1,84 @@
+.\"                                      Hey, EMACS: -*- nroff -*-
+.\" (C) Copyright 2015 John Hallam <sw@j.hallam.dk>,
+.\"
+.\" First parameter, NAME, should be all caps
+.\" Second parameter, SECTION, should be 1-8, maybe w/ subsection
+.\" other parameters are allowed: see man(7), man(1)
+.TH ADC 1a "July  2, 2015" SDU "MCLURS ARRAY TOOLS"
+.\" Please adjust this date whenever revising the manpage.
+.\"
+.\" Some roff macros, for reference:
+.\" .nh        disable hyphenation
+.\" .hy        enable hyphenation
+.\" .ad l      left justify
+.\" .ad b      justify to both left and right margins
+.\" .nf        disable filling
+.\" .fi        enable filling
+.\" .br        insert line break
+.\" .sp <n>    insert n+1 empty lines
+.\" for manpage-specific macros, see man(7)
+.SH grab
+grab \- capture 8 channel raw data from array ADC hardware
+.SH SYNOPSIS
+.B adc
+.RI [ -r " " range ]
+.RI [ frequency ]
+.SH DESCRIPTION
+This manual page documents briefly the
+.B grab
+command.
+.PP
+\fBgrab\fP uses the Comedit library to retrieve digitized data from the
+array ADC hardware.  The data is read from the device driver as 16 bit
+signed little-endian samples of the +1 V to -1 V range, which are
+retrieved in groups of 8 to match the 8 hardware channels.  The
+program retrieves data until interrupted, and dumps it to standard
+output.
+.PP
+\fBgrab\fP prints error and debugging output to standard error, and
+sends sample data to standard output.  Apart from usage errors, the
+program reports any Comedi errors or errors that arise during mapping
+and locking the streaming buffer.  Its debugging output comprises
+information on buffer sizes and on the actual total sampling frequency
+achieved (which may differ from that requested since the usable
+frequencies are subharmonics of the USBDUXfast's 30 MHz sampling
+clock).
+.PP
+\fBgrab\fP waits up to ten second for the first data to arrive from
+Comedi, and terminates thereafter if data flow is interrupted for one
+second or more.
+.SH OPTIONS
+The program uses standard UNIX option syntax and has only one short option.
+.TP
+.B \-r
+Specify the range to use for ADC conversion.  The option takes a
+single argument which may be \fIhi\fP or \fIlo\fP to select
+respectively either the 750mV or 500mV peak conversion range offered
+by the USBDUXfast hardware.  The default range is \fIhi\fP.
+.TP
+.B frequency
+The optional argument indicates the total conversion frequency for
+sampling.  This is 8 times the sampling frequency of each individual
+channel.  Reasonable frequencies lie in the range 60 kHz to 3 MHz (for
+frequencies above about 1 MHz, the improved USBDUXfast driver is
+required).  The default sampling frequency is 2.5 MHz, i.e. each
+channel is sampled at 312.5 kHz.
+.SH EXIT STATUS
+\fBgrab\fP exits normally if the flow of data dries up for more than
+one second; it exits with code 1 for usage or parameter range errors;
+with code 2 for Comedi initialisation errors; with code 3 for errors
+that arise when mmapping and locking the streaming buffer and with
+code 4 if executing the Comedi asynchronous date capture command
+fails.
+.SH ENVIRONMENT
+No environment variables are used or affected by this command.
+.SH NOTES
+This program requires sufficient permissions to set the maximum size of the Comedi streaming buffer.
+Normally, that means it should be run as root.  In some cases, that can be avoided by using
+.B comedi_config
+to set a sufficient maximum size.  \fBgrab\fP requires at least 40 MiB streaming buffer.
+.SH SEE ALSO
+.BR snapshot (8a) ,
+.BR comedi (7) ,
+.BR comedi_config (8) .
+

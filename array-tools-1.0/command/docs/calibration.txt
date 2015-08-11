@@ -1,0 +1,65 @@
+Calibration of the Array Capture Module
+=======================================
+
+The array can be spatially calibrated automatically as follows.
+
+1. Modules are put into calibration mode.
+
+2. As modules signal their readiness, a loud impulsive sound is made.
+
+3. Step 2 is repeated until calibration is complete.  The sounds
+   should be spread over the working volume of the array and cover the
+   three-dimensional space.
+
+4. Each module in the array computes its own spatial calibration; it
+   needs at least 5 active microphones to do this.
+
+5. Array modules compare local calibrations to compute a global
+   calibration of the position of every microphone.
+
+Theory:
+
+  - a module has M microphones whose positions are unknown.
+  - an impulsive sound is made at each of S different unknown positions.
+
+  The module microphones have 3M-6 unknown parameters, as follows: the
+  first microphone is at the origin; the second microphone is at
+  position (x2,0,0); the third is at (x3,y3,0); and each subsequent
+  microphone is at (xi,yi,zi).  This defines the module's local
+  reference frame and the microphone positions within it.
+
+  Each sound has 3 unknown parameters, corresponding to its position
+  in the module reference frame.
+
+  Each sound generates M-1 items of information, being the arrival
+  times of the sound impulse at each microphone referred to the one
+  that first detects the sound.
+
+  Calibration is possible provided S(M-1) > 3M-6 +3S, i.e. as long as
+
+  S(M-4) > 3M-6
+
+  which is true for sufficiently large S provided that M > 4.
+
+  (If the impulsive sound source can be synchronised to the module so
+that the time of emission is known, each sound delivers M items of
+information and one needs M > 3, rather than M > 4, to autocalibrate in
+this way.)
+
+  From this we conclude that S > 3(M - 2)/(M - 4), i.e. 5 impulses are
+necessary for a module with 8 microphones, while 9 suffice for a
+module with the minimum of microphones (5).  More impulses allow one to
+perform an optimal fit instead of an exact solution to the equation
+set.
+
+  Once each module has computed its own calibration based on the
+sequence of impulses, each module knows a set of S labelled points in
+its own local frame of reference.  Two modules can compute a common
+frame of reference by aligning the two sets of S points -- i.e. the
+two modules can construct S pairings of coordinates between their two
+frames.  Provided S > 6 this is sufficient to determine the coordinate
+alignment, since the two frames are rigid and span the same 3D space.
+
+  It should be possible to set up the joint optimisation problem where
+K modules establish S K-fold correspondences, and estimate the 6K-6
+parameters needed to establish the common global reference frame.

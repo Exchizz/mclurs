@@ -31,7 +31,7 @@
  * Snapshot version
  */
 
-#define PROGRAM_VERSION	"1.0"
+#define PROGRAM_VERSION	"1.1"
 
 /*
  * Global parameters for the snapshot program
@@ -60,13 +60,19 @@ param_t globals[] ={
     "size of the ring buffer [s]"
   },
   { "rtprio",	  0, { "", },		    PARAM_INT32,  PARAM_SRC_ENV|PARAM_SRC_ARG,
+    "priority of real-time threads [0-99]"
+  },
+  { "rdprio",	  0, { "", },		    PARAM_INT32,  PARAM_SRC_ENV|PARAM_SRC_ARG,
     "priority of real-time reader thread [0-99]"
   },
+  { "wrprio",	  0, { "", },		    PARAM_INT32,  PARAM_SRC_ENV|PARAM_SRC_ARG,
+    "priority of real-time writer thread [0-99]"
+  },
   { "uid",	  0, { "", },		    PARAM_STRING, PARAM_SRC_ENV|PARAM_SRC_ARG,
-    "the writer thread's UID for file creation"
+    "the UID for file system access and creation"
   },
   { "gid",	  0, { "", },		    PARAM_STRING, PARAM_SRC_ENV|PARAM_SRC_ARG,
-    "the writer thread's GID for file creation"
+    "the GID for file system access and creation"
   },
   { "permu",	  1, { "500", },	    PARAM_INT32, PARAM_SRC_ENV|PARAM_SRC_ARG,
     "the proportion of the ADC buffer to wait, in millionths"
@@ -156,6 +162,7 @@ void usage() {
     fprintf(stderr, "    -v : increase verbosity\n");
     fprintf(stderr, "    -q : decrease verbosity\n");
     fprintf(stderr, "    -h : display usage message\n");
+    fprintf(stderr, "    -V : display program version\n");
     param_option_usage(stderr, 4, globals, n_global_params);
   }
 }
@@ -176,6 +183,10 @@ int opt_handler(int c, char *arg) {
 
   case 'h':
     usage();
+    exit(0);
+
+  case 'V':
+    fprintf(stderr, "%s: %s\n", program, PROGRAM_VERSION);
     exit(0);
   }
 
@@ -283,7 +294,7 @@ int main(int argc, char *argv[], char *envp[]) {
   /* 1. Process parameters:  internal default, environment, then command-line argument. */
   push_param_from_env(envp, globals, n_global_params);
   program = argv[0];
-  ret = getopt_long_params(argc, argv, "vqh", globals, n_global_params, opt_handler);
+  ret = getopt_long_params(argc, argv, "vqhV", globals, n_global_params, opt_handler);
   if( ret < 0 ) {
     if(errno)
       fprintf(stderr, "Problem handling arguments: %s\n", strerror(errno));

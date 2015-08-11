@@ -12,7 +12,7 @@
  */
 
 void prefault_pages(void *p, int n, int w) {
-  int ret;
+  int ret = 0;
 
   while( n-- > 0 ) {
     if( (w&PREFAULT_RDONLY) )			/* Read page */

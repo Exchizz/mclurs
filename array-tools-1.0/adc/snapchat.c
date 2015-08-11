@@ -86,6 +86,7 @@ void usage() {
     fprintf(stderr, "    -v : increase verbosity\n");
     fprintf(stderr, "    -q : decrease verbosity\n");
     fprintf(stderr, "    -h : display usage message\n");
+    fprintf(stderr, "    -V : display program version\n");
     param_option_usage(stderr, 4, globals, n_global_params);
   }
 }
@@ -106,6 +107,10 @@ int opt_handler(int c, char *arg) {
 
   case 'h':
     usage();
+    exit(0);
+
+  case 'V':
+    fprintf(stderr, "%s: $s\n", program, PROGRAM_VERSION);
     exit(0);
   }
 

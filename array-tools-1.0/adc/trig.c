@@ -17,6 +17,12 @@
 #include "snapshot.h"
 
 /*
+ *  Program source version
+ */
+
+#define PROGRAM_VERSION	"1.0"
+
+/*
  * Global parameters for the snapshot program
  */
 
@@ -95,6 +101,7 @@ void usage() {
     fprintf(stderr, "    -v : increase verbosity\n");
     fprintf(stderr, "    -q : decrease verbosity\n");
     fprintf(stderr, "    -h : display usage message\n");
+    fprintf(stderr, "    -V : display program version\n");
     fprintf(stderr, "    -w : wait for keypress\n");
     fprintf(stderr, "    -r : repeated trigger\n");
     fprintf(stderr, "    -a : auto-generate snapshot name\n");
@@ -131,6 +138,10 @@ int opt_handler(int c, char *arg) {
   case 'w':
     wait_for_it = 1;
     return 0;
+
+  case 'V':
+    fprintf(stderr, "%s: $s\n", program, PROGRAM_VERSION);
+    exit(0);
   }
 
   return -1;

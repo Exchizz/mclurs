@@ -1,0 +1,2145 @@
+#!/usr/bin/perl -w
+
+use strict;
+use Getopt::Long qw( :config auto_version auto_help no_ignore_case bundling);
+use Pod::Usage;
+
+use POSIX qw(mkfifo);
+use Errno;
+
+use FileHandle;
+use IO::Socket::INET;
+use Time::HiRes qw(time sleep);
+
+# Use the ZMQ module for communication with the snapshotter program
+BEGIN {
+    $ENV{ PERL_ZMQ_BACKEND } = 'ZMQ::LibZMQ3';
+}
+use ZMQ;
+
+BEGIN {
+    eval( "use UUID;" );
+}
+
+# Command listener daemon for network commands in the recording array
+#
+# Author:     John Hallam
+# Created:    2013-09-30
+# Last Edit:  2015-07-28
+
+#=============== OPTIONS, GLOBALS, DEFAULTS ===============
+
+# Number of channels supported by capture unit
+use constant NCHANNELS => 8;
+
+# IOCTL function code for the I2C bus
+use constant I2C_SLAVE => 0x0703;
+
+# I2C address of the 8-DAC
+use constant LTC2637_DAC => 0x41;
+
+# ADC ring buffer length in milliseconds
+use constant RINGBUFLENGTH => 115000/6;
+
+# MAX snapshot duration, in milliseconds
+use constant MAXSNAPSHOT => int(0.9 * RINGBUFLENGTH);
+
+# GPIO Pins used by standard hardware (Pi rev. 2 numbering)
+#
+# N.B. The sense of pins specified by /sys/class/gpio/gpioNN/active_low doesn't match my intuition of what it should mean...
+
+my %gpio_config = (		# Default is the numbering for Pi rev. 2 and ADC board vn. 1 (2013 version)
+		default =>
+				{ red	 => { pin => 10,  mode => 'out', sense => 'neg', init => 0, }, # Red LED drive (output, active low)
+				  green	 => { pin => 27,  mode => 'out', sense => 'neg', init => 0, }, # Green LED drive (output, active low)
+				  yellow => { pin => 22,  mode => 'out', sense => 'neg', init => 0, }, # Yellow LED drive (output, active low)
+				  hold	 => { pin => 4,	  mode => 'out', sense => 'pos', init => 0, }, # Trigger hold (output, active low=free high=blocked)
+				  sense	 => { pin => 14,  mode => 'in',  sense => 'neg', init => 0, }, # Trigger sense (input, active low=blocked high=free)  [currently reversed]
+				  enable => { pin => 17,  mode => 'out', sense => 'pos', init => 1, }, # Amplifier power enable (output, active low)
+				  rtclock=> { pin => 15,  mode => 'in',  sense => 'neg', init => 0, }, # MCP79410 RTC multifunction pin
+				},
+
+		hwver2 =>	# hwver2 is ADC board vn. 2 (2014/2015 version with RS232 console port for Pi)
+				{ sense  => { pin => 23,  mode => 'in',  sense => 'neg', init => 0, }, # Trigger sense (input, active low=blocked high=free)  [currently reversed]
+				  rtclock=> { pin => 24,  mode => 'in',  sense => 'neg', init => 0, }, # MCP79410 RTC multifunction pin
+				  filter0=> { pin => 504, mode => 'out', sense => 'pos', init => 1, }, # HP/AP filter for channel 0, HP is on
+				  filter1=> { pin => 505, mode => 'out', sense => 'pos', init => 1, }, # HP/AP filter for channel 0, HP is on
+				  filter2=> { pin => 506, mode => 'out', sense => 'pos', init => 1, }, # HP/AP filter for channel 0, HP is on
+				  filter3=> { pin => 507, mode => 'out', sense => 'pos', init => 1, }, # HP/AP filter for channel 0, HP is on
+				  filter4=> { pin => 508, mode => 'out', sense => 'pos', init => 1, }, # HP/AP filter for channel 0, HP is on
+				  filter5=> { pin => 509, mode => 'out', sense => 'pos', init => 1, }, # HP/AP filter for channel 0, HP is on
+				  filter6=> { pin => 510, mode => 'out', sense => 'pos', init => 1, }, # HP/AP filter for channel 0, HP is on
+				  filter7=> { pin => 511, mode => 'out', sense => 'pos', init => 1, }, # HP/AP filter for channel 0, HP is on
+				},
+);
+
+my %gpio = (); 			# Hash comprising GPIO descriptors for actual ADC board, generated as union of probed and default configs.
+
+# Defaults for command line arguments
+
+my @def_gpio	= ( $ENV{GPIO_PATH}, "/sys/class/gpio", );
+my @def_ltc2637 = ( $ENV{LTC2637}, "/dev/i2c-1", );
+my @def_sys1w   = ( $ENV{'1WIRE'}, safe_concat($ENV{TMPDIR}, "/1wire/"), "/tmp/1wire", );
+my @def_snap    = ( $ENV{SNAPSHOT}, safe_concat($ENV{TMPDIR}, "/array-snapshot"), "/tmp/array-snapshot", );
+my @def_tmp	= ( $ENV{TMPDIR}, "/tmp", );
+my @def_snapdir = ( $ENV{SNAPDIR}, safe_concat($ENV{TMPDIR}, "/snapshots"), "/tmp/snapshots", );
+my @def_iface   = ( $ENV{IFACE}, "eth0", );
+my @def_port    = ( $ENV{PORT}, 2468, );
+my @def_host    = ( $ENV{HOST}, );
+my @def_freq	= ( $ENV{FREQ}, 1e5, );
+my @def_mode    = ( $ENV{MODE}, 'single', );
+my @def_adc_rev = ( $ENV{ADC_BOARD_REVISION}, );
+
+$::VERSION = "1.0";
+
+my $errors  = 0;
+my $verbose = $ENV{DEBUGLEVEL} || 0;
+my $dry_run = 0;
+
+# Programs
+my $ip		 = "/bin/ip";
+my $owfs	 = "/usr/bin/owfs";
+
+# Locations
+my $gpio;			# Path to GPIO pin sysfs interface
+my $ltc2637;			# Device for talking to the DAC
+my $sys1w;			# Mountpoint for 1-wire filesystem
+my $snap;			# UNIX named pipe (FIFO) for snapshot process
+my $tmp;			# Location for temporary files
+my $snapdir;			# Location where snapshot sample data is dumped
+
+# Network variables
+my ($iface, $port, $host);	# Network address/interface elements
+my $mac;			# Colon-free MAC address of $iface, used for our name
+
+# Sample rate
+my $freq;
+
+# Operation mode (master, slave, single)
+my $mode;
+
+# Commands interpreted by the daemon
+my %commands = (
+    quit => [ \&quit, 0, ],
+    trig => [ \&trigger, 2, ],
+    snap => [ \&snapshot, 3, ],
+    msnap=> [ \&multisnap, 4, ],
+    set  => [ \&set, 2, ],
+    gain => [ \&channel_gain, [3, 4], ],
+    chan => [ \&channel_list, 0, ],
+    ping => [ \&pong, ],
+    scan => [ \&rescan1w, 0, ],
+    time => [ \&mytime, 0, ],
+    cal  => [ \&calibrate, ],	# Unimplemented in Vn 1.0
+    hold => [ \&hold_adc, 0, ],
+    free => [ \&free_adc, 0, ],
+    led  => [ \&set_led, 2, ],
+    adc  => [ \&set_adc_board, [0, 1], ],
+    start=> [ \&sys_start, [0, 1], ],
+    help => [ \&cmd_help, 0, ],
+    );
+
+# The snapshotter program accepts commands given below.  We assume that whenever this script starts there is
+# a clean snapshotter process waiting for commands from it:  it is the job of the daemontools/runit logic to
+# ensure that is so.  The $snap_started variable keeps track of whether we have told the current snapshotter
+# to start yet, since the snapshotter doesn't like duplicate commands.
+
+# Commands to send to the snapshotter
+my %snap_cmds = (		# See snapshotter C++ code for more details
+    quit => 'exit',				# Cause snapshotter to exit
+    snap => 'snapshot %Lu %lu %s',		# Take a simple single snapshot <from,U64> <to,U64> <path>
+    msnap=> 'serial_snapshot %Lu %lu %lu %s',	# Take snapshot sequence <start,U64> <length,U32> <count,U32> <path>
+    mstop=> 'serial_stop',			# Stop snapshot sequence thread
+    hold => 'stop_rec',				# Stop ADC conversion process
+    start=> 'start_rec',			# Begin ADC conversion (trigger permitting)
+    rate => 'set_sr %d',			# Set sample rate <sr[Hz]> (default and max 3[MHz])
+    );
+
+my $snap_started = 0;		# Is the snapshotter capturing ('start' sent, not 'held')
+
+# Parameter store for parameters set using 'set' command
+my %params;
+
+# Parameters available to the set command:  keys are the parameters, values are a list of subs that validate value passed
+my %set_params = (
+    pre_T	=> [ gte(0),				# pre-trigger buffer length in milliseconds, non-negative
+		     lte(RINGBUFLENGTH),		# and less than ring buffer length
+    ], 
+    pst_T	=> [ gte(0),				# post-trigger buffer length in milliseconds, non-negative
+		     lte(MAXSNAPSHOT),			# less than maximum snapshpt length
+		     sub { return $_[0] <= MAXSNAPSHOT - $params{pre_T}; }, # also less than max length - pre_T
+    ],
+    offset	=> [ gte(0),
+		     sub { return $_[0] <= CORE::time(); },  # offset for sample zero is in the past
+    ],
+    );
+
+# ADC Board revision code
+my $adc_board_rev;
+
+# Internal records of connected channels etc. (read from 1-wire bus)
+my @channels;
+
+# Internal copy of ADC state
+my $adc_board_state = 0;
+
+# File handles
+my $LTC2637;			#  for the LTC2637 DAC
+my $SNAP;			#  for the named pipe to snapshot
+
+#=============== PROCESS COMMAND LINE ARGUMENTS ===============
+
+GetOptions(
+
+    'verbose|v'		 => sub { $verbose++; },
+    'quiet|q'		 => sub { $verbose = -1; },
+    'dryrun|n'		 => sub { $dry_run = 1; $verbose++; },
+    'help|h'		 => sub { usage(); exit 0; },
+    'port|p=s'		 => \$port,
+    'host|H=s'		 => \$host,
+    'snapshot|s=s'	 => \$snap,
+    'snapdir|d=s'	 => \$snapdir,
+    'interface|i=s'	 => \$iface,
+    '1wire|1=s'		 => \$sys1w,
+    'tmp|t=s'		 => \$tmp,
+    'dac|D=s'		 => \$ltc2637,
+    'freq|f=s'		 => \$freq,
+    'gpio|g=s'		 => \$gpio,
+    'mode|m=s'		 => \$mode,
+    'board|b=s'		 => \$adc_board_rev,
+    ) or usage();
+
+my $running = !$dry_run;		# Main loop is running
+
+#=============== VERIFY ARGS & SETUP ===============
+
+debug(1, "Verifying arguments for array-cmd[$$]");
+
+# Check smapling rate value is a positive double number
+do {
+    local $!= 0;
+    my $errs = $errors;
+    $freq = apply_defaults($freq, @def_freq);
+    my $f = POSIX::strtod( $freq );
+    if( $! or not($f) or $f <= 0 ) {
+	error("Sample rate '$freq' not a number or zero");
+    } else {
+	$freq = $f;
+    }
+    debug(2, "$$: Sampling rate is $freq Hz") unless( $errors > $errs );
+};
+
+# Sort out temporary directory for files
+do {
+    my $errs = $errors;
+
+    $tmp = apply_defaults($tmp, @def_tmp);
+    unless( -d $tmp and -r _ and -w _ and -x _ ) {
+	my $rwx = ( -r _ ? 'r':'-') . ( -w _ ? 'w':'-') . ( -x _ ? 'x':'-');
+	error("Temp directory $tmp not accessible ($rwx)\n");
+    }
+
+    debug(2, "$$: Will use $tmp for temp directory") unless( $errors > $errs );
+};
+
+# Sort out directory where snapshot sample data should be written
+do {
+    my $errs = $errors;
+
+    $snapdir = apply_defaults($snapdir, @def_snapdir);
+    unless( -d $snapdir or mkdir($snapdir, 02770) ) {
+	error("Cannot create snapshot data directory $snapdir");
+    }
+    unless( -d $snapdir and -r _ and -w _ and -x _ ) {
+	unless( chmod(02770, $snapdir) ) {
+	    my $rwx = ( -r $snapdir ? 'r':'-') . ( -w _ ? 'w':'-') . ( -x _ ? 'x':'-');
+	    error("Snapshot data directory $snapdir not accessible ($rwx)\n");
+	}
+    }
+    debug(2, "$$: Will use $snapdir for snapshot directory") unless( $errors > $errs );
+};
+
+# Check path for sysfs access to GPIO pins
+do {
+    my $errs = $errors;
+
+    $gpio = apply_defaults($gpio, @def_gpio, "[undef]");
+    unless( $gpio && -d $gpio ) {
+	error("Cannot access GPIO sysfs directory $gpio");
+    }
+    unless( -w $gpio . "/export" ) {
+	error("Cannot access GPIO sysfs $gpio/export");
+    }
+    debug(2, "$$: Will use GPIO sysfs access point $gpio") unless( $errors > $errs );
+};
+
+# Check ADC board revision information
+do {
+    my $errs = $errors;
+
+    $adc_board_rev = apply_defaults($adc_board_rev, @def_adc_rev, "undef");
+    $adc_board_rev = probe_adc_board_revision($adc_board_rev);
+    unless( $adc_board_rev ) {
+	error("ADC Board Revision is not specified and cannot be determined\n");
+    }
+    unless( $adc_board_rev && $gpio_config{$adc_board_rev} ) {
+	error("ADC Board Revision '$adc_board_rev' not known in configuration\n");
+    }
+    generate_adc_gpio_descriptor(\%gpio, $adc_board_rev);
+    debug(2, "$$: ADC board revision from args/env is $adc_board_rev") unless( $errors > $errs );
+};
+
+# Sort out listening address
+do { 
+    my $errs = $errors;
+
+#    unless( $host ) {
+
+	$iface = apply_defaults($iface, @def_iface);
+
+	unless( $iface =~ m/eth?/ ) {
+	    error("Unexpected interface name: $iface\n");
+	    exit_on_error(1, ($verbose >= 0) );
+	}
+
+	# Determine MAC address(es) for given interface
+	my $if_mac = get_ip_addr($iface)
+	    or error("Unable to obtain IP address data for $iface interface\n");
+
+	unless( $host = apply_defaults($host, @def_host) ) {
+	    error("Unable to figure out a suitable host IP address\n")
+	}
+
+	# unless( @macs == 1) {
+	#     error("Unclear what MAC address to use for box name\n");
+	# }
+	($mac = lc($if_mac)) =~ s/://g;
+	debug(2, "Using $mac as my sampling name in the array");
+#    }
+
+    # Sort out port element of address
+    unless( $port = apply_defaults($port, @def_port) ) {
+	error("Cannot figure out what port to listen on\n");
+    }
+
+    debug(2, "$$: will listen at $host:$port on $iface") unless( $errors > $errs );
+};
+
+# Verify suitability of the mountpoint for the 1-wire filesystem
+do {
+    my $errs = $errors;
+
+    $sys1w = apply_defaults($sys1w, @def_sys1w);
+    if( -d $sys1w ) {
+	error("1-wire mountpoint $sys1w not writable") unless( -w $sys1w );
+    } else {
+	if( mkdir($sys1w, 0770) ) {
+	    debug(2, "Created the 1-wire mount point at $sys1w");
+	} else {
+	    error("Cannot make 1-wire filesystem mountpoint $sys1w");
+	}
+    }
+
+    debug(2, "$$: will mount 1-wire filesystem at $sys1w") unless( $errors > $errs );
+};
+
+# Verify the FIFOfor talking to the snapshot process
+# It may not exist;  create it if necessary.
+do {
+    my $errs = $errors;
+
+    $snap = apply_defaults($snap, @def_snap);
+    if( -e $snap ) {		# It exists already
+	error("Not a UNIX named pipe $snap\n") unless( -p $snap );
+    } else {
+	debug(2, "Creating named pipe $snap");
+	error("Unable to create named pipe $snap; mkfifo failed") unless( mkfifo( $snap, 0770 ) );
+    }
+
+    debug(2, "$$: will use $snap to talk with snapshot process") unless( $errors > $errs );
+};
+
+# Check that the DAC I2C device is available
+do {
+    my $errs = $errors;
+
+    if( $ltc2637 = apply_defaults($ltc2637, @def_ltc2637) ) {
+	if( -e $ltc2637 ) {
+	    error("The $ltc2637 device is not " . (-r _ ? "" : "read-") . "writable\n") unless( -r _ and -w _);
+	} else {
+	    error("The $ltc2637 device does not exist;  is the i2c-dev module loaded?\n");
+	}
+    } else {
+	error("Cannot determine the I2C device to use\n");
+    }
+
+    debug(2, "$$: will use $ltc2637 to talk to DAC and 1-wire") unless( $errors > $errs );
+};
+
+# Deterine mode of operation (master, slave, single)
+
+do {
+    my $errs = $errors;
+
+    $mode = apply_defaults($mode, @def_mode);
+    if( $mode =~ m|/|  ) {
+	debug(2, "Mode $mode is a file path...");
+	if( -f $mode && -r _ ) {
+	    my $f = slurp_file($mode);
+	    unless( $f =~ m/master|slave|single/i ) {
+		error("Mode file '$mode' does not contain a recognised mode\n");
+	    } else {
+		debug(2, "Mode set to $f from file '$mode'\n");
+		$mode = lc($f);
+	    }
+	}
+    } else {
+	unless( $mode =~ m/master|slave|single/i ) {
+	    error("Unrecognised mode '$mode'\n");
+	}
+	$mode = lc($mode);
+    }
+    if( $mode =~ m|/|  ) {
+	debug(1, "Mode file '$mode' not accessible; mode selection deferred") unless( $errors > $errs );
+    }
+    debug(2, "$$: operating mode set" . ($mode =~ m|/|? 'ting deferred, from' : ' to' ) . " '$mode'" ) unless( $errors > $errs );
+};
+
+exit_on_error(2);
+
+debug(1, "Arguments processed for array-cmd[$$]");
+
+#=============== MAIN LOGIC  ===============
+
+# Set up listening socket
+my $socket = new IO::Socket::INET ( LocalHost => $host,
+				    LocalPort => $port,
+				    Proto     => "udp",
+				    Type      => SOCK_DGRAM,
+				    ReuseAddr => 1,
+    ) or error("Cannot open datagram socket at $host:$port");
+exit_on_error(2);
+
+debug(1, "Created listening socket on $iface at $host:$port");
+
+# Initialise the GPIO system
+if( my $errstring = init_gpio_pins() ) {
+    error("Unable to initialise the sysfs GPIO interface at $gpio: $errstring");
+}
+exit_on_error(2);
+
+debug(1, "GPIO sysfs mounted and initialised");
+
+###
+### At this point, we need the analogue board powered so the DAC is available.
+###
+### Note: ENABLE controls power to the analogue circuitry, the gain control DAC and the
+### microphone power.  The 1-wire bus is powered directly from the 5V power input and its
+### interface circuitry is driven from the Pi power line, not the analogue board line.
+###
+
+unless( send_pin_output('enable', 1) ) {
+    error("Unable to initialise the Analogue Board PSU: set enable failed\n");
+}
+exit_on_error(2);
+
+debug(1, "Analogue Board power supply enabled");
+
+# Reset channel gains using I2C, initialises DAC interface implicitly
+# Assumes GPIO initialised so that power is enabled to the analogue board
+if( start_dac() ) {
+    gain_reset_in_dac();
+}
+exit_on_error(2);
+
+debug(1, "Initialised DAC subsystem and reset all channel gains");
+
+# Set up and scan 1-wire bus interfacing
+if( mount_1w( $sys1w ) ) {
+    debug(2, "Sleeping to allow 1-wire mount to initialise");
+    unless( waitfor( sub { return -d $sys1w . "/settings"; }, 5.0 ) ) {
+	error("Mounting 1-wire filesystem is taking too long...\n");
+    } else {
+	debug(2, "Scanning the 1-wire filesystem for channels");
+	@channels = scan_1w( $sys1w );
+    }
+}
+exit_on_error(2);
+
+debug(1, "1-wire filesystem mounted and initial scan complete");
+
+# Try to open the snapshot pipe
+$SIG{PIPE} = 'IGNORE';
+unless( $SNAP = FileHandle->new($snap, O_WRONLY | O_NONBLOCK) ) { # Fails ENXIO if no listener
+    debug(0, "Cannot open snapshot pipe $snap; is snapshot process running?");
+    error("Cannot access snapshot socket $snap") unless( $!{ENXIO} );
+}
+exit_on_error(2);
+
+debug(1, "Opened the named pipe $snap to snapshot process") if( $SNAP );
+debug(1, "Deferring open of named pipe $snap until snapshot required") unless( $SNAP );
+
+# Catch SIGINT, SIGQUIT and use to generate clean exit
+$SIG{INT}  = \&quit;
+$SIG{QUIT} = \&quit;
+
+# Main loop: listen for commands, do them
+
+my ($n_dgrams,$n_cmds) = (0,0);
+
+debug(2, "Starting main command loop");
+send_pin_output('red', 1);
+my $msg = '';
+MAIN: while($running and my $from = $socket->recv($msg, 1024)) {
+    chomp $msg;
+    $msg =~ s/\s#\s+/ #/g;	# Attach prefix # to following argument, if separated by whitespace
+    my @msg = split /\s+/, $msg;
+
+    debug(2, "Got datagram: '", join("','", @msg), "' from ", ip_to_string($from));
+    $n_dgrams++;
+    if( my $cmd = $commands{$msg[0]} ) {
+	unless( ref($cmd->[0]) =~ m/code/i ) {
+	    error("Unexpected hash return $cmd\n");
+	    next;
+	}
+	my $name = shift @msg;
+	my $na = scalar(@msg);
+	debug(2, "Check argument count for command $name ($na given, ", ($cmd->[1] || 'any number'), " expected)");
+	unless( check_args($na, ($cmd->[1] || undef)) ) {
+	    error("Command $name has wrong argument count ($na)\n");
+	    send_reply($from, $name, "wrong number ($na) of arguments given\n");
+	    next;
+	}
+	debug(2, "Executing command ", $name, "(", join(',', @msg), ")");
+	if(  &{$cmd->[0]}( $from, @msg ) ) {
+	    $n_cmds++;
+	} else {
+	    error("Command $name returned failure\n");
+	}
+    } else {
+	error("Unknown command message: $msg\n");
+    }
+}
+debug(2, "Finishing main command loop, $n_cmds/$n_dgrams executed, ",
+      ($errors ? $errors : "no"), " error", ($errors != 1? "s" : ""), " during command execution"
+    );
+
+# Tidy things up
+for my $led ( qw(red yellow green) ) {
+    send_pin_output($led, 1);
+}
+
+send_pin_output('enable', 0);
+
+if( $snap_started ) {
+    send_snap_cmd('hold');
+    send_snap_cmd('quit');
+}
+
+$SNAP->close() if( $SNAP );
+$socket->close() if( $socket );
+close_dac();
+send_pin_output('green', 0);
+
+sleep(0.5);
+send_pin_output('yellow', 0);
+
+# Close the 1-wire FS mount
+if( my $owfs_proc = `pidof owfs` ) {
+    kill HUP => $owfs_proc;
+}
+
+sleep(0.5);
+send_pin_output('red', 0);
+
+# And exit
+debug(1, "Exiting $$");
+exit 0;
+
+#=============== SUBROUTINES ===============
+
+### General Utility Subroutines
+
+sub error {
+    local $| = 1;
+    my $msg = join('', @_);
+
+    $msg .= ": $!\n" if( $msg !~ m/\n/m and $! );
+
+    print STDERR $msg if( $verbose >= 0 );
+    $errors++;
+}
+
+sub exit_on_error {
+    my $with_usage = $_[1];
+
+    if( $errors ) {
+	if( $with_usage ) {
+	    pod2usage( -exitval => $_[0], -verbose => ($verbose > 2 ? 2 : $verbose), -output => \*STDERR );
+	} else {
+	    print STDERR "Exiting $$ due to errors\n";
+	}
+	exit $_[0];
+    }
+}
+
+sub usage {
+
+    pod2usage( -exitval => 1, -verbose => ($verbose > 2 ? 2 : $verbose), -output => \*STDERR ) if( $verbose >= 0 );
+    exit 1;
+}
+
+sub debug {
+    local $| = 1;
+    my $lvl = shift;
+
+    print @_, "\n" if($lvl < $verbose);
+}
+
+sub slurp_file {
+    local $/ = undef;
+    my $f;
+
+    return unless( $f = new FileHandle $_[0], "r" );
+    return <$f>;
+}
+
+sub spurt_file {
+    local $| = 1;
+    my $f;
+    my $name = shift;
+
+    return undef unless( $f = new FileHandle $name, "w" );
+    print $f @_;
+    return $f->close();
+}
+
+# Assumes rename(2) is atomic, normal on UNIX-style systems
+sub atomic_spurt_file {
+    my ($name,$content,$tmp) = @_;
+
+    $tmp ||= $name . '.tmp';
+    return unless( spurt_file($tmp, $content) );
+    return rename($tmp, $name);
+}
+
+# Take the first defined of a list of candidates
+sub apply_defaults {
+    my $res = undef;
+
+    for my $s (@_) {
+	$res = $res || $s;
+	last if( defined $res );
+    }
+    return $res;
+}
+
+sub safe_concat {
+    my $result = '';
+
+    for my $i ( @_ ) {
+	return undef unless( defined $i );
+	$result .= $i;
+    }
+    return $result;
+}
+
+# Turn hash-reference into string of Key="Value" lines
+sub dump_hash {
+    my $h = \%{ (shift @_ ) };
+    my @data = map { ($_, "=\"", $h->{$_}, "\"\n" ); } keys %{$h};
+
+    return wantarray? @data : join('', @data);
+}
+
+# Wait for a condition to become true
+sub waitfor {
+    my ($cond,$duration,$interval) = @_;
+    my $elapsed = 0;
+    my $stop = 0;
+
+    return undef unless( defined($cond) and ref($cond) eq 'CODE' );
+    $duration ||= 5.0;			# Max waiting time in seconds, default 5s
+    $interval ||= $duration/100.0;	# Interval between checks of condition, default duration/10.
+
+    debug(3, sprintf("Waitfor: duration %f and interval %f", $duration, $interval) );
+    until( $elapsed >= $duration or $stop ) {
+	$elapsed += $interval;
+	$stop = &{$cond}();
+	sleep($interval);
+	debug(4, sprintf("Waitfor: wake from sleep at elapsed %f", $elapsed) );
+    }
+    debug(3, sprintf("Waitfor: loop completed, elapsed %f of %f", $elapsed, $duration) );
+    return $stop;
+}
+
+# Check argument count for command
+sub check_args {
+    my ($na,$argspec) = @_;
+
+    return 1 unless( defined $argspec );
+    if( ref($argspec) eq 'ARRAY' ) {
+	return 0 if( $na < $argspec->[0] );
+	return 0 if( $na > $argspec->[1] );
+    } else {
+	return 0 if( $na != $argspec );
+    }
+    return 1;
+}
+
+### Functional subroutines for this program
+
+# Handle mode checks: arg is a regular expression string
+# For example -- in_mode('master|single')
+sub in_mode {
+    my $m = $mode;
+
+    if( $m =~ m/$_[0]/i ) {
+	debug(3, "Mode check of '$mode' =~ '/$_[0]/' is immediately true");
+	return 1;
+    }
+    if( $m =~m|/| ) {
+	debug(3, "Trying to read mode from file $m");
+	my $f;
+
+	$f = slurp_file($m) if( -r $m );
+	unless( $f && $f =~ m/master|slave|single/i ) {
+	    error("Mode required but mode file $m does not provide valid value\n");
+	    exit_on_error(3);
+	}
+	$mode = $f;
+    }
+    if( $mode =~ m/$_[0]/i ) {
+	debug(3, "Mode check of '$mode' =~ '/$_[0]/' is true");
+	return 1;
+    } else {
+	debug(3, "Mode check of '$mode' =~ '/$_[0]/' is false");
+	return;
+    }
+}
+
+# Probe for the revision of the analogue board
+# Check that the revision specified, if defined, matches that found
+#
+# Probe the sysfs gpio tree for the PCA953x hardware on Revision 2
+# If /sys/class/gpio/gpiochip504/ not found, it's revision 1 ('default')
+sub probe_adc_board_revision {
+    my ($revision) = @_;
+
+    if( -d $gpio . "/gpiochip504" ) {
+	my $chip = slurp_file($gpio . "/gpiochip504/label");
+	unless( $chip && $chip =~ m/pca9534/ ) {
+	    error("Expected PCA9534 GPIO chip missing, analog HW config [$revision]");
+	    $revision = "ERROR-no-pca9534";
+	} else {
+	    $revision = 'hwver2' if( $revision && $revision eq 'undef' );
+	    error("HW version mismatch config [$revision] != [hwver2] probed\n") unless( $revision && $revision eq 'hwver2' );
+	    $revision = 'hwver2';
+	}
+    } else {
+	$revision = 'default' if( $revision && $revision eq 'undef' );
+	error("HW version mismatch config [$revision] != [default] probed\n") unless( $revision && $revision eq 'default' );
+	$revision = 'default';
+    }
+    debug(2, "Probe returns analog hardware revision [$revision]");
+    return $revision;
+}
+
+# Construct the GPIO descriptor to use for this ADC board
+sub generate_adc_gpio_descriptor {
+    my ($gpio,$ver) = @_;
+    my %ver_hash = ();
+
+    debug(3, "Constructing board gpio descriptor");
+    %ver_hash = ( %{ $gpio_config{$ver} } ) if( $ver );
+    %{ $gpio } = %{ $gpio_config{'default'} };
+    debug(4, "Starting with defaults");
+    if( $ver ne 'default' ) {
+	for my $k ( keys %ver_hash ) {
+	    my $v = $ver_hash{$k};
+	    if( $v ) {
+		$gpio->{$k} = $v;
+		debug(4, "Overwriting key '$k' using value from $ver");
+	    } else {
+		delete $gpio{$k};
+		debug(4, "Deleting key '$k' since undef in $ver");
+	    }
+	}
+    }
+    debug(4, "Construction of board gpio descriptor finished");
+}
+
+# Initialise the GPIO interface
+sub init_gpio_pins {
+    my $gpio_export = $gpio . '/export';
+    my $gpio_remove = $gpio . '/unexport';
+
+    sub make_set_routine {
+	my $pin = shift;
+
+	return sub {
+	    my $value = $_[0] ? "1\n" : "0\n";
+	    if( spurt_file( $pin->{file}, $value ) ) {
+ 		$pin->{value} = $value;
+		return 1;
+	    }
+	    return 0;
+	};
+    }
+
+    sub make_get_routine {
+	my $pin = shift;
+
+	if( $pin->{mode} eq 'out' ) {
+	    return sub {
+		return $pin->{value};
+	    };
+	} else {
+	    return sub {
+		my $value = slurp_file( $pin->{file} );
+		return undef unless( defined($value) );
+		chomp $value;
+		$pin->{value} = ( $value? 1 : 0 );
+		return $pin->{value};
+	    };
+
+	}
+    }
+
+    for my $k ( keys %gpio ) {
+	$gpio{$k}->{name} = $k; 	# Save interface name in pin hash
+    }
+
+    for my $pin ( values %gpio ) {
+	debug(2, "Working on pin '", $pin->{name}, "' at gpio", $pin->{pin});
+	spurt_file($gpio_remove, $pin->{pin} . "\n"); # Normalise state, ignore errors
+	sleep(0.5);
+	$pin->{dir}  = $gpio . "/gpio" . $pin->{pin};
+	unless( -d $pin->{dir} ) {
+	    # Export each pin
+	    unless( spurt_file($gpio_export, $pin->{pin} . "\n") ) {
+		return "Failed to write $pin->{pin} to $gpio_export";
+	    }
+	    unless( waitfor( sub { return -d $pin->{dir}; }, 5.0) ) {
+		return "Timeout while exporting $pin->{name} to gpio$pin->{pin}\n";
+	    }
+	    sleep(0.5);		# Wait for UDEV rules to complete
+	    debug(3, "Exported pin ", $pin->{name});
+	}
+	# Add pin file name to the pin hash
+	$pin->{file} = $pin->{dir} . "/value";
+	unless( waitfor( sub { return -w $pin->{file}; }, 5.0) ) {
+	    return "Timeout waiting for writable $pin->{file}";
+	}
+	debug(3, "Set pin file to ", $pin->{file});
+	# Set the pin mode etc.
+	unless( spurt_file($pin->{dir} . "/direction", $pin->{mode} . "\n") ) { # Set the pin direction (in/out)
+	    return "Could not set direction of pin '$pin->{name}' to '$pin->{mode}'";
+	}
+	# N.B. Active-Low appears reversed in the hardware from what I expected!
+	unless( spurt_file($pin->{dir} . "/active_low", ($pin->{sense} eq 'neg' ? "0\n" : "1\n")) ) { # Set the pin logic sense (pos/neg)
+	    return "Could not set sense of pin '$pin->{name}' to '$pin->{sense}'";
+	}
+	unless( $pin->{mode} eq 'in' or spurt_file($pin->{file}, $pin->{init} . "\n") ) { # Initialise the pin value for outputs
+	    return "Unable to initialise pin '$pin->{name}' to '$pin->{init}'";
+	}
+	# Create pin-read and/or pin-write function (closure)
+	if( $pin->{mode} eq 'in' ) {
+	    if( defined( $pin->{get} = make_get_routine($pin) ) ) {
+		$pin->{value} = &{$pin->{get}}();
+	    } else {
+		$pin->{value} = 'in';
+	    }
+	} else {
+	    $pin->{value} = $pin->{init};
+	    $pin->{set} = make_set_routine($pin);
+	}
+	debug(3, "Pin state of '$pin->{name}' initialised to (", join(',', $pin->{mode}, $pin->{sense}, $pin->{value}), ")" ); 
+    }
+    sleep(0.25);		# Wait a moment for power to stabilise on the analogue board
+    debug(1, "GPIO sys file system initialised");
+    return;
+}
+
+# Send output to a GPIO interface element
+sub send_pin_output {
+    my ($pin, $value) = @_;
+
+    unless( defined $gpio{$pin} and defined $gpio{$pin}->{set} ) {
+	error("Attempted write of '$value' to GPIO pin '$pin' -- either input or unknown\n");
+	return 0;
+    }
+    unless( &{$gpio{$pin}->{set}}( $value) ) {
+	error("Write of '$value' to GPIO pin '$pin' failed");
+	return 0;
+    }
+    debug(2, "Wrote '$value' to GPIO pin '$pin'");
+    return 1;
+}
+
+# Find value of a GPIO interface element
+sub find_pin_value {
+    my $pin = shift;
+
+    unless( defined $gpio{$pin} and defined $gpio{$pin}->{get} ) {
+	error("Attempt to read value of GPIO pin '$pin' -- unknown get function\n");
+	return undef;
+    }
+    return &{$gpio{$pin}->{get}}();
+}
+
+# Determine the external IP address(es) on the ethernet device
+sub get_ip_addr {
+    my $dev = shift;
+    my $iptxt = `$ip addr show dev $dev`;
+    my $mac = undef;
+    my @addr = ();
+
+    $mac = $1 if( $iptxt =~ m|link/ether\s+([a-fA-F\d:]+)\s|s );
+#    while( $iptxt =~ m/inet\s+(\d+\.\d+\.\d+\.\d+).+?scope\s+(\w+)/g ) {
+#	push @addr, [ $2, $1, $mac ];
+#    }
+#    return @addr;
+    return $mac;
+}
+
+# Unpack and translate a sockaddr structure to printable form
+sub ip_to_string {
+    my ($port, $iaddr) = sockaddr_in($_[0]);
+    my $host = inet_ntoa($iaddr);
+
+    return $host . ':' . $port;
+}
+
+# Send a datagram on the command socket
+sub send_reply {
+    my ($to,$who,$msg) = @_;
+
+    my $ret = $socket->send($msg, 0, $to);
+
+    if( $ret != length($msg) ) {
+	my $h = ip_to_string($to);
+	debug(0, "Error sending $who reply to $h: $!");
+	return;
+    } else {
+	chomp $msg;
+	debug(2, "Sent $who reply '$msg'");
+	return $ret;
+    }
+}
+
+## 1-wire filesystem utilities, interact with owfs, etc.
+
+# Mount the 1-wire user filesystem
+sub mount_1w {
+    my $base = shift;
+    my @cmd  = ( $owfs, "-d", "/dev/i2c-1", "-r", "-m", $base );
+
+    return 1 if( -d $base . "/settings" );
+    unless( -w $base ) {
+	error("Trying to mount the 1-wire bus at non-writable $base");
+	return 0;
+    }
+
+    debug(1, "Trying to mount the 1-wire bus at $base using $owfs");
+    my $ret = system( @cmd );
+    error("System(" . join(' ', @cmd) . ") returned $ret")
+	if( $ret );
+    debug(1, "Mount command System(", join(' ', @cmd), ") succeeded")
+	unless( $ret );
+    error("1-wire system not mounted after $owfs completes\n") unless( -d $base . "/settings" );
+    return -d _ ? 1 : 0;
+}
+
+# Scan the 1-wire bus filesystem representation and locate devices
+sub scan_1w {
+    my $base = shift;
+    my @channels;
+    my %devices;
+
+    unless( -d $base . "/settings" ) {
+	error( "Odd-looking 1-wire filesystem at $base" );
+	return ();
+    }
+
+    debug(1, "Scanning 1-wire bus filesystem at $base" );
+
+    @channels[0..NCHANNELS-1] = undef;
+
+    # N.B. Assumes microphones are all 43- devices, on bus.1-8;  there appear to be some others...
+    # Maybe this can be expanded to search all busses safely?
+    for my $path ( <$base/bus.[1-8]/43.*> ) {
+
+	debug(3, "Doing device path $path");
+
+	# Locate all the microphones on their respective busses.  The bus part is the tricky bit
+	# because of wierd behaviour on searching for bus.?/device dirs with e.g. -d -- always succeeds!
+	unless( $path =~ m|$base/(bus\.\d+)/43\.([0-9A-Fa-f]+)| ) {
+	    debug(1, "Wierd 1-wire device path '$path' does not parse");
+	    next;
+	}
+	my ($bus,$device) = ($1,$2);
+
+	# Skip duplicates...
+	next if( exists $devices{$device} );
+
+	debug(2, "Found new 1-wire device $device");
+	$devices{$device} = $bus;
+
+	# Collect the device information, from bus and device directories
+	my $chan = slurp_file("$base/$bus/interface/settings/name");
+	unless(	$chan =~ m/DS2482-800\((\d+)\)/ ) {
+	    debug(1, "1-wire device $device bus identity '$chan' is unintelligible");
+	    $chan = undef;
+	} else {
+	    debug(3, "Collected channel info '$chan' for $device");
+	    $chan = $1;
+	}
+	my $type = slurp_file($base . "/43.$device/type");
+	debug(3, "Collected type info '$type' for $device");
+	debug(2, "Unexpected device type '$type' on channel $chan" )
+	    unless( $type =~ /DS28EC20/ );
+
+	$channels[$chan] = {
+	    ok   => 0,
+	    name => $device,
+	    bus  => $bus,
+	    chan => $chan+1,
+	    type => $type,
+	    gain => 0x00,
+	    filt => 'hp',
+	    data => $base . "/43.$device/pages/",
+	} if( defined($chan) );
+
+	$channels[$chan]->{ok} = 1 if( -d $channels[$chan]->{data} );
+	debug(1, "Found $device on channel ", $chan+1,
+	      " showing $type at ", $channels[$chan]->{data}
+	    );
+    }
+    return @channels;
+}
+
+## Communication over I2C with the LTC2637 octal DAC for gain setting
+## In revision 2 hardware this code also handles setting the filter switches, through the gpio interface
+
+# Manage the LTC2637 file handle
+# TODO Rev2: locate the gpio ports for setting the filter state
+sub open_dac {
+    return if( $LTC2637 );
+    unless( open($LTC2637, "+<", $ltc2637) ) {
+	error("Unable to open $ltc2637 for LTC2637");
+	return;
+    }
+    unless( ioctl($LTC2637, I2C_SLAVE, LTC2637_DAC) ) {
+	error("Set address ", LTC2637_DAC, " on $ltc2637 failed");
+	return;
+    }
+    return 1;
+}
+
+sub close_dac {
+    undef $LTC2637;
+}
+
+# Send the bytes provided as arguments to the 8-DAC
+sub send_to_dac {
+    my $data = pack("C0C*", @_);;
+    my $rv;
+
+    if( length($data) != 3 ) {
+	error("send_to_dac called with incorrect arguments " . join(' ', @_) . "\n");
+	return;
+    }
+    return unless( $LTC2637 or open_dac() );
+    unless( defined($rv = syswrite($LTC2637, $data)) and $rv == 3 ) {
+	$rv = -1 unless( defined($rv) );
+	error("Write of data ", uc( unpack("C0H*", $data) ), " to $ltc2637 returns $rv");
+	return;
+    }
+    return 1;
+}
+
+# Initialise DAC:  send the 3 bytes 7F 00 00
+sub start_dac {
+    return send_to_dac(0x7F, 0x00, 0x00);
+}
+
+# Send to 8-DAC the 3 bytes 3<chan> <gain> 00
+# For Rev2: Set the filter control bit to be on/off for the selected channel
+sub send_gain_to_dac {
+    my ($chan,$gain,$filt) = @_;
+
+    if( $gain < 0x00 || $gain > 0xFF ) {
+	debug(0, "Gain $gain for DAC channel ", $chan+1, " out of range;  truncated");
+	$gain = 0x00 if( $gain < 0x00 );
+	$gain = 0xFF if( $gain > 0xFF );
+    }
+    return unless( send_to_dac(0x30+$chan, $gain, 0x00) );
+    if( $adc_board_rev ne 'default' && defined $filt ) {
+	return unless( send_pin_output('filter' . $chan, ($filt eq 'hp' ? 1 : 0)) );
+    } elsif( defined $filt && $filt ne 'hp' ) {
+	    error("Cannot turn the filter off in analog hw [$adc_board_rev]");
+	    $filt = 'hp';
+    }
+    if( defined $channels[$chan] ) {
+	$channels[$chan]->{gain} = $gain if( defined $gain );
+	$channels[$chan]->{filt} = $filt if( defined $filt );
+    }
+    debug(3, "Channel ", $chan+1, " gain set to ", ($gain || '[unchanged]'), ' with filter ', ($filt? ($filt =~ m/hp/? 'high-pass' : 'all-pass') : "[unchanged]"));
+    return 1;
+}
+
+# Send to the 8-DAC the 3 bytes 2F 00 00
+# Rev2: Set all filter control bits to be hp (filter on)
+sub gain_reset_in_dac {
+    debug(2, "Resetting all channel gains to 0x00 hp");
+    return unless( send_to_dac(0x2F, 0x00, 0x00) );
+    unless( $adc_board_rev eq 'default' ) {
+	for my $c ( 0..NCHANNELS-1 ) {
+	    return unless( send_pin_output( 'filter' . $c, 1) );
+	}
+    }
+    debug(2, "Gain reset completed");
+    return 1;
+}
+
+# Reset gains from the channel hash element
+sub gain_set_to_saved {
+    my $res = 1;
+    debug(2, "Resetting all connected channel gain and filter states to saved values");
+    for my $ch ( 0 .. NCHANNELS-1 ) {
+	if( defined $channels[$ch] ) {
+	    $res = $res && send_gain_to_dac($ch, $channels[$ch]->{gain}, $channels[$ch]->{filt});
+	}
+    }
+    debug(2, "Gain reset completed") if( $res );
+    return $res;
+}
+
+# Retrieve gains for channel list
+sub get_current_gain {
+
+    return map { 
+	$channels[$_]->{gain} || 'undef';
+    } @_;
+}
+
+## Snapshot generation utilities
+
+# Make a UUID
+my $uuid_counter;
+sub new_uuid {
+    if( defined(&UUID::generate) ) {
+	my ($string, $uuid);
+	UUID::generate($uuid);
+	UUID::unparse($uuid, $string);
+	return $string;
+    } else {
+	$uuid_counter ||= 0;
+	return sprintf("S-%06d-%d-%d", $$, CORE::time(), $uuid_counter++);
+    }
+}
+
+# Send snap command over the named pipe
+sub send_snap_cmd {
+    unless($SNAP) {
+	debug(2, "Opening the named pipe $snap to write a command");
+	unless( $SNAP = FileHandle->new($snap, O_WRONLY | O_NONBLOCK) ) {
+	    error("Cannot access snapshot socket $snap");
+	    return undef;
+	}
+	$SNAP->autoflush(1);	# Appears not to work...
+	debug(2, "Named pipe $snap is now open");
+    }
+    my $type = shift;
+    return 0 unless( defined( $snap_cmds{$type} ) );
+    my $fmt = $snap_cmds{$type};
+    my $cmd = sprintf($fmt, @_);
+    debug(3, "sending command '", $cmd, "' to snapshotter");
+    print $SNAP $cmd, "\n";
+    $SNAP->flush;
+    debug(3, "command sent to snapshotter");
+    return 1;
+}
+
+# Generate channel metadata file
+# Arg: optional hash contents
+sub channel_meta {
+    my $ch = 1;
+    my %h  = ( @_ );
+
+    for my $c ( 0..$#channels ) {
+	next unless( defined( $channels[$c] ) );
+	$h{'CHAN' . $ch} = $channels[$c]->{chan};
+	$h{'GAIN' . $ch} = $channels[$c]->{gain};
+	$h{'FILT' . $ch} = $channels[$c]->{filt};
+	$h{'MIC'  . $ch} = $channels[$c]->{name};
+	$ch++;
+    }
+    return dump_hash( \%h );
+}
+
+# Generate active channel list for sox
+sub sox_arg {
+    my @chans;
+
+    for my $c ( 0..NCHANNELS-1 ) {
+	push @chans, $c+1 if( defined( $channels[$c] ) );
+    }
+    my $arg =  @chans ? join( ' ', "remix", @chans ) : '';
+    return ( scalar(@chans), $arg );
+}
+
+# Set up snapshot data and send command to snapshotter
+# Args: from (IP address); first (U64), length (U32) count (U32); m_uuid (string)
+sub do_snapshot {
+    my ($from, $first, $length, $count, $m_uuid) = @_;
+
+    # Estimate the size of the file of samples to be generated
+    my $size = $length * NCHANNELS * 2;
+    # Construct local snapshot UUID
+    my $s_uuid = new_uuid();
+    # Construct the snapshot's processing directory
+    my $sndir = $tmp . "/" . $s_uuid;
+    unless( mkdir($sndir) ) {
+	error("Cannot create snapshot directory $sndir");
+	return send_reply($from, "snap", "snapshot $m_uuid server dir error: $!\n");
+    }
+    # Create the various file paths for the snapshot components
+    my $snpath   = $sndir . "/vars.sh";
+    my $metadata = $sndir . "/metadata";
+    my $samples  = $snapdir . '/' . $s_uuid;
+    # Write out channel variables file for snapshot
+    my @sox = sox_arg();
+
+    unless( spurt_file( $snpath,
+			dump_hash(
+			    { MASTER_UUID	 => $m_uuid,
+			      SAMPLES		 => $samples,
+			      METADATA		 => $metadata,
+			      SIZE		 => $size,
+			      FIRST		 => $first,
+			      NCHANNELS		 => $sox[0],
+			      SOXARG		 => $sox[1],
+			      BOX		 => $mac,
+			      FREQ		 => $freq,
+			      NFILES		 => $count,
+			      THISFILE		 => $count - 1,
+			    }
+			))
+	) {
+	error("Cannot create snapshot variables $snpath");
+	send_reply($from, "snap", "snapshot $m_uuid server varfile error: $!\n");
+	return;
+    }
+    # Write out the FLAC metadata file
+    unless( spurt_file( $metadata, channel_meta( BOX => $mac, FIRST => $first, CTIME => time(), FREQ => $freq, ) ) ) {
+	error("Cannot create metadata file $metadata");
+	send_reply($from, "snap", "snapshot $m_uuid metadata error: $!\n");
+	return;
+    }
+    # Send command to snapshot process
+    unless( send_snap_cmd( 'msnap', $first, $length, $count, $samples ) ) {
+	error("Cannot initiate $m_uuid");
+	send_reply($from, "snap", "snapshot $m_uuid comms error: $!\n");
+	return;
+    }
+    # Reply to master
+    return send_reply($from, "snap", "snapshot $m_uuid in progress\n")
+}
+
+### Command subroutines for this program
+
+# Quit:  stop main loop and trigger clean up
+sub quit {
+    $running = 0;
+    return 1;
+}
+
+# Unimplemented command
+sub unimplemented {
+    my $from = shift;
+    my $func = shift;
+    my $msg = $func . '(' . join(' ', @_) . ") is not implemented yet";
+
+    debug(0, $msg);
+    return send_reply($from, $func, $msg . "\n");
+}
+
+# Set/clear one of the three LEDs
+sub set_led {
+    my ($from,$led,$state) = @_;
+
+    unless( $led =~ m/red|green|yellow/ ) {
+	my $msg = "Attempt to change unrecognised LED '$led' to '$state'\n";
+	error($msg);
+	return send_msg($from, "led", $msg);
+    }
+    unless( $state =~ m/on|off/ ) {
+	my $msg = "Change '$led' to illegal '$state' (on/off only are allowed)\n";
+	error($msg);
+	return send_msg($from, "led", $msg);
+    }
+    unless( send_pin_output($led,  ($state eq 'on' ? 1 : 0 )) ) {
+	my $msg = "Change '$led' to '$state' failed";
+	error($msg);
+	return send_msg($from, "led", $msg . "\n");
+    }
+    return send_reply($from, "led", "'$led' is now '$state'\n");
+}
+
+# Stop the ADC by driving the trigger line ('hold') true
+sub hold_adc {
+    my $from = shift;
+
+    unless( send_pin_output('hold', 1) ) {
+	my $msg = "Hold ADC assertion failed";
+	error($msg);
+	return send_msg($from, "hold", $msg . "\n");
+    }
+    my $v = find_pin_value('sense');
+    return send_reply($from, "hold", "Trigger hold asserted (read $v)\n");
+}
+
+# Free the ADC by releasing the trigger line drive
+sub free_adc {
+    my $from = shift;
+
+    unless( send_pin_output('hold', 0) ) {
+	my $msg = "Hold ADC release failed";
+	error($msg);
+	return send_msg($from, "free", $msg . "\n");
+    }
+    my $v = find_pin_value('sense');
+    return send_reply($from, "free", "Trigger release asserted (read $v)\n");
+}
+
+# Turn the analogue board on/off
+# Note: turning the enable off turns off power to the gain-setting DAC and filter switch, so the gains etc. need to be reset on (re-)enable.
+# With no argument, report the current state of the analogue board
+sub set_adc_board {
+    my $from = shift;
+    my $state = shift || 'undef';
+
+    unless( $state ) {		# Read the present state of the board
+	my $val = find_pin_value('enable');
+	unless( $val == $adc_board_state ) {
+	    my $msg = "Recorded ADC Board state " . ($adc_board_state? 'ON' : 'OFF') . " inconsistent with enable pin state " . ($val? 'ON' : 'OFF');
+	    error($msg);
+	    return send_msg($from, "adc", $msg . "\n");
+	}	
+	my $msg = "ADC Board is currently " . ($val? "on" : "off");
+	return send_msg($from, "adc", $msg . "\n");
+    }
+    unless( $state =~ m/on|off/ ) {
+	my $msg = "Set ADC to illegal '$state' (on/off only are allowed)\n";
+	error($msg);
+	return send_msg($from, "adc", $msg);
+    }
+    my $val = $state eq 'on' ? 1 : 0;
+    unless( send_pin_output('enable', $val) ) {	 # Change the state of the analogue board PSU
+	my $msg = "ADC enable $state failed";
+	error($msg);
+	return send_msg($from, "adc", $msg . "\n");
+    }
+    $adc_board_state = $val;
+    if( $val == 1 ) {				 # Re-initialise the DAC to saved gain values
+	unless( start_dac() && gain_reset_in_dac() ) {
+	    my $msg = "ADC turn on failed: unable to reset DAC gains";
+	    error($msg);
+	    return send_msg($from, "adc", $msg . "\n");
+	}
+	unless( gain_set_to_saved() ) {
+	    my $msg = "ADC turn on failed: unable to restore DAC gain settings";
+	    error($msg);
+	    return send_msg($from, "adc", $msg . "\n");
+	}
+    }
+    return send_reply($from, "adc", "ADC Board turned $state\n");
+}
+
+# Return the current local time
+sub mytime {
+    my $now = time();
+    my $from = shift;
+    my $msg = join(' ', @_, sprintf("Time: %.9f\n", $now));
+
+    return send_reply($from, "time", $msg);
+}
+
+# Instruct the snapshot process to make a data snapshot
+# Args: from trigger-time master-uuid
+sub trigger {
+    my ($from, $trigger, $m_uuid) = @_;
+    my $offset = $params{offset} || 0;
+
+    # Check snapshot parameters: time should be within range
+    do {
+	local $! = 0;
+	my $t = POSIX::strtod($trigger);
+	if( $! ) {
+	    error("Snapshot start time illegal");
+	    return send_reply($from, "snap", "snapshot start '$trigger' illegal: $!\n");
+	}
+	$trigger = $t - $offset;
+    };
+    my ($now,$begin,$end) = ( time() - $offset, ($trigger - ( $params{pre_T}/1000.0 || 1 )), ($trigger + ( $params{pst_T}/1000.0 || 1 )) );
+    if( $begin <= ($now - RINGBUFLENGTH/1000.0) ) { # Snapshot start falls outside the ring buffer
+	error("Snapshot command $m_uuid misses ringbuffer\n");
+	return send_reply($from, "snap", "snapshot command $m_uuid misses ringbuffer\n");
+    }
+    # Convert to sample indices
+    my $first = int($begin * $freq + 0.5);
+    my $length = int($freq*($end - $begin) + 0.5);
+    return do_snapshot($from, $first, $length, 1, $m_uuid);
+}
+
+# Instruct the snapshot process to make a data snapshot
+# Args: from, data-start-time | #data-start-pos, data-end-time | #data-end-pos, master-uuid
+sub snapshot {
+    my ($from, $begin, $end, $m_uuid) = @_;
+    my $offset = $params{offset} || 0;
+    my ($first, $length);
+
+    # Check snapshot parameters: time should be within range
+    do {
+	local $! = 0;
+	my $now = time() - $offset;
+	if( $begin =~ m/^#(.+)$/ ) {				 # Sample-based start
+	    my $b = POSIX::strtoul($1);
+	    if( $! ) {
+		error("Snapshot start time illegal");
+		return send_reply($from, "snap", "snapshot start '$begin' illegal: $!\n");
+	    }
+	    # Check that the first sample is within the ring buffer NOT DONE YET
+	    $first = $b;
+	} else {						 # Wall-clock-based start
+	    my $b = POSIX::strtod($begin);
+	    if( $! ) {
+		error("Snapshot start time illegal");
+		return send_reply($from, "snap", "snapshot start '$begin' illegal: $!\n");
+	    }
+	    $begin = $b - $offset;
+	    if( $begin <= ($now - RINGBUFLENGTH/1000.0) ) { # Snapshot start falls outside the ring buffer
+		error("Snapshot command $m_uuid misses ringbuffer\n");
+		return send_reply($from, "snap", "snapshot command $m_uuid misses ringbuffer\n");
+	    }
+	    # Convert to sample indices
+	    $first = int($begin * $freq + 0.5);
+	}
+    };
+    do {
+	local $! = 0;
+	if( $end =~ m/^#(.+)$/ ) {				 # Sample-based finish
+	    my $e = POSIX::strtoul($1);
+	    if( $! ) {
+		error("Snapshot finish time illegal");
+		return send_reply($from, "snap", "snapshot finish '$end' illegal: $!\n");
+	    }
+	    $length = $e - $first;
+	    if( $length > $freq*MAXSNAPSHOT/1000 ) {
+		error("Snapshot command $m_uuid is too long ($length samples)\n");
+		return send_reply($from, "snap", "snapshot command $m_uuid is too long ($length samples)\n");		
+	    }
+	} else {						 # Wall-clock-based finish
+	    my $e = POSIX::strtod($end);
+	    if( $! ) {
+		error("Snapshot finish time illegal");
+		return send_reply($from, "snap", "snapshot finish '$end' illegal: $!\n");
+	    }
+	    $end = $e - $offset;
+	    if( $end - $begin > MAXSNAPSHOT/1000.0 ) {
+		my $d = $end - $begin;
+		error("Snapshot command $m_uuid is too long ($d seconds)\n");
+		return send_reply($from, "snap", "snapshot command $m_uuid is too long ($d seconds)\n");		
+	    }
+	    $length = int($freq*($end - $begin) + 0.5);
+	}
+    };
+    return do_snapshot($from, $first, $length, 1, $m_uuid);
+}
+
+# Instruct the snapshot process to make a data snapshot sequence
+# Args: from, data-start-time | #data-start-pos, data-block-duration, data-block-count, master-uuid
+sub multisnap {
+    my ($from, $begin, $duration, $count, $m_uuid) = @_;
+    my $offset = $params{offset} || 0;
+    my ($first, $length);
+
+    # Check snapshot parameters: time should be within range
+    do {
+	local $! = 0;
+	my $now = time() - $offset;
+	if( $begin =~ m/^#(.+)$/ ) {				 # Sample-based start
+	    my $b = POSIX::strtoul($1);
+	    if( $! ) {
+		error("MSnapshot start time illegal");
+		return send_reply($from, "msnap", "snapshot start '$begin' illegal: $!\n");
+	    }
+	    # Check that the first sample is within the ring buffer NOT DONE YET
+	    $first = $b;
+	} else {						 # Wall-clock-based start
+	    my $b = POSIX::strtod($begin);
+	    if( $! ) {
+		error("MSnapshot start time illegal");
+		return send_reply($from, "msnap", "snapshot start '$begin' illegal: $!\n");
+	    }
+	    $begin = $b - $offset;
+	    if( $begin <= ($now - RINGBUFLENGTH/1000.0) ) { # Snapshot start falls outside the ring buffer
+		error("MSnapshot command $m_uuid misses ringbuffer\n");
+		return send_reply($from, "msnap", "snapshot command $m_uuid misses ringbuffer\n");
+	    }
+	    # Convert to sample indices
+	    $first = int($begin * $freq + 0.5);
+	}
+    };
+    do {
+    	local $! = 0;
+	if( $duration =~ m/^#(.+)$/ ) {				 # Sample-based duration
+	    my $d = POSIX::strtoul($1);
+	    if( $! ) {
+		error("MSnapshot duration illegal");
+		return send_reply($from, "msnap", "snapshot duration '$duration' illegal: $!\n");
+	    }
+	    $length = $d;
+	    if( $length > $freq*MAXSNAPSHOT/1000 ) {
+		error("MSnapshot command $m_uuid is too long ($length samples)\n");
+		return send_reply($from, "snap", "snapshot command $m_uuid is too long ($length samples)\n");		
+	    }
+	} else {						 # Wall-clock-based duration
+	    my $d = POSIX::strtod($duration);
+	    if( $! ) {
+		error("MSnapshot duration '$duration' illegal");
+		return send_reply($from, "msnap", "snapshot duration '$duration' illegal: $!\n");
+	    }
+	    if( $d > MAXSNAPSHOT/1000.0 ) {
+		error("MSnapshot command $m_uuid is too long ($d seconds)\n");
+		return send_reply($from, "msnap", "snapshot command $m_uuid is too long ($d seconds)\n");		
+	    }
+	    $length = int($freq*$d + 0.5);
+	}
+    };
+    do {
+    	local $! = 0;
+	my $c = $count;
+	$c =~ s/^#//;						 # Optional #
+    	$c = POSIX::strtol($c);					 # Always a number!
+    	if( $! ) {
+     	    error("MSnapshot repeat count '$count' illegal");
+    	    return send_reply($from, "msnap", "snapshot repeat count '$count' illegal: $!\n");
+    	}
+	$count = $c;
+    };
+    return do_snapshot($from, $first, $length, $count, $m_uuid);
+}
+
+# Rescan the 1-wire bus filesystem
+sub rescan1w {
+    my ($from) = @_;
+    my $errs = $errors;
+    my @rescan_channels;
+
+    @rescan_channels = scan_1w( $sys1w );
+    if( $errs > $errors ) {
+	return send_reply($from, "scan", "rescan of 1-wire filesystem failed");
+    }
+    # Copy the gains across from the old channel descriptors
+    for my $i ( 0..NCHANNELS-1 ) {
+	if( defined($channels[$i]) and defined($rescan_channels[$i]) ) {
+	    # If the same microphone is connected to the rescanned channel, copy the settings over
+	    if( $rescan_channels[$i]->{name} eq $channels[$i]->{name} ) {
+		$rescan_channels[$i]->{gain} = $channels[$i]->{gain};
+		$rescan_channels[$i]->{filt} = $channels[$i]->{filt};
+	    }
+	}
+    }
+    @channels = @rescan_channels;
+    # Now reinitialise the ADC hardware settings, even for unchanged channels
+    if( gain_set_to_saved() ) {
+	return send_reply($from, "scan", "1-wire rescan completed\n");
+    } else {
+	return send_reply($from, "scan", "gain reset error: $!\n");
+    }
+}
+
+# Set the gain of a channel
+sub channel_gain {
+    my ($from, $chan, $gain, $filt) = @_;
+
+    unless( $chan eq 'all' ) {
+	unless( $chan >= 1 && $chan <= NCHANNELS ) {
+	    my $msg = "Attempt to set gain on channel $chan:  out of range\n";
+	    error( $msg );
+	    return send_reply($from, "gain", $msg);
+	}
+	if( not defined($channels[$chan-1]) ) {
+	    my $msg = "Attempt to set gain of channel $chan:  disconnected\n";
+	    error( $msg );
+	    return send_reply($from, "gain", $msg);
+	}
+    }
+    if( $gain && $gain !~ m/^(hi(gh)?|low?|hp|ap|on|off)$/ ) {
+	local $! = 0;
+	my $g = POSIX::strtol($gain);
+	if( $! ) {
+	    my $msg = "Desired set gain '$gain' of channel $chan illegal";
+	    error( $msg );
+	    return send_reply($from, "gain", $msg . ": $!\n");
+	}
+	$gain = $g;
+	if( $gain < 0 || $gain > 255 ) {
+	    my $msg = "Desired set gain '$gain' of channel $chan out of range";
+	    error( $msg );
+	    return send_reply($from, "gain", $msg . "\n");
+	}
+    } else {
+	if( $filt ) {
+	    my $msg = "Missing gain argument with defined filter argument '$filt''";
+	    error( $msg );
+	    return send_reply($from, "gain", $msg . "\n");
+	}
+	($gain,$filt) = (undef,$gain);
+    };
+    do {
+	$filt ||= 'hp';
+	unless( $filt =~ m/^(hi(gh)?|low?|hp|ap|on|off)$/ ) {
+	    my $msg = "Unknown filter specification '$filt' for channel '$chan'";
+	    error( $msg );
+	    return send_reply($from, "gain", $msg . "\n");
+	}
+	$filt = 'hp' if( $filt =~ m/on|hi(gh)?/ );
+	$filt = 'ap' if( $filt =~ m/off|low?/ );
+	if( $adc_board_rev eq 'default' ) {
+	    if( $filt ne 'hp' ) {
+		my $msg = "Cannot turn off high-pass filter in default ADC board revision";
+		error( $msg );
+		return send_reply($from, "gain", $msg . "\n");
+	    }
+	}
+    };
+    # Construct a debugging string for gain/filter setting choices
+    my $gainval = '';
+    $gainval .= sprintf("0x%02x", $gain) if( defined($gain) );
+    $gainval .= ' ' if( $gainval ne '' );
+    $gainval .= sprintf("%s-pass", ($filt =~ m/hp|yes/ ? 'high' : 'all')) if( defined($filt) );
+    # Do the changes, using send_gain_to_dac() which also handles filter settings now
+    if( $chan ne 'all' ) {
+	unless( send_gain_to_dac($chan-1, $gain, $filt) ) {
+	    my $msg = "Unable to set gain of channel $chan: hardware error";
+	    error( $msg );
+	    return send_reply($from, "gain", $msg . ": $!\n");
+	}
+	my $msg = sprintf("Gain set to %s on channel %d", $gainval, $chan);
+	debug(1, $msg);
+	return send_reply($from, "gain", $msg . "\n");
+    } else {
+	my $m = '';
+	for my $chan ( 1..NCHANNELS ) {
+	    if( defined($channels[$chan-1]) && not send_gain_to_dac($chan-1, $gain, $filt) ) {
+		my $msg = "Unable to set gain of channel $chan: hardware error";
+		error( $msg );
+		$m .= $msg . "\n";
+	    }
+	}
+	$m ||= sprintf("Gain set to %s on all active channels", $gainval);
+	return send_reply($from, "gain", $m . "\n");
+    }
+}
+
+# Send back a 'pong' response to a 'ping', for testing
+sub pong {
+    my $from = shift @_;
+    my $msg  = "pong " . join(' ', @_) . "\n";
+
+    return send_reply($from, "pong", $msg);
+}
+
+# Send back a list of connected channels
+sub channel_list {
+    my $from = shift @_;
+    my $msg = "begin channel list\n";
+    my $ch = 1;
+
+    for my $i ( 0..NCHANNELS-1 ) {
+	($ch, $msg) = ( $ch+1,
+			$msg . "ch:$ch:$i:" . $channels[$i]->{gain} . ':' . $channels[$i]->{filt} . ':' . $channels[$i]->{type} . ':' . $channels[$i]->{name} . "\n"
+	    ) if( $channels[$i] );
+    }
+    $msg .= "end channel list\n";
+
+    return send_reply($from, "chan", $msg);
+}
+
+# Set parameters for snapshots etc
+sub set {
+    my ($from, $key, $value) = @_;
+    my $msg;
+
+    do {
+	local $! = 0;
+	$value = POSIX::strtod($value);
+	if( $! ) {
+	    $msg = "parameter '$key' given illegal '$value'";
+	    error( $msg );
+	    return send_reply($from, "set", $msg . "\n");
+	}
+    };
+    if( my $tests = $set_params{$key} ) {
+	for my $s ( @{$tests} ) {
+	    unless( &{$s}($value) ) {
+		$msg = "Parameter value for $key fails tests\n";
+		return send_reply($from, "set", $msg);
+	    } 
+	}
+	$params{$key} = $value;
+	debug(2, "Set parameter '$key' to '$value'");
+	return send_reply($from, "set", "parameter '$key' set to '$value'\n");
+    } else {
+	$msg = "Unrecognised parameter $key\n";
+	return send_reply($from, "set", $msg);
+    }
+}
+
+# Parameter validation subroutines for set
+sub gte {
+    my $min = shift;
+
+    return sub { $_[0] >= $min; };
+}
+
+sub lte {
+    my $max = shift;
+
+    return sub { $_[0] <= $max; };
+}
+
+# Initialise the ADC system (mostly for use in an array context)
+# Note: everyone replies to 'start', only a master|single replies to 'start run'
+#
+# We have to make sure that the hardware is in a sane state with power on, that the
+# snapshotter is running and has been sent a start command, and that the trigger synch
+# line is released either if we are in slave mode or if RUN is received.
+#
+# With respect to the snapshotter, the framing supervision scripts ensure that
+# whenever a copy of this script is executed by its runsv process, a fresh snapshotter
+# has just been started; and whenever a supervise copy of this script exits, its
+# associated snapshotter is shut down.  A snapshotter that crashes is not restarted,
+# so writes to the pipe will fail if that is the case.
+#
+sub sys_start {
+    my $from = shift;
+    my $run = $_[0] && $_[0] eq 'run';
+
+    send_pin_output('red', 0);
+    if( not $run ) {    # Make sure everything is set up ready for capture
+
+	if( $snap_started ) {
+	    error("Start command given after start\n");
+	    return send_reply($from, "start", "repeated start given\n");
+	}
+
+	debug(2, "Start: checking hardware status");
+	unless( send_pin_output('hold', 1) ) {
+	    error("Start: trigger hold failed\n");
+	    return send_reply($from, "start", "trigger hold failed\n");
+	}
+	# Array is now locked.  Initialise our hardware: scan 1-wire bus, write DAC gains.
+	debug(2, "Start: running channel scan and gain initialisation");
+	return unless( rescan1w($from) );
+
+	# Now initialise the snapshotter: tell it to start ADC capture (blocked on external trigger just now)
+	debug(2, "Start: checking snapshotter status");
+	unless( send_snap_cmd('rate', NCHANNELS*$freq) and send_snap_cmd('start') ) {
+	    error("Unable to talk to snapshotter");
+	    return send_reply($from, "start", "snapshotter comms failure\n"),
+	}
+	$snap_started = 1;	# Assume snapshotter is running and ready
+
+	# The slave releases the trigger synch line now, so the master will be able to let it float
+	if( in_mode('slave') ) {
+	    debug(2, "Start: in slave mode, releasing trigger line");
+	    unless( send_pin_output('hold', 0) ) {
+		error("Start: slave trigger release failed\n");
+		return send_reply($from, "start", "slave trigger release failed\n");
+	    }
+	    debug(2, "Start: slave mode, trigger armed");
+	}
+	send_pin_output('yellow', 1);
+	return send_reply($from, "start", "Completed, system ready\n");
+
+    } elsif( in_mode( 'master|single') ) {	# 'Run' command, in Master and Single mode, releases the trigger
+
+	unless( $snap_started ) {
+	    error("Start RUN command given before started\n");
+	    return send_reply($from, "start", "RUN command given before started\n");
+	}
+
+	unless( find_pin_value('sense') == 0 ) {
+	    error("Start RUN given with ADC already free\n");
+	    return send_reply($from, "start", "RUN command given with ADC already free\n");
+	}
+
+	# Try to release the ADC block -- let the trigger line float to logic 1
+	debug(2, "Start RUN: releasing trigger line, computing time offset");
+	my $now = time();
+	unless( send_pin_output('hold', 0) ) {
+	    error("Start RUN: trigger release failed\n");
+	    return send_reply($from, "start", "RUN trigger release failed\n");
+	}
+
+	# Wait up to 0.5 second for the trigger line to float high, count the time in 5[ms] increments
+	unless( waitfor( sub { my $v = find_pin_value('sense');
+			       $now += 0.005 unless( $v );
+			       return $v;
+			 },
+			 0.5, 0.005)
+	    ) {
+	    error("Start RUN: no trigger enable within 0.5 second window\n");
+	    return send_reply($from, "start", "RUN trigger release timed out\n");
+	}
+
+	# If all went well, $now is a (master) local time close to the start time of the USB-DUXfast
+	$now = sprintf("%.9f", $now);
+	debug(2, "Start RUN: trigger active, offset is $now");
+	$params{offset} = $now if( in_mode('single') );
+	send_pin_output('yellow', 0);
+	send_pin_output('green', 1);
+	return send_reply($from, "start", "RUN offset $now\n");
+    }
+    debug(1, "start RUN: on slave, awaiting master synch");
+    send_pin_output('green', 1);
+    return 1;			# Slave mode and 'run', don't send a reply
+}
+
+# Calibrate the local microphone array
+sub calibrate {
+    my $from = shift;
+    return &unimplemented( $from, "cal", @_ );
+}
+
+# Help command, returns brief synopsis of other commands to the sender
+sub cmd_help {
+    my $from = shift;
+    my $txt = <<\END;
+quit - shut down snapshotter and exit
+ping <args> - generate a pong <args> reply
+
+chan - report presence and set up of connected channels
+scan - initiate a 1-wire scan and channel initialisation
+time - report the current time at the command server
+
+hold - pull the trigger line low, stopping the ADC 
+free - release the trigger line high, allowing the ADC to start
+
+start [run] - initialise hardware, determine start time offset
+
+adc <state>(on|off) - enable or disable power to the analogue board
+led <name>(red|green|yellow) <state>(on|off) - set the state of the box LEDs
+
+gain all|<channel>(1:8) [<value>(uint8)] [<hp|ap|hi|lo|on|off>] - set the gain and filter state of a channel
+
+set <param> <value> - set parameter (pre_T, pst_T, offset) to <value> 
+
+trig <when>(double) <uuid> - take a snapshot with trigger <when>; params pre_T and pst_T fix length
+snap <start>(double|#uint64) <end>(double|#uint64) <uuid> - take snapshot from <start> to <end> with name <uuid>
+msnap <from>(double|#uint64) <duration>(double|#uint32) <count>(uint32) <uuid> - take repeating snapshot
+
+cal - calibration sequence, currently not implemented
+
+END
+    return send_reply($from, "help", $txt);
+}
+
+# =============== DATA/DOCUMENTATION ===============
+
+__END__
+
+=head1 NAME
+
+array-cmd -- listener daemon for commands from the array master.
+
+=head1 SYNOPSIS
+
+array-cmd [--version|-V] [--help|-h] [--verbose|-v] [--quiet|-q]
+    [--port|-p <n>] [--host|-H <ip>] [--interface|-i <device>] [--dac|-D <path>]
+    [--snapshot|-s <path>] [--snapdir|-d <path>] [--1wire|-1 <path>] [--tmp|-t <path>]
+    [--freq|-f <n>] [--gpio|-g <path>] [--mode|-m  master|slave|single|<path>]
+
+=head1 OPTIONS
+
+=over 4
+
+=item B<--version|-V>
+
+Print the daemon version and exit.
+
+=item B<--help|-h>
+
+Print this usage text and exit.
+
+=item B<--quiet|-q>
+
+Turn off all reporting except fatal errors.
+
+=item B<--verbose|-v>
+
+Increase chattiness of the daemon.  Each additional B<-v> results in extra debugging
+output.  The environment variable DEBUGLEVEL can also be used to set the reporting level
+directly.  It is applied before the command-line arguments are, so will be cancelled by
+B<-q>.
+
+=item B<--port|-p> <n>
+
+Listen on port <n> instead of the default.  <n> may be a port number or service name.
+Environment variable B<PORT>.
+
+=item B<--host|-H> <ip>
+
+Listen on IP address <ip> instead of the default.  The <ip> parameter may be an IPv4
+address or a resolvable domain name.  Environment variable B<HOST>.
+
+=item B<--interface|i> <device>
+
+Use interface <iface> as the default for communication; this yields the IP address to
+use and the MAC address on which the default name of the slave unit is based.
+Environment variable B<IFACE>.
+
+=item B<--mode|-m> Master | Slave | Single | <path>
+
+Set the mode of operation of the system.  Master and Slave are for operation as part of
+a larger array; the command processor starts the ADC system slightly differently if a
+Master.  Single is for a box that functions as a standalone 8 microphone array unit.
+The <path> option is for cases where the mode is determined at run time; the content of
+the named path should contain one of the three keyword modes, and the file must exist at
+the time the mode is required, namely when the B<start> command is being processed.
+Environment variable B<MODE>; default value is Single.
+
+=item B<--snapshot|-s> <path>
+
+Path of the UNIX named pipe to the snapshot daemon (which takes snapshots of incoming
+data from the ADC system).  Snapshot commands wre written to this socket when they
+arrive, and the snapshot daemon is expected to be listening.  Environment variable
+B<SNAPSHOT>.
+
+=item B<--snapdir|-d> <path>
+
+The directory in which snapshot samples should be written.  This location is used to
+construct file names to pass to the snapshotter process.  Environment variable
+B<SNAPDIR>.
+
+=item B<--1wire|-1> <path>
+
+Path on which the 1-wire filesystem provided by the microphones attached to the
+recording unit should be mounted.  This directory must be writable by the user running
+the array-cmd process, who must also be a member of the i2c and fuse system
+groups. Environment variable B<1WIRE>.
+
+=item B<--tmp|-t> <path>
+
+Path to the directory in which temporary files should be created.  This is used to hold
+the directories where data associated with a snapshot reside while the capture is in
+progress.  Environment variable B<TMPDIR>.
+
+=item B<--dac|-D> <path>
+
+The path for the I2C device needed to talk to the DAC.  On the Pi as configured in the
+standard prototype hardware, this is /dev/i2c-1 -- which is also the built-in default.
+Environment variable B<LTC2637>.
+
+=item B<--freq|-f> <number>
+
+The sampling frequency used by the ADC system, in Hertz.  This is used to calculate the
+size of samples files.  Maximum for Raspberry Pi vn.2 is 100 kHz.  For Raspberry Pi2, the
+maximum is 375 kHz. The default value is 100 kHz.  Environment variable B<FREQ>.
+
+=item B<--gpio|-g> <path>
+
+The path to the sysfs interface for the GPIO pins. Environment variable B<GPIO_PATH>.
+
+=back
+
+Each option can be set from the command line, by environment variable, or by internal
+built-in default, with that order of priority.  If the <host> is not specified, its
+default is the IP address bound to the <interface> network adaptor provided that is of
+global scope.
+
+=head1 DESCRIPTION
+
+The array command processor daemon runs on every slave module.  Its task is to interpret
+instructions sent from the master module and to interact with the analogue hardware.
+Each command is encapsulated in a UDP datagram and sent to the daemon's listening
+socket.
+
+The daemon's operation comprises two phases: initialisation and command execution.  During
+the first phase, the program determines the address of its listening socket, initialises
+the gain control hardware via the I2C bus and the gpio files in /sys, and mounts the
+1-wire file system constituted from the embedded memory in the attached microphones.  The
+1-wire filesystem is scanned to identify which microphones are connected and to which
+analogue channels.
+
+The final step of initialisation is to create, if required, a named pipe through which
+snapshot commands are communicated to the process that handles memory copy from the ADC
+ring buffer.  If the snapshot process is not yet running, opening the pipe is deferred
+until a communication is needed.
+
+In the second phase, the program reads datagrams from the socket and executes the
+commands they contain.  A command comprises an initial keyword followed by a set of
+space-delimited arguments, the details of which depend on the command.  The following
+commands are available.
+
+=over 4
+
+=item B<quit>
+
+Close the command interpreter tidily.  The same result can be achieved by sending the
+process an INT or QUIT signal.
+
+=item B<ping> I<arbitrary arguments>
+
+Ping the daemon, which responds with a B<pong> reply containing the given argument(s)
+copied verbatim from the incoming datagram.
+
+=item B<help>
+
+Send a command synopsis as a reply message -- useful when driving the daemon manually.
+
+=item B<chan>
+
+Generate a listing of the connected channels.  The response datagram consists of the
+line I<begin channel list> followed by one line for each active channel followed by
+I<end channel list>.  Each channle descriptor comprises the string "ch", the
+channel's gain and filter settings, its type and its name (the ID of the 1-wire
+memory attached to that channel) -- separated by colons.
+
+=item B<trig> I<trigger-time> I<master-uuid>
+
+=item B<snap> I<start-time-or-pos> I<end-time-or-pos> I<master-uuid>
+
+Initiate a snapshot of the recorded audio signals.  The first parameter for B<trig> is
+the time of the trigger point for this snapshot; the segment recorded is defined by the
+pre-trigger and post-trigger duration parameters previously established by the B<set>
+command.  For a B<snap> command, the first two arguments define the start and end time
+points of the requested data samples.  They may be times (relative to the ADC start time
+offset determined when the array is started) or they may be sample numbers if prefixed
+with a hash (#).
+
+Upon receipt of a B<trig> or B<snap> command, a local UUID is constructed and a
+directory of that name is created in the temporary storage directory.  Two files are
+written to that directory: the metadata variables describing the connected channels
+whose data will be captured, and a shall variable file containing the significant
+parameters of the snapshot request.  An instruction is then passed to the snapshot
+process comprising the start time, end time and the file name for the file of captured
+samples.  If all this succeeds, the daemon reports that the capture is in progress to
+the requesting master.
+
+Once the samples have been written by the snapshotting process, a script is invoked
+using inotify, by a watch-n-do daemon, which loads the shall variables, converts the
+sample file to FLAC encoding, adds the metadata variables to the encoded file, and sends
+the file using rsync to the master.  The file is written to the directory on the master
+named I<master-uuid> and is named with the MAC address of the slave that generated it.
+
+The snapshot command processor computes the approximate size of the samples file using
+the sampling rate, the fact that samples are two bytes per channel, and the duration of
+the snapshot requested.  This information is used to check the samples file produced by
+the snapshotter process before it is compressed for transmission to the master.
+
+=item B<msnap> I<start-time-or-pos> I<block-length> I<repeat-count> I<master-uuid>
+
+Initiate a repeating snapshot which begins at the I<start-time> or I<start-pos> and
+writes I<repeat-count> instances of I<block-length> to disk.  The start point may be
+expressed as a time or a sample number, and the duration of a block as a time or as a
+number of samples (hash prefixed).  This is done analogously to the two commands above.
+The variables and metadata written for the snapshot allow the watch-n-do script to
+distinguish multiple from single snapshots and behave accordingly.
+
+=item B<set> I<parameter> I<value>
+
+Set the value of I<parameter> to I<value>, checking for legality of the given value as
+far as possible.  The current parameters are those for controlling snapshots: I<pre_T>
+is the pre-trigger period in milliseconds and I<pst_T> is the post-trigger period, also
+in milliseconds.  The I<offset> parameter can be set following the execution of a
+B<start run> command using the time offset returned.  Trigger and snapshot time
+arguments use that offset to determine whether a specific time point is available in the
+snapshot ring buffer.
+
+=item B<gain> I<channel> [I<value>] [I<filter>]
+
+Set the gain of a channel I<channel> (between 1 and 8, or the keyword B<all>) to I<value>
+or the filter state to I<filter> or both depending which optional argument combination is
+given.  At least one of the options must be given.  Only connected channels can have a
+gain set (the channel list command B<chan> tells which channels are connected) and the
+value must be between 0 and 255 expressed as a decimal number or a 2 digit hexadecimal
+number prefixed with 0x.  The I<filter> setting determines whether a high-pass filter is
+applied or not (for hardware revision 2 and above) and may take the value B<on>, B<hi>,
+B<hp>, B<off>, B<lo> or B<ap> where the first three choices imly the filter is on
+(high-pass) and the last three that it is off (all-pass).
+
+=item B<adc> [I<on|off>]
+
+Turn the power for the analogue amplifier board B<on> or B<off>.  The power needs to be on
+for gain and filter settings to have the intended effect.  Without the optional argument,
+the command returns the state of the board power enable pin.
+
+=item B<scan>
+
+Re-scan the 1-wire filesystem to discover whether any channel connections have changed.
+Copy gains and filter status from old channel descriptors to new provided the same
+microphone remains connected to the channel, and reset the DAC gains to match the new
+descriptor copies.
+
+=item B<time>
+
+Send a reply packet with the fractional-seconds-from-epoch local time of the responding
+unit.
+
+=item B<cal>
+
+Initiate a (spatial) calibration of the recording unit.  The unit takes recordings of a
+sequence of loud impulsive sounds which it uses to compute the spatial position of the
+set of attached microphones using time-of-arrival difference computations.  At least 5
+microphones are required for automatic calibration.  Not yet implemented.
+
+=item B<hold>
+
+Set the shared trigger line low, by writing true to the relevant GPIO pin, thereby
+disabling the USB-DUXfast AD convertor.  All slaves start off in this state; in array
+configuration, the master then instructs the sleves to release the trigger line, and data
+conversion starts on all units when the master releases also the line and it becomes high.
+See also the B<start> command.
+
+=item B<free>
+
+Release the shared trigger line, by writing false to the relevant GPIO pin.  This allows
+the shared trigger line potentially to go high and enable the USB-DUXfast AD convertor
+in each slave.  See also the B<start> command.
+
+=item B<led> I<led-name> I<on-or-off>
+
+Turn a given LED on or off; the LEDs are called I<red>, I<green>, I<yellow>.  Note that
+the LEDs may also be used by the slave command processor itself to signal various
+things.
+
+=item B<start> [ I<run> ]
+
+This command starts the ADC capture process and initialises the runtime environment in
+the command interpreter.
+
+In Master and Single mode, I<run> releases the shared external trigger synchronisation
+line.  In Slave mode it has no effect.
+
+In all modes, the command ensures that the analogue board is active, that the 1-wire
+filesystem is available and microphones are present, that the hardware setup is
+consistent, and then it instructs the snapshotter program to start ADC capture.  If the
+unit is in Slave mode, it releases the shared trigger line, arming the slave ready for
+synchronisation with the Master mode unit.  The I<run> optional argument does nothing at
+all in Slave mode.
+
+The start-up sequence for an array application is therefore to send B<start> to all
+boxes, which initialises them and arms the trigger, followed by B<start> I<run> to at
+least the Master (but could also be sent to all boxes) to initiate synchronised ADC
+start and subsequent operation of the array.  This latter command run on the Master
+returns the time offset for the start of the ADC conversion sampling.
+
+=back
+
+=cut

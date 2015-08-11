@@ -1,0 +1,39 @@
+MCLURS Hardware.
+================
+
+The hardware is as far as possible commodity computing equipment.
+Nevertheless there is some custom electronics, in the form of an
+analogue signal processing board and microphone pre-amplifiers.
+
+Version 1: (2013)
+
+  The first version analogue board comprises 8 channels of
+programmable (0-60 dB) amplification controlled by an LTC2637 D/A
+chip, a 24AA64 EEPROM, an MCP79410 real-time clock, and a DS2482-800
+1-wire driver.  The analogue signal path includes a bandpass filter
+with corner frequencies 9.18 kHz and 151 kHz.
+
+  Microphones are equipped with a 6 pin plug that provides 10 dB of
+preamplifier gain and a 20 kBit 1-wire bus memory with unique
+identifier.
+
+Version 2A: (2014)
+
+  Minor changes to the interface to the Raspberry Pi GPIO header allow
+the connection of a serial port console cable for debugging purposes.
+
+Version 2B: (2015)
+
+  This extends the version 2A hardware with the addition of a PCA9534
+programmable switch for turning the high-pass filter circuitry on and
+off, allowing the system to be used for recording audio as well as
+ultrasonic sounds.
+
+====================
+
+  Hardware operation requires a number of kernel modules to be
+available.  Most are in the standard distributed kernel.  However, the
+module for the PCA9534 (gpio-pca953x) may need to be configured
+separately.  The real-time clock MCP79410 is driven by the ds1307
+module, which should recognise the hardware given a sufficiently new
+kernel version.

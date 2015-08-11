@@ -1,0 +1,36 @@
+root@rpi2-john:/home/suas/Tmp/1wire# ls -ld bus.?/*
+drwxrwxrwx 1 root root  8 Jun 14 19:23 bus.0/05.4AEC29CDBAAB
+drwxrwxrwx 1 root root  8 Jun 14 19:23 bus.0/10.67C6697351FF
+drwxr-xr-x 1 root root  8 Jun 14 19:09 bus.0/alarm
+drwxr-xr-x 1 root root  8 Jun 14 19:09 bus.0/bus.0
+drwxr-xr-x 1 root root  8 Jun 14 19:09 bus.0/interface
+drwxr-xr-x 1 root root  8 Jun 14 19:09 bus.0/settings
+drwxrwxrwx 1 root root  8 Jun 14 19:23 bus.0/simultaneous
+drwxr-xr-x 1 root root  8 Jun 14 19:09 bus.0/statistics
+drwxr-xr-x 1 root root 32 Jun 14 19:09 bus.0/structure
+drwxr-xr-x 1 root root  8 Jun 14 19:09 bus.0/system
+drwxr-xr-x 1 root root  8 Jun 14 19:09 bus.0/uncached
+drwxr-xr-x 1 root root  8 Jun 14 19:09 bus.1/interface
+drwxr-xr-x 1 root root  8 Jun 14 19:09 bus.2/interface
+drwxr-xr-x 1 root root  8 Jun 14 19:09 bus.3/interface
+drwxrwxrwx 1 root root  8 Jun 14 19:23 bus.4/43.F71956000000
+drwxr-xr-x 1 root root  8 Jun 14 19:09 bus.4/interface
+drwxr-xr-x 1 root root  8 Jun 14 19:09 bus.5/interface
+drwxr-xr-x 1 root root  8 Jun 14 19:09 bus.6/interface
+drwxrwxrwx 1 root root  8 Jun 14 19:23 bus.7/43.5F2C56000000
+drwxr-xr-x 1 root root  8 Jun 14 19:09 bus.7/interface
+drwxr-xr-x 1 root root  8 Jun 14 19:09 bus.8/interface
+root@rpi2-john:/home/suas/Tmp/1wire# ls -ld bus.[1-8]/*
+drwxr-xr-x 1 root root 8 Jun 14 19:09 bus.1/interface
+drwxr-xr-x 1 root root 8 Jun 14 19:09 bus.2/interface
+drwxr-xr-x 1 root root 8 Jun 14 19:09 bus.3/interface
+drwxrwxrwx 1 root root 8 Jun 14 19:23 bus.4/43.F71956000000
+drwxr-xr-x 1 root root 8 Jun 14 19:09 bus.4/interface
+drwxr-xr-x 1 root root 8 Jun 14 19:09 bus.5/interface
+drwxr-xr-x 1 root root 8 Jun 14 19:09 bus.6/interface
+drwxrwxrwx 1 root root 8 Jun 14 19:23 bus.7/43.5F2C56000000
+drwxr-xr-x 1 root root 8 Jun 14 19:09 bus.7/interface
+drwxr-xr-x 1 root root 8 Jun 14 19:09 bus.8/interface
+root@rpi2-john:/home/suas/Tmp/1wire# ls -d bus.[1-8]/*
+bus.1/interface  bus.3/interface	bus.4/interface  bus.6/interface	bus.7/interface
+bus.2/interface  bus.4/43.F71956000000	bus.5/interface  bus.7/43.5F2C56000000	bus.8/interface

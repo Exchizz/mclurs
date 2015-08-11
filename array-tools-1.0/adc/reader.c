@@ -1,10 +1,7 @@
 #
 
-#define __GNU_SOURCE
-
 #include <stdio.h>
 #include <stdlib.h>
-#include <syscall.h>
 #include <assert.h>
 #include <time.h>
 #include <sys/time.h>
@@ -30,8 +27,6 @@
 #include "snapshot.h"
 #include "reader.h"
 #include "writer.h"
-
-#define  gettid()	(syscall(SYS_gettid)) /* No glibc interface, Linux-only call */
 
 /*
  * Reader local types and structures
@@ -147,7 +142,6 @@ void print_rusage() {
 	  usage.ru_majflt, usage.ru_minflt, usage.ru_nswap, usage.ru_nvcsw, usage.ru_nivcsw
 	  );
 }
-
 
 /*
  * Create and initialise Comedi channel and command
@@ -481,27 +475,13 @@ void process_reader_command() {
 
 /*
  * Set the reader thread to real-time priority, if RTPRIO is set...
- *
- * This version appears to behave as expected.  Pity about the non-portable gettid().
  */
 
 int set_reader_rt_scheduling() {
 
   if( reader.rtprio > 0 ) {	/* Then there is RT priority scheduling to set up */
-    pid_t  me = gettid();
-    struct sched_param pri;
-    int    mode;
-
-    //    fprintf(stderr, "Linux gettid() returns %d, RTPRIO=%d\n", me, reader.rtprio);
-    pri.sched_priority = reader.rtprio;
-    if( sched_setscheduler(me, SCHED_FIFO, &pri) < 0 ) {
-      return -1;		/* Failed for some reason */
-    }
-    mode = sched_getscheduler(me);
-    if( mode != SCHED_FIFO ) {	/* Didn't work, despite no errors... */
-      errno = ENOSYS;
+    if( set_rt_scheduling(reader.rtprio) < 0 )
       return -1;
-    }
 
     /* Successfully applied RT scheduling */
     return 1;

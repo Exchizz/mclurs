@@ -42,7 +42,7 @@ struct readbuf *create_ring_buffer(int size, char *tmpdir) {
   sz = size * sysconf(_SC_PAGESIZE);
 
   fd = open(tmpdir, O_TMPFILE|O_EXCL|O_RDWR); /* Try to get an anonymous file the easy, Linux-specific, way */
-  if(fd < 0)	{		/* Nope, didn't work, use long way instead */
+  if(fd < 0) {				      /* Nope, didn't work, use long way instead */
     char *file;
 
     file = malloc(strlen(tmpdir) + strlen(RING_TMPFILE)+1);
@@ -74,6 +74,7 @@ struct readbuf *create_ring_buffer(int size, char *tmpdir) {
   }
   /* Got an anonymous zero-filled file of the right size */
 
+#ifdef THE_SLOW_HARD_WAY
   map = mmap(NULL, 2*sz, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
   if( !map ) {
     int e = errno;
@@ -127,6 +128,20 @@ struct readbuf *create_ring_buffer(int size, char *tmpdir) {
 
   prefault_pages(ret->rb_start, 2*size, PREFAULT_WRONLY);
   /* Pages touched, faults generated */
+#else
+  map = mmap_and_lock_double(fd, 0, sz, PROT_READ|PROT_WRITE|MAL_LOCKED);
+  if(map == NULL) {
+    close(fd);
+    free(ret);
+    return NULL;
+  }
+
+  ret->rb_start   = map;
+  ret->rb_end = ret->rb_start + sz;
+  ret->rb_size    = sz;
+  ret->rb_samples = sz / sizeof(sampl_t);
+
+#endif
 
   close(fd);
   return ret;

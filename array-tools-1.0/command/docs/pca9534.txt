@@ -1,0 +1,9 @@
+Filter port chip has 4 registers:
+
+00 read only -- current pin status
+01 read/write -- output input port
+02 read/write -- inverted output?
+03 read/write -- output or input.
+
+Setup:  write 0x00 to 03 and 0xff to 02
+Filter: set bit to 1 in 01 for filter active (hi).
