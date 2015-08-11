@@ -1,0 +1,259 @@
+.\"                                      Hey, EMACS: -*- nroff -*-
+.\" (C) Copyright 2015 John Hallam <sw@j.hallam.dk>,
+.\"
+.\" First parameter, NAME, should be all caps
+.\" Second parameter, SECTION, should be 1-8, maybe w/ subsection
+.\" other parameters are allowed: see man(7), man(1)
+.TH SNAPSHOT 8a "July  2, 2015" SDU "MCLURS ARRAY TOOLS" 
+.\" Please adjust this date whenever revising the manpage.
+.\"
+.\" Some roff macros, for reference:
+.\" .nh        disable hyphenation
+.\" .hy        enable hyphenation
+.\" .ad l      left justify
+.\" .ad b      justify to both left and right margins
+.\" .nf        disable filling
+.\" .fi        enable filling
+.\" .br        insert line break
+.\" .sp <n>    insert n+1 empty lines
+.\" for manpage-specific macros, see man(7)
+.SH NAME
+snapshot \- collect data snapshots from an ADC stream
+.SH SYNOPSIS
+.B snapshot
+.RI [ options ] " files" ...
+.br
+.SH DESCRIPTION
+The \fBsnapshot\fP program is responsible for reading data from the
+array hardware and holding it in a ring buffer.  On request, sections
+of the ring buffer are written out to file.  The program uses root
+permission to initialise the Comedi interface to the analog-digital
+conversion hardware, and to access the elevated real-time priority
+scheduling options available under Linux.
+.PP
+\fBsnapshot\fP is adapted for collection of short snapshots of the
+data stream with the possibility of specifying pre- and post-trigger
+durations.  The typical application is in behavioural experimentation,
+where a behaviour of interest is recognised during its execution.  On
+recognising the interesting behaviour, pulling the trigger results in
+the capture of a window of data starting some time before the trigger
+instant and extending some time after it.
+.PP
+While \fBsnapshot\fP can be commanded to generate a sequence of
+snapshots that covers a long period of the input stream, for
+continuous data one should use the \fBadc\fP program, which is much
+simpler and less programmable but is specialised for streaming data
+from the analog hardware to its standard output.
+.SH COMMANDS
+Once running, \fBsnapshot\fP waits for command messages via its
+command socket (set by \fI\-\-snapshot\fP, see below).  To each
+message it returns a reply indicating success (OK) or failure (NO)
+with an error description.  The command verbs may be abbreviated to
+single characters and may be given as upper or lower case.
+.PP
+The commands accepted by the program are:
+.TP
+.B Quit
+\fBsnapshot\fP winds up its activities and exits tidily.
+.TP
+.B ? " rest"
+is a "ping" command which generates the reply "\fB! rest\fP" from the
+program.  Useful for determining whether \fBsnapshot\fP is ready for
+commands.
+.TP
+.B Param  \fIparameter list\fP
+allows one to set parameters such as sampling frequency, Comedi
+streaming buffer size, and ring buffer size at run time.  These can be
+set individually or in combination since the command takes a
+comma-separated list of parameter assignments.  For instance,
+\fIfreq=100e3,window=15\fP would set the sampling frequency to 100
+[kHz] and the ring buffer window to 15 [s].
+.br
+.sp 1
+The \fBParam\fP command can be issued when the program is in
+pre-initialised state, on start-up or after a \fBHalt\fP command has
+been executed.
+.TP
+.B Init
+asks the program to initialise the data capture system.  It checks the
+current set of parameters for consistency, initialises the Comedi
+interface, creates the ring buffer, maps and locks the two buffers
+into memory, and creates and validates the Comedi data capture
+command.  It does not begin acquisition.  This command is only valid
+when the capture process is stopped.
+.TP
+.B Go
+requests \fBsnapshot\fP to begin data acquisition by executing the
+prepared Comedi command and copying data from Comedi to the ring
+buffer as required.  This command is valid after initialisation by
+\fBInit\fP.
+.br
+.sp 1
+Once \fBGo\fP is executed, the \fBsnapshot\fP program enters an
+"armed" state until data is received from Comedi, at which point it
+switches to "running" state.
+.TP
+.B Halt
+terminates the current data acquisition operation and returns
+\fBsnapshot\fP to the pre-initialised state, in which parameter
+changes can be made.  This is only valid when a \fBGo\fP has been
+given.
+.TP
+.B Snap  \fIparameter list\fP
+instructs \fBsnapshot\fP to capture some data from the ongoing data
+stream.  It is an error to request a snapshot unless the program is
+collecting data (in "running" state).  A correct snapshot command
+issued when not running receives an "ST" reply rather than a "NO"
+(error) response.
+.br
+.sp 1
+The \fIparameter list\fP specifies the range of data to capture,
+specified either as start and end points or start point and length.
+It is an error to specify both an endpoint and a length.  The
+parameter \fIlength\fP gives the number of samples to collect; it is
+rounded to the nearest multiple of 8 channels so as to include the
+requested data range.
+.br
+.sp 1
+Start and end points can be given either as sample indices with
+respect to the start of data acquisition -- using the parameters
+\fIstart\fP and \fIfinish\fP -- or as timepoints (in [ns] from the
+Unix epoch) using parameters \fIbegin\fP and \fIend\fP.  The
+time-based parameters are converted to sample indices using the time
+when the program switched from "armed" to "running" state.  The
+initial point of the range is rounded down to a multiple of 8
+channels, while the endpoint is rounded up likewise.
+.br
+.sp 1
+The optional \fIcount\fP parameter allows one to request a repeating
+snapshot.
+.br
+.sp 1
+The mandatory \fIpath\fP parameter gives the name of the snapshot,
+which is used when constructing the disk directory to hold the data.
+It may be a relative or absolute path.
+.SH SNAPSHOT STRUCTURE
+When requested by a \fBSnap\fP command, \fBsnapshot\fP writes out
+chunks of its ring buffer to disk in a sub-directory determined by the
+\fIpath\fP parameter.  If the given \fIpath\fP is relative, it is
+interpreted relative to the \fI\-\-snapdir\fP directory.
+.PP
+Within the new sub-directory, snapshot data files are written.  If the
+\fIcount\fP parameter is set, \fIcount\fP distinct files are created
+(by default a single file is written).  
+.PP
+The name of each file is the 16 byte zero-padded hexadecimal string derived
+from the index of the first sample it contains, to which is appened  a .s16
+suffix.  The data in the file consists of 16 bit little-endian signed
+integers representing +1 [V] to -1 [V] analog values.  The file length
+is a multiple of 8 samples.
+.SH OPTIONS
+\fBsnapshot\fP has two short options, and a collection of long options
+that follow the GNU convention of starting with two dashes (`-').  All
+the long options can also be set using environment variables; those
+options marked (*) can also be set by Parameter commands.
+.TP
+.B \-h
+Show summary of options.
+.TP
+.B \-v
+Become more verbose in output;  may be repeated for greater effect
+.TP
+.B \-\-snapshot=\fIurl\fP
+specifies the ZeroMQ URL of the communication endpoint to talk to (the
+snapshot program's command socket).  The default value is
+\fIipc://snapshot-CMD\fP, though any of ZeroMQ's standard
+inter-process transports may be used.  For example, a \fItcp://...\fP
+URL allows the \fBsnapshot\fP program to run on a different host from
+the processes (such as \fBsnapchat\fP, \fBtrig\fP or \fBarray-cmd\fP)
+from which it receives commands.
+.TP
+.B \-\-tmpdir=\fIpath\fP
+\fIpath\fP specifies the directory in which temporary files are to be
+created.  This directory should exist.  The default is /tmp.
+.TP
+.B \-\-snapdir=\fIpath\fP
+\fIpath\fP specifies the directory in which snapshots should be
+written.  This directory may exist; if not, it will be created by
+\fBsnapshot\fP.  A relative path here is relative to the temporary
+files directory.  The default is 'snap', i.e. snapshots are by default
+created in /tmp/snap/.
+.TP
+.B \-\-dev=\fIpath\fP
+\fIpath\fP is the Comedi device to use to talk to the hardware.  The
+default is /dev(comedi0.
+.TP
+.B \-\-freq=\fIfreq\fP " (*)"
+specifies the sampling frequency in [Hz] per channel.  The default is
+312.5 [kHz], i.e. a total sampling frequency of 2.5 [MHz] across the 8
+channels provided by the hardware.
+.TP
+.B \-\-bufsz=\fIsize\fP " (*)"
+specifies the \fIsize\fP of the Comedi streaming buffer in [MiB].  It
+requires root permission to increase the maximum buffer size beyond
+that set for the device.  Maximum buffer size can be pre-set using
+\fBcomedi-config\fP to avoid this.  The default value is 32 [MiB].
+.TP
+.B \-\-window=\fIduration\fP " (*)"
+determines the size of the ring buffer into which data is copied.  The
+\fIduration\fP in [s] fixes the maximum size of a snapshot, since a
+single snapshot must fit within the ring buffer (currently).  The
+default value is 10 [s].
+.TP
+.B \-\-rtprio=\fIpri\fP
+If this option is given, the program attempts to set real-time
+scheduling mode for reading data from Comedi.  The \fIpri\fP argument
+must be a valid priority for a SCHED_FIFO process; see
+\fBsched_setscheduler(2)\fP for more information.  The default is not
+to request real-time treatment.
+.TP
+.B \-\-uid=\fInumber\fP
+is used, when \fBsnapshot\fP is running as root, to set the user id
+for the files created when writing snapshots to disk.  The
+\fIsnapdir\fP directory is given this owner if it is created by
+\fBsnapshot\fP.  Default is not set.
+.TP
+.B \-\-gid=\fInumber\fP
+is used likewise to set the owning group.  Default is not set.  If
+\fI--uid\fP is given alone, that user's principal group is used.  If
+\fI--gid\fP is given alone, the process owner is used as file owner.
+.TP
+.B \-\-permu=\fInumber\fP
+sets the time to wait when no data is available from Comedit, using
+the proportion of the Comedi streaming buffer expected to be available
+for transfer after the wait time.  The value is in millionths, and the
+default is 500 (i.e. 0.05%).
+.SH EXIT STATUS
+\fBsnapshot\fP exits normally after receiving the Quit command.  It
+exits with code 1 for parameter errors and with code 2 for errors in
+establishing the necessary ZeroMQ messaging environment.
+.SH ENVIRONMENT
+Each long option available on the command line has a matching
+environment variable through which it can also be set.  Environment
+variables are matched using a case-insensitive comparison.
+Command-line arguments take precedence over environment variable
+values (which in turn take precedence over built-in defaults).
+.SH REAL-TIME OPERATION
+To use the real-time priority scheduling for reading data from Comedi,
+\fBsnapshot\fP needs to be able to change its scheduling priority.
+This requires running as root, possessing CAP_SYS_NICE capability (see
+capabilities(7) for details) or having the necessary resource limit
+sufficiently relaxed.  The real-time priority limits can be set using
+the \fBprlimit\fP command.
+.SH NOTES
+The time at which sampling began is determined when the first batch of
+data is received fom Comedi.  This timepoint is some short time after
+the data actually starts arriving in the kernel buffers and may be
+several millseconds late in the current implementation.  Very short
+capture windows may miss their intended wall-clock target because of
+this offset.
+.SH SEE ALSO
+.BR snapchat (1a) ,
+.BR adc (1a) ,
+.BR array-cmd (8a) ,
+.BR trig (1a) ,
+.BR comedi-config (8) ,
+.BR sched_setscheduler (2) ,
+.BR prlimit (1) ,
+.BR capabilities (7) .
+.br

@@ -1,0 +1,150 @@
+.\"                                      Hey, EMACS: -*- nroff -*-
+.\" (C) Copyright 2015 John Hallam <sw@j.hallam.dk>,
+.\"
+.\" First parameter, NAME, should be all caps
+.\" Second parameter, SECTION, should be 1-8, maybe w/ subsection
+.\" other parameters are allowed: see man(7), man(1)
+.TH TRIG 1a "July  2, 2015" SDU "MCLURS ARRAY TOOLS" 
+.\" Please adjust this date whenever revising the manpage.
+.\"
+.\" Some roff macros, for reference:
+.\" .nh        disable hyphenation
+.\" .hy        enable hyphenation
+.\" .ad l      left justify
+.\" .ad b      justify to both left and right margins
+.\" .nf        disable filling
+.\" .fi        enable filling
+.\" .br        insert line break
+.\" .sp <n>    insert n+1 empty lines
+.\" for manpage-specific macros, see man(7)
+.SH trig
+trig \- send manual triggered snapshot commands to \fBsnapshot\fP program
+.SH SYNOPSIS
+.B trig
+.RI [ \-vh ]
+.RI [ \-\-snapshot = url ]
+.RI [ \-\-trigger = int64 ]
+.RI [ \-\-pre = int32 ]
+.RI [ \-\-pst = int32 ]
+.RI "name"
+.br
+.B trig
+.RI [ \-vh ]
+.RI \-a
+.RI [ \-\-snapshot = url ]
+.RI [ \-\-trigger = int64 ]
+.RI [ \-\-pre = int32 ]
+.RI [ \-\-pst = int32 ]
+.br
+.sp 1
+.B trig
+.RI [ \-vh ]
+.RI \-w
+.RI [ \-\-snapshot = url ]
+.RI [ \-\-pre = int32 ]
+.RI [ \-\-pst = int32 ]
+.RI "name"
+.br
+.B trig
+.RI [ \-vh ]
+.RI \-w " " \-a
+.RI [ \-\-snapshot = url ]
+.RI [ \-\-pre = int32 ]
+.RI [ \-\-pst = int32 ]
+.br
+.sp 1
+.B trig
+.RI [ \-vh ]
+.RI \-r
+.RI [ \-wa ]
+.RI [ \-\-snapshot = url ]
+.RI [ \-\-pre = int32 ]
+.RI [ \-\-pst = int32 ]
+.br
+.SH DESCRIPTION
+The \fBtrig\fP program allows a user to manually trigger snapshots on
+a single array box using a local command-line login.  It operates in a
+single-shot, single-shot-wait or multiple-shot (\fI\-r\fP) mode.
+.PP
+In all modes, the program uses the specified pre-trigger and
+post-trigger durations to define a capture window around the notional
+trigger point, and constructs a 'snap' command to send to the
+\fBsnapshot\fP data capture program so as to collect the chosen
+samples.
+.PP
+In single-shot mode, the time at which the trigger is pulled
+may either be given as argument to the \fI\-\-trigger\fP option or is the time
+at which the \fBtrig\fP program was started.  The time is expressed as
+an integer in nanosecond units, representing elapsed time since the
+Unix epoch.
+.PP
+In single-shot-wait mode, the program reads from standard input and
+the trigger is deemed pulled at the moment a character is received.
+If the character is 'q', the program terminates at once instead of
+sending a 'snap' command.  The \fI\-\-trigger\fP option must not
+appear in this mode.
+.PP
+In multiple-shot mode, the program loops; during each loop it waits
+for a character as in single-shot-wait mode.  If the character is 'q',
+the program terminates; if 's', it sends one (more) 'snap' command and
+terminates after collecting the reply; any other character sends
+a 'snap', collects the reply, and repeats the loop.
+.PP
+\fBtrig\fP normally requires a snapshot name or path to pass to the
+\fBsnapshot\fP program (the data is stored in a subdirectory with the
+given name, in a directory specified when \fBsnapshot\fP is started).
+If the \fI\-a\fP option is specified, however, \fBtrig\fP will automatically
+construct a name by expressing the time of trigger pull as a 16 byte
+zero-padded hexadecimal string, and using that as the name.  If \-a is
+requested, no name should be provided.
+.SH OPTIONS
+This program takes a number of short option flags, and a set of GNU-style long
+options starting with two dashes (`-').
+A summary of options is included below.
+.TP
+.B \-h
+Show summary of options.
+.TP
+.B \-v
+Become more verbose in output;  may be repeated for greater effect.
+.TP
+.B \-w
+Wait for a key press before sending a snapshot message.
+.TP
+.B \-a
+Generate the snapshot name automatically (using the time at which the trigger is pulled).
+.TP
+.B \-r
+Loop to send multiple snapshot messages;  implies \-w and \-a.
+.TP
+.B \-\-snapshot=\fIurl\fP
+specifies the ZeroMQ URL of the communication endpoint to talk to (the
+snapshot program's command socket).  The default,
+\fIipc://snapshot-CMD\fP, matches the default used by \fBsnapshot\fP.
+.TP
+.B \-\-trigger=\fItimepoint\fP
+specifes the time the trigger is pulled, in [ns] from the UNIX epoch.
+Incompatible with \-r and \-a.
+.TP
+.B \-\-pre=\fIduration\fP
+specifies the pre-trigger capture window in [ms];  built-in default 1000[ms].
+.TP
+.B \-\-pst=\fIduration\fP
+specifies the post-trigger capture window in [ms];  built-in default 500[ms].
+.SH EXIT STATUS
+.SH ENVIRONMENT
+The \fI\-\-snapshot\fP option available on the command line has a matching
+environment variable through which it can also be set.  Environment
+variables are matched using a case-insensitive comparison.
+Command-line arguments take precedence over environment variable
+values (which in turn take precedence over built-in defaults).
+.SH BUGS
+The total size of the trigger window may not exceed the size of the
+\fBsnapshot\fP program's ring buffer, or \fBsnapshot\fP will raise an
+exception.  \fBtrig\fP arbitrarily restricts the maximum window size
+to 8 seconds.  It should probably take a \fI\-\-window\fP option like
+\fBsnapshot\fP.
+.SH SEE ALSO
+.BR snapshot (1a),
+.BR adc (1a).
+
