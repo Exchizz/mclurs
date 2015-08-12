@@ -1,11 +1,27 @@
 #
 
+/*
+ * Program to grab data from USBDUXfast via Comedi.
+ *
+ * Arguments:
+ * --verbose|-v		Increase reporting level
+ * --freq|-f		Sampling frequency in [Hz], default 2.5 [MHz]
+ * --range|-r		ADC range 'hi' (750 mVpk) or 'lo' (500 mVpk)
+ * --raw		ADC output as raw data
+ * --device|-d		Comedi device to use, default /dev/comedi0
+ * --bufsz|-B		Comedi buffer size to request [MiB], default 40 [MiB]
+ * --help|-h		Print usage message
+ * --version		Print program version
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdint.h>
 
 #include <assert.h>
+#include <argtable2.h>
+#include "argtab-helper.h"
 
 #ifdef BYHAND
 #include <sys/mman.h>
@@ -33,7 +49,41 @@ char read_buf[BUFSZ];
 
 #define PROGRAM_VERSION	"2.0"
 
+/* Standard arguments + flags */
+int   verbose = 0;
 char *program;
+
+/* Command line syntax options */
+
+BEGIN_CMD_SYNTAX(help) {
+  arg_lit0("h", "help",   "Print usage help message"),
+  arg_lit0("", "version", "Print program version string"),
+  arg_litn("v", "verbose", 0, 3, "Increase verbosity"),
+  arg_end(20)
+} END_CMD_SYNTAX(help);
+
+BEGIN_CMD_SYNTAX(main) {
+  arg_litn("v", "verbose", 0, 3, "Increase verbosity"),
+  arg_dbl0("f", "freq", "<real>", "Sampling frequency [Hz], default 2.5 [MHz]"),
+  arg_int0("B", "bufsz", "<int>", "Comedi buffer size [MiB], default 40 [MiB]"),
+  arg_str0("d", "device", "<path>", "Comedi device to open, default /dev/comedi0"),
+  arg_rex0("r", "range", "hi|lo", NULL, 0, "Specify range in {hi, lo}"),
+  arg_lit0("", "raw", "Emit raw ADC sample values"),
+  arg_end(20)
+} END_CMD_SYNTAX(main);
+
+/* Standard routines */
+void print_version(FILE *fp) {
+  fprintf(fp, "%s: Vn. %s\n", program, PROGRAM_VERSION);
+}
+
+void usage(FILE *fp, void **table, int verbosity) {
+  
+}
+
+/*
+ * The main() entry point.
+ */
 
 int main(int argc, char *argv[]) {
   int          ret, i;
@@ -48,6 +98,10 @@ int main(int argc, char *argv[]) {
   int	       range = 0;	/* Default range is +/- 750mV */
 
   program = argv[0];
+
+  /* Create the command lines */
+  void **help_cmd = arg_help();
+  void **main_cmd = arg_main();
 
   if(argc > 1) {
     if( argv[1][0] == '-' ) {

@@ -9,6 +9,17 @@
 #include "param.h"
 
 /*
+ * Parameter types, represented by constant strings...
+ */
+
+PARAM_TYPE_DECL(bool);
+PARAM_TYPE_DECL(int16);
+PARAM_TYPE_DECL(int32);
+PARAM_TYPE_DECL(int64);
+PARAM_TYPE_DECL(double);
+PARAM_TYPE_DECL(string);
+
+/*
  * Push an extra value for the given parameter onto its value stack,
  * if there is room.  If p_ftop is set, the last (top) value is an
  * allocated copy; free it and overwrite the slot.  Otherwise the

@@ -1,5 +1,16 @@
 #
 
+#define PARAM_TYPE(name) param_type_ ## name
+#define PARAM_TYPE_DECL(name) const char PARAM_TYPE(name)[] = "<" #name ">"
+#define PARAM_TYPE_EXPORT(name) extern const char PARAM_TYPE(name)[]
+
+PARAM_TYPE_EXPORT(bool);
+PARAM_TYPE_EXPORT(int16);
+PARAM_TYPE_EXPORT(int32);
+PARAM_TYPE_EXPORT(int64);
+PARAM_TYPE_EXPORT(double);
+PARAM_TYPE_EXPORT(string);
+
 #define	MAX_PARAM_VALS	5
 
 typedef enum

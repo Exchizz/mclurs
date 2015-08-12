@@ -1,5 +1,8 @@
 #
 
+#ifndef _QUEUE_H
+#define _QUEUE_H
+
 typedef struct q
 {
   struct q  *q_next;
@@ -18,3 +21,5 @@ extern queue *splice_queue(queue *,queue *);
 #define queue_ins_before(q,i)  splice_queue((i), (q))
 
 #define queue_singleton(q)  ((q)->q_next == (q) && (q)->q_prev == (q))
+
+#endif /* _QUEUE_H */

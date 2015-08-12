@@ -1,7 +1,10 @@
 #
 
 #include <assert.h>
+#include <string.h>
 #include <comedi.h>
+
+#include "lut.h"
 
 /*
  * Construct a look up table to map the USBDUXfast ADC outputs into 1V
@@ -106,4 +109,10 @@ void convert_raw_750mV(sampl_t *dst, sampl_t *src, int nsamples) {
       *dst++ = lut_raw_to_1Vpk_500mV[*src++];
 #endif
   }
+}
+
+void convert_raw_raw(sampl_t *dst, sampl_t *src, int nsamples) {
+  if(dst == src)
+    return;
+  memcpy(dst, src, nsamples*sizeof(sampl_t));
 }
