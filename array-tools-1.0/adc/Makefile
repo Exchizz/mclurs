@@ -51,6 +51,8 @@ tidy.o:		tidy.c tidy.h
 
 talloc.o:	talloc.c talloc.h queue.h
 
+grab.o:		grab.c mman.h lut.h argtab.h
+
 argtab-int64.o:	argtab-int64.c argtab-int64.h
 
 argtab-int16.o:	argtab-int16.c argtab-int16.h
