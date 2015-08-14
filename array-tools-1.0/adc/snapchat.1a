@@ -41,7 +41,7 @@ program's non-option arguments as strings, separated by a single space
 character.  The message is sent, per ZeroMQ's conventions, without a
 trailing null character.
 .PP
-In mltiple message mode, \fBsnapchat\fP treats each non-option
+In multiple message mode, \fBsnapchat\fP treats each non-option
 argument as a separate message.  These messages are sent one at a time
 in order.  Each reply is checked: if it begins with the optional
 \fIprefix\fP string, the next message will be sent; if not,
@@ -56,17 +56,17 @@ continuing or terminating.
 For the set of command messages one might wish to send to
 \fBsnapshot\fP, see that program's manual page \fBsnapshot(8a)\fP.
 .SH OPTIONS
-\fBsnapchat\fP takes a number of short option flags, and a single
-GNU-style long option starting with two dashes (`-').  A summary of
-options is included below.
+\fBsnapchat\fP follows the GNU option convention of short options with
+a single dash \- and long options starting with two dashes (\-\-).  A
+summary of options is included below.
 .TP
-.B \-h
+.B \-h|\-\-help
 Show summary of options.
 .TP
-.B \-v
+.B \-v|\-\-verbose
 Become more verbose in output;  may be repeated for greater effect.
 .TP
-.B \-q
+.B \-q|\-\-quiet
 Become less verbose in output.
 .TP
 .B \-\-version

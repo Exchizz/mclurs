@@ -25,41 +25,34 @@ trig \- send manual triggered snapshot commands to \fBsnapshot\fP program
 .br
 .B trig
 .RI [ \-vq ]
-.RI \-a
-.RI [ \-\-snapshot = url ]
-.RI [ \-\-trigger = int64 ]
-.RI [ \-\-pre = int32 ]
-.RI [ \-\-pst = int32 ]
-.br
-.sp 1
-.B trig
-.RI [ \-vq ]
-.RI \-w
-.RI [ \-\-snapshot = url ]
+.RI [ \-w|\-\-wait\-for\-it ]
+.RI [ \-s|\-\-snapshot = url ]
 .RI [ \-\-pre = int32 ]
 .RI [ \-\-pst = int32 ]
 .RI "name"
 .br
-.B trig
-.RI [ \-vq ]
-.RI \-w " " \-a
-.RI [ \-\-snapshot = url ]
-.RI [ \-\-pre = int32 ]
-.RI [ \-\-pst = int32 ]
-.br
 .sp 1
 .B trig
 .RI [ \-vq ]
-.RI \-r
-.RI [ \-wa ]
-.RI [ \-\-snapshot = url ]
-.RI [ \-\-pre = int32 ]
-.RI [ \-\-pst = int32 ]
+.RI \-a|\-\-auto [=format]
+.RI [ \-w|\-\-wait\-for\-it ]
+.RI [ \-s|\-\-snapshot=url ]
+.RI [ \-\-pre=int32 ]
+.RI [ \-\-pst=int32 ]
+.br
+.B trig
+.RI [ \-vq ]
+.RI \-r|\-\-repeat
+.RI [ \-a|\-\-auto [=format]]
+.RI [ \-w|\-\-wait\-for\-it ]
+.RI [ \-s|\-\-snapshot=url ]
+.RI [ \-\-pre=int32 ]
+.RI [ \-\-pst=int32 ]
 .br
 .SH DESCRIPTION
 The \fBtrig\fP program allows a user to manually trigger snapshots on
 a single array box using a local command-line login.  It operates in a
-single-shot, single-shot-wait or multiple-shot (\fI\-r\fP) mode.
+single-shot, single-shot-auto or multiple-shot (\fI\-r\fP) mode.
 .PP
 In all modes, the program uses the specified pre-trigger and
 post-trigger durations to define a capture window around the notional
@@ -67,49 +60,52 @@ trigger point, and constructs a 'snap' command to send to the
 \fBsnapshot\fP data capture program so as to collect the chosen
 samples.
 .PP
-In single-shot mode, the time at which the trigger is pulled
-may either be given as argument to the \fI\-\-trigger\fP option or is the time
-at which the \fBtrig\fP program was started.  The time is expressed as
-an integer in nanosecond units, representing elapsed time since the
-Unix epoch.
+In single-shot mode, the time at which the trigger is pulled may
+either be given as the time at which the \fBtrig\fP program was
+started or the time a key is pressed if the \fIwait-for-it\fP option
+is specified.  The time is expressed as an integer in nanosecond
+units, representing elapsed time since the Unix epoch.
 .PP
-In single-shot-wait mode, the program reads from standard input and
+When waiting for a key press, the program reads from standard input and
 the trigger is deemed pulled at the moment a character is received.
 If the character is 'q', the program terminates at once instead of
-sending a 'snap' command.  The \fI\-\-trigger\fP option must not
-appear in this mode.
+sending a 'snap' command.
+.PP
+In single-shot-auto mode, the program behaves as in single-shot mode
+but the snapshot name is automatically generated instead of specified
+on the command line.  Various auto-generated names are possible; see
+the section below on auto-generation of names.
 .PP
 In multiple-shot mode, the program loops; during each loop it waits
-for a character as in single-shot-wait mode.  If the character is 'q',
-the program terminates; if 's', it sends one (more) 'snap' command and
-terminates after collecting the reply; any other character sends
-a 'snap', collects the reply, and repeats the loop.
-.PP
-\fBtrig\fP normally requires a snapshot name or path to pass to the
-\fBsnapshot\fP program (the data is stored in a subdirectory with the
-given name, in a directory specified when \fBsnapshot\fP is started).
-If the \fI\-a\fP option is specified, however, \fBtrig\fP will automatically
-construct a name by expressing the time of trigger pull as a 16 byte
-zero-padded hexadecimal string, and using that as the name.  If \-a is
-requested, no name should be provided.
+for a keypress character as in the previous modes.  If the character
+is 'q', the program terminates; if 's', it sends one (more) 'snap'
+command and terminates after collecting the reply; any other character
+sends a 'snap', collects the reply, and repeats the loop.  Snapshot
+names are auto-generated.
 .SH OPTIONS
 This program takes a number of short option flags, and a set of GNU-style long
-options starting with two dashes (`-').
+options starting with two dashes (\-\-).
 A summary of options is included below.
 .TP
-.B \-h
+.B \-h|\-\-help
 Show summary of options.
 .TP
-.B \-v
+.B \-v|\-\-verbose
 Become more verbose in output;  may be repeated for greater effect.
 .TP
-.B \-w
+.B \-q|\-\-quiet
+Become less verbose in output.
+.TP
+.B \-\-version
+causes the program to display its version string.
+.TP
+.B \-w|\-\-wait\-for\-it
 Wait for a key press before sending a snapshot message.
 .TP
-.B \-a
-Generate the snapshot name automatically (using the time at which the trigger is pulled).
+.B \-a|\-\-auto [=<format>]
+Generate the snapshot name automatically (using the given \fIformat\fP if provided).
 .TP
-.B \-r
+.B \-r|\-\-repeat
 Loop to send multiple snapshot messages;  implies \-w and \-a.
 .TP
 .B \-\-snapshot=\fIurl\fP
@@ -117,15 +113,43 @@ specifies the ZeroMQ URL of the communication endpoint to talk to (the
 snapshot program's command socket).  The default,
 \fIipc://snapshot-CMD\fP, matches the default used by \fBsnapshot\fP.
 .TP
-.B \-\-trigger=\fItimepoint\fP
-specifes the time the trigger is pulled, in [ns] from the UNIX epoch.
-Incompatible with \-r and \-a.
-.TP
 .B \-\-pre=\fIduration\fP
 specifies the pre-trigger capture window in [ms];  built-in default 1000[ms].
 .TP
 .B \-\-pst=\fIduration\fP
 specifies the post-trigger capture window in [ms];  built-in default 500[ms].
+.SH AUTO-GENERATION OF SNAPSHOT NAMES
+\fBtrig\fP normally requires a snapshot name or path to pass to the
+\fBsnapshot\fP program (the data is stored in a subdirectory with the
+given name, in a directory specified when \fBsnapshot\fP is started).
+If the \fI\-a\fP option is specified, however, \fBtrig\fP will
+automatically construct names.  It can do this in several ways,
+specified by the optional format.  All time-based names encode the
+trigger time.
+.TP
+.B iso
+generates a name which is in ISO date/time format with fractional
+seconds, e.g, 2015-07-14T16:55:32.002314 to microsecond precision.
+The timestamp is expressed in the local timezone.
+.TP
+.B utc
+does the same as \fBiso\fP but generates a timestamp in UTC.
+.TP
+.B hex
+uses the trigger timestamp expressed as a 16 byte zero-padded hexadecimal number.
+.TP
+.B tai
+expresses the trigger time as a TAI64N timestamp.
+.TP
+.B seq
+ignores the time and generates sequentially-incrementing stamps snap000000, snap000001 etc.
+Note that these paths are \fInot\fP uniquely named between different runs of \fBtrig\fP.
+.TP
+.B <user fmt>
+converts the trigger time using a user-specified format; currently unimplemented.
+.PP
+If \-a is requested, a provided name on the command line is treated as
+an error.
 .SH EXIT STATUS
 .SH ENVIRONMENT
 The \fI\-\-snapshot\fP option available on the command line has a matching

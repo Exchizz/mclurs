@@ -21,19 +21,27 @@
 grab \- capture 8 channel raw data from array ADC hardware
 .SH SYNOPSIS
 .B adc
-.RI [ -r " " range ]
-.RI [ frequency ]
+.RI [ \-vh ]
+.RI [ \-\-version ]
+.br
+.B adc
+.RI [ \-v ]
+.RI [ \-r|\-\-range=hi|lo ]
+.RI [ \-\-raw ]
+.RI [ \-B|\-\-bufsz=<size> ]
+.RI [ \-d|\-\-device=<path> ]
+.RI [ \-f|\-\-freq=<frequency> ]
 .SH DESCRIPTION
 This manual page documents briefly the
 .B grab
 command.
 .PP
-\fBgrab\fP uses the Comedit library to retrieve digitized data from the
+\fBgrab\fP uses the Comedi library to retrieve digitized data from the
 array ADC hardware.  The data is read from the device driver as 16 bit
-signed little-endian samples of the +1 V to -1 V range, which are
-retrieved in groups of 8 to match the 8 hardware channels.  The
-program retrieves data until interrupted, and dumps it to standard
-output.
+signed little-endian samples and mapped into a +1 [V] to -1 [V] range
+(unless the \fIraw\fP option is given), which are retrieved in groups
+of 8 to match the 8 hardware channels.  The program retrieves data
+until interrupted, and dumps it to standard output.
 .PP
 \fBgrab\fP prints error and debugging output to standard error, and
 sends sample data to standard output.  Apart from usage errors, the
@@ -44,25 +52,51 @@ achieved (which may differ from that requested since the usable
 frequencies are subharmonics of the USBDUXfast's 30 MHz sampling
 clock).
 .PP
-\fBgrab\fP waits up to ten second for the first data to arrive from
+\fBgrab\fP waits up to ten seconds for the first data to arrive from
 Comedi, and terminates thereafter if data flow is interrupted for one
 second or more.
 .SH OPTIONS
-The program uses standard UNIX option syntax and has only one short option.
+The program uses standard GNU option syntax.
 .TP
-.B \-r
+.B \-h|\-\-help
+Show summary of options.
+.TP
+.B \-v|\-\-verbose
+Become more verbose in output;  may be repeated for greater effect.
+.TP
+.B \-\-version
+causes the program to display its version string.
+.TP
+.B \-r|\-\-range=hi|lo
 Specify the range to use for ADC conversion.  The option takes a
 single argument which may be \fIhi\fP or \fIlo\fP to select
 respectively either the 750mV or 500mV peak conversion range offered
 by the USBDUXfast hardware.  The default range is \fIhi\fP.
 .TP
-.B frequency
-The optional argument indicates the total conversion frequency for
+.B \-\-raw
+Normally the ADC output is rescaled to give signed 16 bit
+twos-complement output with a range of +1 [Vpk] to -1 [Vpk], allowing
+for the chosen ADC range.  If the \fIraw\fP flag is given, no output
+scaling is done and the raw ADC output is emitted.  This comprises
+(for the USBDUXfast) a 12 bit binary value covering the selected
+range; bit 12 is set for out-of-range voltages at the ADC inputs.
+.TP
+.B \-f|\-\-freq=<frequency>
+This optional argument indicates the total conversion frequency for
 sampling.  This is 8 times the sampling frequency of each individual
 channel.  Reasonable frequencies lie in the range 60 kHz to 3 MHz (for
 frequencies above about 1 MHz, the improved USBDUXfast driver is
 required).  The default sampling frequency is 2.5 MHz, i.e. each
 channel is sampled at 312.5 kHz.
+.TP
+.B \-d|\-\-device=<path>
+An optional argument to specify which Comedi device to use.  The
+default \fIpath\fP is /dev/comedi0.
+.TP
+.B \-B|\-\-bufsz=<size>
+An optional argument to specify what size ring buffer to request
+Comedi to set up for the capture.  The \fIsize\fP parameter is interpreted
+as a number of [MiB] to request. The default \fIsize\fP is 40 [MiB].
 .SH EXIT STATUS
 \fBgrab\fP exits normally if the flow of data dries up for more than
 one second; it exits with code 1 for usage or parameter range errors;

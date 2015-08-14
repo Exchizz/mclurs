@@ -181,6 +181,7 @@ BEGIN_CMD_SYNTAX(repeat) {
   pb4 = arg_int0(NULL, "pre", "<int>",		"Pre-trigger interval [ms]"),
   pe4 = arg_int0(NULL, "pst,post", "<int>",	"Post-trigger interval [ms]"),
   a4  = arg_rex0("a", "auto", AUTO_NAME_FORMAT_REX, "<format>", REG_EXTENDED,	"Automatic snapshot name"),
+        arg_rem(NULL, "<format> is " AUTO_NAME_FORMAT_REX),
   w4  = arg_lit0("w", "wait-for-it",		"Wait for keypress to trigger"),
   r4  = arg_lit1("r", "repeat",			"Loop, generating multiple triggers (implies -wa)"),
   e4  = arg_end(20)
