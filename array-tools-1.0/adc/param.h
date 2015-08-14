@@ -9,18 +9,13 @@
 typedef const struct {
   const char *t_name;
   int	      t_size;
+  const char *t_scan;
+  const char *t_show;
 }
   param_type;
 
-/* Needed to make sizeof() work in the macros below */
-typedef int       bool;
-typedef char     *string;
-typedef uint64_t  int64;
-typedef uint32_t  int32;
-typedef uint16_t  int16;
-
 #define PARAM_TYPE(name) param_type_ ## name
-#define PARAM_TYPE_DECL(name) param_type PARAM_TYPE(name)[] = { "<" #name ">" , sizeof(name) }
+#define PARAM_TYPE_DECL(name,size,scan,show) param_type PARAM_TYPE(name)[] = { "<" #name ">" , sizeof(size), scan, show, }
 #define PARAM_TYPE_EXPORT(name) extern param_type PARAM_TYPE(name)[];
 
 PARAM_TYPE_EXPORT(bool);

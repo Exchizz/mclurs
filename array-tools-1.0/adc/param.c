@@ -13,12 +13,12 @@
  * Parameter types, represented by constant strings...
  */
 
-PARAM_TYPE_DECL(bool);
-PARAM_TYPE_DECL(int16);
-PARAM_TYPE_DECL(int32);
-PARAM_TYPE_DECL(int64);
-PARAM_TYPE_DECL(double);
-PARAM_TYPE_DECL(string);
+PARAM_TYPE_DECL(bool,   int,      "%d",   "%d");
+PARAM_TYPE_DECL(int16,  uint16_t, "%hi",  "%hu");
+PARAM_TYPE_DECL(int32,  uint32_t, "%li",  "%u");
+PARAM_TYPE_DECL(int64,  uint64_t, "%Li",  "%llu");
+PARAM_TYPE_DECL(double, double,   "%lg",  "%Lg");
+PARAM_TYPE_DECL(string, char *,   NULL,   "%s");
 
 /*
  * Push an extra value for the given parameter onto its value stack,
@@ -178,6 +178,44 @@ int push_params_from_string(char *str, param_t ps[], int nps) {
 }
 
 /*
+ * Assign a parameter value, i.e. parse its string value and write the result to
+ * the location pointed to by the val pointer, which must be of the correct kind.
+ */
+
+int assign_param(param_t *p) {
+  if(p == NULL) {
+    errno = EINVAL;
+    return -1;
+  }
+  if( !p->p_val )		/* Nowhere to put value */
+    return 0;
+
+  param_type *pt = p->p_type;
+  if(pt == PARAM_TYPE(bool)) {	/* Special cases for booleans */
+    char *s = p->p_str;	/* May be NULL, for a boolean (== false) */
+
+    if( !*s || !strncasecmp(s, "false", 6) || !strncasecmp(s, "no", 3) || !strncasecmp(s, "off", 4) ) {
+      *(int *)p->p_val = 0;
+      return 0;
+    }
+    if( !strncasecmp(s, "true", 5) || !strncasecmp(s, "yes", 4) || !strncasecmp(s, "on", 3) ) {
+      *(int *)p->p_val = 1;
+      return 0;
+    }
+  }
+
+  if( !p->p_str )		/* No value to put anywhere */
+    return 0;
+
+  if(pt == PARAM_TYPE(string)) { /* Special case for strings -- no conversion needed */
+    *(char **)p->p_val = p->p_str;
+    return 0;
+  }
+
+  return sscanf(p->p_str, pt->t_scan, p->p_val) == 1? 0 : -1;
+}
+
+/*
  * Scan the parameter table and copy out the values present, converting strings to
  * appropriate types and installing them in the external addresses where provided.
  */
@@ -189,64 +227,15 @@ int assign_param_values(param_t ps[], int nps) {
   for(n=0; n<nps; n++) {
     param_t *p = &ps[n];
 
-    if(!p->p_val)		/* Nothing to do: nowhere to store result */
-      continue;
-
-    if(p->p_type == PARAM_TYPE(bool)) {
-      char *s = p->p_str;	/* May be NULL, for a boolean (== false) */
-
-      if( !*s || !strncasecmp(s, "false", 6) || !strncasecmp(s, "no", 3) || !strncasecmp(s, "off", 4) ) {
-	*(int *)p->p_val = 0;
-	done++;
-	continue;
-      }
-      if( !strncasecmp(s, "true", 5) || !strncasecmp(s, "yes", 4) || !strncasecmp(s, "on", 3) ) {
-	*(int *)p->p_val = 1;
-	done++;
-	continue;
-      }
-    }
-
-    if(!p->p_str)		/* Parameter has no value, nothing to do */
-      continue;
-
-    if(p->p_type == PARAM_TYPE(int16)) {
-      if(sscanf(p->p_str, " %hi", p->p_val) == 1)
-	done++;
-      continue;
-    }
-
-    if(p->p_type == PARAM_TYPE(int32)) {
-      if(sscanf(p->p_str, " %li", p->p_val) == 1)
-	done++;
-      continue;
-    }
-
-    if(p->p_type == PARAM_TYPE(int64)) {
-      if(sscanf(p->p_str, " %Li", p->p_val) == 1)
-	done++;
-      continue;
-    }
-
-    if(p->p_type == PARAM_TYPE(string)) {
-      *(char **)p->p_val = p->p_str;
+    if(assign_param(p) == 0)
       done++;
-      continue;
-    }
-
-    if(p->p_type == PARAM_TYPE(double)) {
-      if(sscanf(p->p_str, " %lg", p->p_val) == 1)
-	done++;
-      continue;
-    }
   }
-
   return done;
 }
 
 /*
  * Retrieve the string value of the parameter and store it in the
- * buffer pointed to be vp, which must be suitable to receive it.
+ * buffer pointed to by vp, which must be suitable to receive it.
  */
 
 int get_param_value(param_t *p, char **vp) {
@@ -436,30 +425,31 @@ void debug_params(FILE *fp, param_t ps[], int nps) {
 
   for(i=0; i<nps; i++) {
     param_t *p = &ps[i];
+    param_type *pt = p->p_type;
 
     fprintf(fp, "Parameter '%s': type %s addr %p str '%s'",
-	    p->p_name, p->p_type->t_name, p->p_val, p->p_str);
+	    p->p_name, pt->t_name, p->p_val, p->p_str);
     if(p->p_val) {
-      fprintf(fp, " val ");
-      if(p->p_type == PARAM_TYPE(bool)) {
-	fprintf(fp, "'%d'", *(int *)p->p_val);
+      fprintf(fp, " val '");
+      if(pt == PARAM_TYPE(bool)) {
+	fprintf(fp, pt->t_show, *(int *)p->p_val);
       }
-      if(p->p_type == PARAM_TYPE(int16)) {
-	fprintf(fp, "'%hu'", *(int16 *)p->p_val);
+      if(pt == PARAM_TYPE(int16)) {
+	fprintf(fp, pt->t_show, *(uint16_t *)p->p_val);
       }
-      if(p->p_type == PARAM_TYPE(int32)) {
-	fprintf(fp, "'%u'", *(int32 *)p->p_val);
+      if(pt == PARAM_TYPE(int32)) {
+	fprintf(fp, pt->t_show, *(uint32_t *)p->p_val);
       }
-      if(p->p_type == PARAM_TYPE(int64)) {
-	fprintf(fp, "'%llu'", *(int64 *)p->p_val);
+      if(pt == PARAM_TYPE(int64)) {
+	fprintf(fp, pt->t_show, *(uint64_t *)p->p_val);
       }
-      if(p->p_type == PARAM_TYPE(string)) {
-	fprintf(fp, "'%s'", *(char **)p->p_val);
+      if(pt == PARAM_TYPE(string)) {
+	fprintf(fp, pt->t_show, *(char **)p->p_val);
       }
-      if(p->p_type == PARAM_TYPE(double)) {
-	fprintf(fp, "'%lg'", *(double *)p->p_val);
+      if(pt == PARAM_TYPE(double)) {
+	fprintf(fp, pt->t_show, *(double *)p->p_val);
       }
     }
-    fprintf(fp, "\n");
+    fprintf(fp, "'\n");
   }
 }

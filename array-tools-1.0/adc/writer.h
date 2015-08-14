@@ -4,13 +4,23 @@
  * The main functino for the writer thread
  */
 
-extern int   verify_writer_params(param_t [], int);
+#define	WRITER_CMD_ADDR	"inproc://Writer-CMD"
+#define N_SNAP_PARAMS  7
+
+typedef struct {
+  const char  *w_snapdir;
+  int	       w_schedprio;
+  /* The values below are computed and exported */
+  int	       w_snap_dirfd;
+  uid_t	       w_uid;
+  gid_t	       w_gid;
+}
+  wparams;
+
+extern int   verify_writer_params(wparams *);
 extern void *writer_main(void *);
 
-#define	WRITER_CMD_ADDR	"inproc://Writer-CMD"
-
 #define SNAP_NAME_SIZE	24	/* Big enough to hold a 64 bit integer/pointer as hex */
-#define N_SNAP_PARAMS   7
 
 typedef struct _snapr	snapr;		/* Information needed by the Reader thread to snapshot a range of samples */
 typedef struct _snapw	snapw;		/* Information needed by the Writer thread to set up a snapshot series */

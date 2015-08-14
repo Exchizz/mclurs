@@ -22,7 +22,7 @@ trig:	trig.o util.o param.o
 grab:		lut.o mman.o grab.o
 	gcc -o grab lut.o mman.o grab.o -lcomedi -largtable2
 
-snapshot.o:	snapshot.c snapshot.h reader.h writer.h util.h param.h
+snapshot.o:	snapshot.c snapshot.h reader.h writer.h util.h param.h argtab.h
 
 snapchat.o:	snapchat.c snapshot.h argtab.h util.h param.h
 

@@ -4,16 +4,30 @@
  * The main function for thr reader thread
  */
 
-extern int   verify_reader_params(param_t [], int);
-extern void *reader_main(void *);
-
 #define READER_CMD_ADDR	"inproc://Reader-CMD"
 #define READER_POS_ADDR	"inproc://Reader-POS"
 
 #define READER_MSGBUF	16		/* Size of internal command frame */
 
-extern int      inter_sample_ns;
-extern uint64_t capture_start_time; /* [ns from epoch] */
+/*
+ * Reader parameter structure.
+ */
+
+typedef struct {
+  double      r_frequency;	/* Total sampling frequency */
+  int         r_schedprio;	/* Reader real-time priority */
+  int         r_bufsz;		/* Reader buffer size */
+  double      r_window;		/* Snapshot window (must fit in buffer) */
+  const char *r_device;		/* Comedi device to use */
+  /* These below are computed by the reader and exported */
+  int	      r_inter_sample_ns;    /* [ns] for one sample */
+  uint64_t    r_capture_start_time; /* [ns from epoch] */
+}
+  rparams;
+
+extern rparams reader_parameters;
+extern int     verify_reader_params(rparams *);
+extern void   *reader_main(void *);
 
 /*
  * Chunks are blocks of data to be copied by the Reader.

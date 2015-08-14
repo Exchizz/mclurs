@@ -7,5 +7,5 @@ struct readbuf			/* Information for reader ring buffer */
   int   rb_samples;		/* The size in sampl_t of the writable section */
 };
 
-extern struct readbuf *create_ring_buffer(int, char *);
+extern struct readbuf *create_ring_buffer(int, const char *);
 extern int destroy_ring_buffer(struct readbuf *);

@@ -11,7 +11,7 @@
 #include <pwd.h>
 #include <grp.h>
 
-#include <assert.h>
+#include "assert.h"
 
 #include <zmq.h>
 #include <pthread.h>
@@ -26,7 +26,6 @@
 #include "param.h"
 #include "queue.h"
 #include "mman.h"
-/*#include "ring.h"*/
 #include "snapshot.h"
 #include "reader.h"
 #include "writer.h"
@@ -39,38 +38,47 @@
  * for the parameter when we know exactly where it is.
  */
 
+// #define N_SNAP_PARAMS 7
+
 param_t snapshot_params[N_SNAP_PARAMS] ={
 #define SNAP_BEGIN  0
-  { "begin",     0, { "", },           PARAM_INT64, PARAM_SRC_CMD,
+  { "begin",  NULL, NULL,
+    PARAM_TYPE(int64), PARAM_SRC_CMD,
     "start time of snapshot [ns from epoch]"
   },
 #define SNAP_END  1
-  { "end",     0, { "", },             PARAM_INT64, PARAM_SRC_CMD,
+  { "end",    NULL, NULL,
+    PARAM_TYPE(int64), PARAM_SRC_CMD,
     "finish time of snapshot [ns from epoch]"
   },
 #define SNAP_START  2
-  { "start",     0, { "", },           PARAM_INT64, PARAM_SRC_CMD,
+  { "start",  NULL, NULL,
+    PARAM_TYPE(int64), PARAM_SRC_CMD,
     "start sample of snapshot"
   },
 #define SNAP_FINISH 3
-  { "finish",    0, { "", },           PARAM_INT64, PARAM_SRC_CMD,
+  { "finish", NULL, NULL,
+    PARAM_TYPE(int64), PARAM_SRC_CMD,
     "end sample of snapshot"
   },
 #define SNAP_LENGTH 4
-  { "length",    0, { "", },           PARAM_INT32, PARAM_SRC_CMD,
+  { "length", NULL, NULL,
+    PARAM_TYPE(int32), PARAM_SRC_CMD,
     "length of snapshot [samples]"
   },
 #define SNAP_COUNT  5
-  { "count",     0, { "", },           PARAM_INT32, PARAM_SRC_CMD,
+  { "count",   NULL, NULL,
+    PARAM_TYPE(int32), PARAM_SRC_CMD,
     "repeat count of snapshot"
   },
 #define SNAP_PATH  6
-  { "path",     0, { "", },            PARAM_STRING, PARAM_SRC_CMD,
+  { "path",    NULL, NULL,
+    PARAM_TYPE(string), PARAM_SRC_CMD,
     "storage path of snapshot data"
   },
 };
 
-int n_snapshot_params =	N_SNAP_PARAMS; // (sizeof(snapshot_params)/sizeof(param_t));
+const int n_snapshot_params =	N_SNAP_PARAMS; // (sizeof(snapshot_params)/sizeof(param_t));
 
 /*
  * Socket for sending log messages from writer thread
@@ -79,18 +87,10 @@ int n_snapshot_params =	N_SNAP_PARAMS; // (sizeof(snapshot_params)/sizeof(param_
 static void *wr_log;
 
 /*
- * Dirfd for the snapshot directory, i.e. where samples will be written.
+ * Writer parameter structure.
  */
 
-static int   snapdir_dirfd;
-static char *snapdir_path;
-
-/*
- * The (numerical) UID and GID to use for file creation.
- */
-
-static uid_t    wuid_nr;
-static gid_t    wgid_nr;
+wparams writer_parameters;
 
 /*
  * Debug writer parameters
@@ -105,7 +105,8 @@ void debug_writer_params() {
     return;
 
   snprintf(buf, MSGBUFSIZE,
-	   "Writer: TMPDIR=%s, SNAPDIR=%s, WUID=%d, WGID=%d\n", tmpdir_path, snapdir_path, wuid_nr, wgid_nr);
+	   "Writer: TMPDIR=%s, SNAPDIR=%s, WUID=%d, WGID=%d\n", tmpdir_path, writer_parameters.w_snapdir,
+	   writer_parameters.w_uid, writer_parameters.w_gid);
   zh_put_multi(wr_log, 1, buf);
 }
 
@@ -114,7 +115,7 @@ void debug_writer_params() {
  * necessary and making sure the ownership is correct.
  */
 
-static int new_directory(int dirfd, char *name, uid_t uid, gid_t gid) {
+static int new_directory(int dirfd, const char *name, uid_t uid, gid_t gid) {
   int ret;
   struct stat dir;
 
@@ -167,7 +168,7 @@ static void debug_snapshot_descriptor(snapw *s) {
 static int get_writer_params(snapw *s) {
   int i;
 
-  assert(n_snapshot_params <= N_SNAP_PARAMS);
+  assertv(n_snapshot_params <= N_SNAP_PARAMS, "Inconsistent snapshot parameter list size (%d vs %d)\n", n_snapshot_params, N_SNAP_PARAMS);
   for(i=0; i<n_snapshot_params; i++)
     s->params[i] = pop_param_value(&snapshot_params[i]);
 
@@ -242,14 +243,14 @@ static int build_snapshot_rd_descriptor(snapw *s, snapr *r) {
       uint64_t time_val;
       if( assign_value(snapshot_params[SNAP_BEGIN].p_type, s->params[SNAP_BEGIN], &time_val) < 0 )
 	return -6;
-      time_val -= capture_start_time; /* Time index of desired sample */
-      time_val /= inter_sample_ns;	/* Sample index of desired sample */
+      time_val -= reader_parameters.r_capture_start_time; /* Time index of desired sample */
+      time_val /= reader_parameters.r_inter_sample_ns;	/* Sample index of desired sample */
       r->first = time_val - (time_val % NCHAN); /* Fix to NCHAN boundary */
       if( !r->samples ) {			/* No length given, need end */
 	if( assign_value(snapshot_params[SNAP_END].p_type, s->params[SNAP_END], &time_val) < 0 )
 	  return -7;
-	time_val -= capture_start_time;
-	time_val /= inter_sample_ns;
+	time_val -= reader_parameters.r_capture_start_time;
+	time_val /= reader_parameters.r_inter_sample_ns;
 	r->last = time_val + ((NCHAN - (time_val % NCHAN)) % NCHAN); /* Round up to integral number of channel sweeps */
 	if(r->last <= r->first) {
 	  errno = ERANGE;
@@ -312,7 +313,7 @@ static int initialise_snapshot_buffer(snapw *s, snapr *r) {
   if(fd < 0) {
     return -15;
   }
-  ret = fchown(fd, wuid_nr, wgid_nr);
+  ret = fchown(fd, writer_parameters.w_uid, writer_parameters.w_gid);
   if(ret < 0) {
     return -16;
   }
@@ -357,7 +358,9 @@ static int build_snapshot_descriptor(snapw **sp) {
 
   /* Mandatory path: create/open a correctly-owned directory for this data */
   s->path = s->params[SNAP_PATH];
-  s->dirfd = new_directory(snapdir_dirfd, s->path, wuid_nr, wgid_nr);
+  s->dirfd = new_directory(writer_parameters.w_snap_dirfd, s->path, 
+			   writer_parameters.w_uid,
+			   writer_parameters.w_gid);
   if(s->dirfd < 0) {					     /* Give up on failure */
     return -14;
   }
@@ -383,8 +386,8 @@ static int build_snapshot_descriptor(snapw **sp) {
 static int refresh_snapshot_descriptor(snapw *s) {
   snapr *r = s->this_snap;
 
-  assert(r != NULL);
-  assert(r->count > 0);
+  assertv(r != NULL, "Got NULL pointer to work on\n");
+  assertv(r->count > 0, "Count %d not positive\n", r->count);
   r->start = NULL;
   munmap(r->mmap, r->bytes);	/* Data may actually be written out here... */
   r->mmap = NULL;
@@ -429,11 +432,11 @@ static void process_queue_message(void *socket, void *command) {
   int ret;
 
   ret = zh_get_msg(socket, 0, sizeof(snapr *), (void *)&r);
-  assert(ret == sizeof(snapr *));		/* We are expecting a message */
-  assert(r != NULL);
+  assertv(ret == sizeof(snapr *), "Queue message size wrong %d vs %d\n", ret, sizeof(snapr *));		/* We are expecting a message */
+  assertv(r != NULL, "Queue message was NULL pointer\n");
 
   s = r->parent;
-  assert(s != NULL);
+  assertv(s != NULL, "Queue message %p with null parent\n", r);
 
   /*
    * This first if() handles the case where the received command is waiting for its reply.
@@ -508,7 +511,7 @@ static void process_queue_message(void *socket, void *command) {
     else {							 /* New snapshot descriptor ready */
       s->wr_state = SNAPSHOT_REPLIED;
       ret = zh_put_msg(socket, 0, sizeof(snapr *), (void *)&r);	 /* Hand it off to Reader */
-      assert(ret > 0);
+      assertv(ret > 0, "Message to reader failed with %d\n", ret);
       return;
     }
   }
@@ -574,7 +577,7 @@ int process_writer_command(void *socket) {
     if( ret == 0 ) {		    /* Send it to the reader for queueing */
       s->wr_state = SNAPSHOT_CHECK; /* We shall reply when reader has finished with it */
       ret = zh_put_msg(wr_queue_writer, 0, sizeof(snapr *), (void *)&s->this_snap);
-      assert(ret == sizeof(snapr *));
+      assertv(ret == sizeof(snapr *), "Queue message size inconsistent, %d vs. %d\n", ret, sizeof(snapr *));
       return true;
     }
     else {
@@ -606,11 +609,11 @@ void *writer_main(void *arg) {
   void *command;
   int running;
 
-  /* Open and bind/connect the writer thread's sockets */
-  wr_log = zmq_socket(zmq_main_ctx, ZMQ_PUSH);   assert(wr_log != NULL);
-  ret = zmq_connect(wr_log, LOG_SOCKET);	 assert(ret == 0);
-  command = zmq_socket(zmq_main_ctx, ZMQ_REP);   assert(command != NULL);
-  ret = zmq_bind(command, WRITER_CMD_ADDR);	 assert(ret == 0);
+  /* Open and attach the writer thread's sockets */
+  wr_log = zh_connect_new_socket(zmq_main_ctx, ZMQ_PUSH, LOG_SOCKET);
+  assertv(wr_log != NULL, "Failed to instantiate log socket\n");
+  command = zh_connect_new_socket(zmq_main_ctx, ZMQ_REP, WRITER_CMD_ADDR);
+  assertv(command != NULL, "Failed to instantiate command socket\n");
 
   if(debug_level > 1)
     debug_writer_params();
@@ -659,17 +662,17 @@ void *writer_main(void *arg) {
  * Verify the parameters for the writer and construct the writer state.
  */
 
-int verify_writer_params(param_t ps[], int nps) {
-  param_t *p;
-  int      ret;
-  char    *wuid, *wgid;
+int verify_writer_params(wparams *wp) {
 
-  /* Deal with the snapshot directory parameter */
-  p = find_param_by_name("snapdir", 7, ps, nps);
-  assert(p != NULL);		/* Fatal if parameter not found */
+  if( wp->w_schedprio != 0 ) { /* Check for illegal value */
+    int max, min;
 
-  if( get_param_value(p, &snapdir_path) < 0 ) { /* Failed to get a value */
-    return -1;
+    min = sched_get_priority_min(SCHED_FIFO);
+    max = sched_get_priority_max(SCHED_FIFO);
+    if(wp->w_schedprio < min || wp->w_schedprio > max) {
+      errno = ERANGE;
+      return -1;
+    }
   }
 
   /* Compute the UID and GID for file creation.
@@ -679,46 +682,46 @@ int verify_writer_params(param_t ps[], int nps) {
    * the uid from there too.  If neither is set, use the real uid/gid
    * of the thread.
    */
-  
+#if 0  
   p = find_param_by_name("gid", 3, ps, nps);
   assert(p != NULL);		/* Fatal if parameter not found */
 
   errno = 0;
-  wgid_nr = -1;
+  wp->w_gid = -1;
   if( get_param_value(p, &wgid) == 0 ) { /* Got a GID value */
     struct group *grp = getgrnam(wgid);
 
     if(grp == NULL)		/* The WGID name was invalid  */
       return -2;
-    wgid_nr = grp->gr_gid;
+    wp->w_gid = grp->gr_gid;
   }
 
   p = find_param_by_name("uid", 3, ps, nps);
   assert(p != NULL);		/* Fatal if parameter not found */
 
   errno = 0;
-  wuid_nr = -1;
+  wp->w_uid = -1;
   if( get_param_value(p, &wuid) == 0 ) { /* Got a UID value */
     struct passwd *pwd = getpwnam(wuid);
 
     if(pwd == NULL)		/* The WUID name was invalid */
       return -3;
-    wuid_nr = pwd->pw_uid;	/* Use this user's UID */
-    if( wgid_nr < 0 )
-      wgid_nr = pwd->pw_gid;	/* Use this user's principal GID */
+    wp->w_uid = pwd->pw_uid;	/* Use this user's UID */
+    if( wp->w_gid < 0 )
+      wp->w_gid = pwd->pw_gid;	/* Use this user's principal GID */
   }
   else {
-    wuid_nr = getuid();		/* Use the real UID of this thread */
-    wgid_nr = getgid();		/* Use the real GID of this thread */
+    wp->w_uid = getuid();		/* Use the real UID of this thread */
+    wp->w_gid = getgid();		/* Use the real GID of this thread */
   }
-  
+#endif  
   /*
    * Check the snapdir directory exists and is correctly owned, and
    * get a path fd for it.
    */
 
-  snapdir_dirfd = new_directory(tmpdir_dirfd, snapdir_path, wuid_nr, wgid_nr);
-  if( snapdir_dirfd < 0 )	/* Give up on failure */
+  wp->w_snap_dirfd = new_directory(tmpdir_dirfd, wp->w_snapdir, wp->w_uid, wp->w_gid);
+  if( wp->w_snap_dirfd < 0 )	/* Give up on failure */
     return -4;
 
   return 0;

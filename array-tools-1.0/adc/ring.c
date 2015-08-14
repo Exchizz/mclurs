@@ -30,7 +30,7 @@
  * Create and mmap() the ring buffer pages
  */
 
-struct readbuf *create_ring_buffer(int size, char *tmpdir) {
+struct readbuf *create_ring_buffer(int size, const char *tmpdir) {
   int fd;
   size_t sz;
   void *map;

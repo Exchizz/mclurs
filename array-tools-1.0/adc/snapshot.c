@@ -7,6 +7,8 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <argtable2.h>
+#include "argtab.h"
 
 #include <zmq.h>
 #include <pthread.h>
@@ -14,7 +16,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
-#include <assert.h>
+#include "assert.h"
 #include <sched.h>
 
 #include <comedi.h>
@@ -32,76 +34,160 @@
  */
 
 #define PROGRAM_VERSION	"1.1"
+#define VERSION_VERBOSE_BANNER	"MCLURS ADC toolset...\n"
 
 /*
  * Global parameters for the snapshot program
  */
 
+extern rparams     reader_parameters;
+extern wparams	   writer_parameters;
+extern const char *tmpdir_path;
+static const char *snapshot_addr;
+static const char *snapshot_user;
+static const char *snapshot_group;
+static int	   schedprio;
+
 param_t globals[] ={
-  { "tmpdir",     1, { "/tmp", },           PARAM_STRING, PARAM_SRC_ENV|PARAM_SRC_ARG,
+  { "tmpdir",   "/tmp",  &tmpdir_path,
+    PARAM_TYPE(string), PARAM_SRC_ENV|PARAM_SRC_ARG,
     "directory for creation of temporary files"
   },
-  { "freq",       1, { "312.5e3", },          PARAM_DOUBLE, PARAM_SRC_ENV|PARAM_SRC_ARG|PARAM_SRC_CMD,
+  { "freq",     "312.5e3", &reader_parameters.r_frequency,
+    PARAM_TYPE(double), PARAM_SRC_ENV|PARAM_SRC_ARG|PARAM_SRC_CMD,
     "sampling frequency (divided by 8) of the ADC [Hz]"
   },
-  { "snapshot",   1, { "ipc://snapshot-CMD", }, PARAM_STRING, PARAM_SRC_ENV|PARAM_SRC_ARG,
+  { "snapshot", "ipc://snapshot-CMD", &snapshot_addr,
+    PARAM_TYPE(string), PARAM_SRC_ENV|PARAM_SRC_ARG,
     "address of snapshot command socket"
   },
-  { "snapdir",    1, { "snap", },              PARAM_STRING, PARAM_SRC_ENV|PARAM_SRC_ARG,
+  { "snapdir",  "snap", &writer_parameters.w_snapdir,
+    PARAM_TYPE(string), PARAM_SRC_ENV|PARAM_SRC_ARG/*|PARAM_SRC_CMD*/,
     "directory where samples are written"
   },
-  { "dev",	  1, { "/dev/comedi0", },   PARAM_STRING, PARAM_SRC_ENV|PARAM_SRC_ARG,
+  { "dev",	"/dev/comedi0", &reader_parameters.r_device,
+    PARAM_TYPE(string), PARAM_SRC_ENV|PARAM_SRC_ARG,
     "the Comedi device to open"
   },
-  { "bufsz",	  1, { "32", },             PARAM_INT32,  PARAM_SRC_ENV|PARAM_SRC_ARG|PARAM_SRC_CMD,
+  { "bufsz",	"32", &reader_parameters.r_bufsz,
+    PARAM_TYPE(int32),  PARAM_SRC_ENV|PARAM_SRC_ARG|PARAM_SRC_CMD,
     "size of the Comedi buffer [MiB]"
   },
-  { "window",	  1, { "10", },             PARAM_INT32,  PARAM_SRC_ENV|PARAM_SRC_ARG|PARAM_SRC_CMD,
+  { "window",	"10", &reader_parameters.r_window,
+    PARAM_TYPE(double),  PARAM_SRC_ENV|PARAM_SRC_ARG|PARAM_SRC_CMD,
     "size of the ring buffer [s]"
   },
-  { "rtprio",	  0, { "", },		    PARAM_INT32,  PARAM_SRC_ENV|PARAM_SRC_ARG,
+  { "rtprio",	NULL, &schedprio,
+    PARAM_TYPE(int32),  PARAM_SRC_ENV|PARAM_SRC_ARG,
     "priority of real-time threads [0-99]"
   },
-  { "rdprio",	  0, { "", },		    PARAM_INT32,  PARAM_SRC_ENV|PARAM_SRC_ARG,
+  { "rdprio",	NULL, &reader_parameters.r_schedprio,
+    PARAM_TYPE(int32),  PARAM_SRC_ENV|PARAM_SRC_ARG,
     "priority of real-time reader thread [0-99]"
   },
-  { "wrprio",	  0, { "", },		    PARAM_INT32,  PARAM_SRC_ENV|PARAM_SRC_ARG,
+  { "wrprio",	NULL, &writer_parameters.w_schedprio,
+    PARAM_TYPE(int32),  PARAM_SRC_ENV|PARAM_SRC_ARG,
     "priority of real-time writer thread [0-99]"
   },
-  { "uid",	  0, { "", },		    PARAM_STRING, PARAM_SRC_ENV|PARAM_SRC_ARG,
-    "the UID for file system access and creation"
+  { "user",	NULL, &snapshot_user,
+    PARAM_TYPE(string), PARAM_SRC_ENV|PARAM_SRC_ARG,
+    "the user/UID for file system access and creation"
   },
-  { "gid",	  0, { "", },		    PARAM_STRING, PARAM_SRC_ENV|PARAM_SRC_ARG,
-    "the GID for file system access and creation"
+  { "group",	NULL, &snapshot_group,
+    PARAM_TYPE(string), PARAM_SRC_ENV|PARAM_SRC_ARG,
+    "the group/GID for file system access and creation"
   },
-  { "permu",	  1, { "500", },	    PARAM_INT32, PARAM_SRC_ENV|PARAM_SRC_ARG,
+  { "permu",	"500", 0,
+    PARAM_TYPE(int32), PARAM_SRC_ENV|PARAM_SRC_ARG,
     "the proportion of the ADC buffer to wait, in millionths"
   },
 };
 
-int n_global_params =	(sizeof(globals)/sizeof(param_t));
+const int n_global_params =	(sizeof(globals)/sizeof(param_t));
 
 /*
  * Debugging print out control
  */
 
-int debug_level = 0;
+int   debug_level = 0;
+int   verbose;
 char *program   = NULL;
+
+/* Command line syntax options -- there are no mandatory arguments on the main command line! */
+
+struct arg_lit *h1, *vn1, *v1, *q1;
+struct arg_end *e1;
+
+BEGIN_CMD_SYNTAX(help) {
+  v1  = arg_litn("v",	"verbose", 0, 3,	"Increase verbosity"),
+  q1  = arg_lit0("q",  "quiet",			"Decrease verbosity"),
+  h1  = arg_lit0("h",	"help",			"Print usage help message"),
+  vn1 = arg_lit0(NULL,	"version",		"Print program version string"),
+  e1  = arg_end(20)
+} APPLY_CMD_DEFAULTS(help) {
+  /* No defaults to apply here */
+} END_CMD_SYNTAX(help)
+
+struct arg_lit *v2, *q2;
+struct arg_end *e2;
+struct arg_str *u2;
+
+BEGIN_CMD_SYNTAX(main) {
+  v2  = arg_litn("v",	"verbose", 0, 3,	"Increase verbosity"),
+  q2  = arg_lit0("q",  "quiet",			"Decrease verbosity"),
+  u2  = arg_str0("s",  "snapshot", "<url>",     "URL of snapshotter command socket"),
+  e2  = arg_end(20)
+} APPLY_CMD_DEFAULTS(main) {
+  INCLUDE_PARAM_DEFAULTS(globals, n_global_params);
+} END_CMD_SYNTAX(main);
+
+/* Standard help routines: display the version banner */
+void print_version(FILE *fp, int verbosity) {
+  fprintf(fp, "%s: Vn. %s\n", program, PROGRAM_VERSION);
+  if(verbosity > 0) {		/* Verbose requested... */
+    fprintf(fp, VERSION_VERBOSE_BANNER);
+  }
+}
+
+/* Standard help routines: display the usage summary for a syntax */
+void print_usage(FILE *fp, void **argtable, int verbosity, char *program) {
+  if( !verbosity ) {
+    fprintf(fp, "Usage: %s ", program);
+    arg_print_syntax(fp, argtable, "\n");
+    return;
+  }
+  if( verbosity ) {
+    char *suffix = verbosity>1? "\n\n" : "\n";
+    fprintf(fp, "Usage: %s ", program);
+    arg_print_syntaxv(fp, argtable, suffix);
+    if( verbosity > 1 )
+      arg_print_glossary(fp, argtable, "%-25s %s\n");
+  }
+}
+
+/*
+ * Snapshot globals for this file.
+ */
+
+static const char *snapshot_addr = NULL;  /* The address of the main command socket */
+static const char *snapshot_user = NULL;  /* The user we should run as, after startup */
+static const char *snapshot_group = NULL; /* The group to run as, after startup */
+static int	   schedprio;		  /* Real-time priority for reader and writer */
 
 /*
  * Snapshot globals shared between threads
  */
 
-void      *zmq_main_ctx;	/* ZMQ context for messaging */
+void       *zmq_main_ctx;	/* ZMQ context for messaging */
 
-int	   reader_thread_running, /* For cleanly stopping main loop */
-	   writer_thread_running;
+int	    reader_thread_running, /* For cleanly stopping main loop */
+	    writer_thread_running;
 
-int	   tmpdir_dirfd;	/* The file descriptor obtained for the TMPDIR directory */
-char      *tmpdir_path;		/* The path for the file descriptor above */
+int	    tmpdir_dirfd;	/* The file descriptor obtained for the TMPDIR directory */
+const char *tmpdir_path;		/* The path for the file descriptor above */
 
-void      *wr_queue_reader;	/* Pipe between Reader and Writer for queue handling */
-void      *wr_queue_writer;
+void       *wr_queue_reader;	/* Pipe between Reader and Writer for queue handling */
+void       *wr_queue_writer;
 
 /*
  * Thread handles for reader and writer
@@ -143,54 +229,6 @@ void process_log_message(void *socket) {
     fwrite(log_buffer, used, 1, stderr);
   }
   fflush(stderr);
-}
-
-/*
- * Display usage summary
- */
-
-void usage() {
-  char buf[1024];
-
-  fprintf(stderr, "%s $s\n\n", program, PROGRAM_VERSION);
-  fprintf(stderr, "Usage: ");
-  param_brief_usage(&buf[0], 1024, globals, n_global_params);
-  fprintf(stderr, "%s [-vqh] %s\n", program, &buf[0]);
-
-  if(debug_level >= 1) {
-    fprintf(stderr, "\n");
-    fprintf(stderr, "    -v : increase verbosity\n");
-    fprintf(stderr, "    -q : decrease verbosity\n");
-    fprintf(stderr, "    -h : display usage message\n");
-    fprintf(stderr, "    -V : display program version\n");
-    param_option_usage(stderr, 4, globals, n_global_params);
-  }
-}
-
-/*
- * Option handling code
- */
-
-int opt_handler(int c, char *arg) {
-  switch(c) {
-  case 'v':
-    debug_level++;
-    return 0;
-
-  case 'q':
-    debug_level--;
-    return 0;
-
-  case 'h':
-    usage();
-    exit(0);
-
-  case 'V':
-    fprintf(stderr, "%s: %s\n", program, PROGRAM_VERSION);
-    exit(0);
-  }
-
-  return -1;
 }
 
 /*
@@ -290,52 +328,73 @@ int main(int argc, char *argv[], char *envp[]) {
   char *cmd_addr;
   param_t *p;
 
+  program = argv[0];
+
   /* Set up the standard parameters */
   /* 1. Process parameters:  internal default, environment, then command-line argument. */
   push_param_from_env(envp, globals, n_global_params);
-  program = argv[0];
-  ret = getopt_long_params(argc, argv, "vqhV", globals, n_global_params, opt_handler);
-  if( ret < 0 ) {
-    if(errno)
-      fprintf(stderr, "Problem handling arguments: %s\n", strerror(errno));
+
+  /* 2. Process parameters:  push values out to program globals */
+  ret = assign_param_values(globals, n_global_params);
+  assertv(ret == n_global_params, "Push parameters missing some %d/%d done\n", ret, n_global_params); /* If not, there is a coding problem */
+
+  /* 3. Create and parse the command lines -- installs defaults from parameter table */
+  void **cmd_help = arg_make_help();
+  void **cmd_main = arg_make_main();
+
+  /* Try first syntax -- reject empty command lines */
+  int err_help = arg_parse(argc, argv, cmd_help);
+  if( !err_help && (vn1->count || h1->count) ) {	/* Assume this was the desired command syntax */
+    if(vn1->count)
+      print_version(stdout, v1->count);
+    if(h1->count || !vn1->count) {
+      print_usage(stdout, cmd_help, v1->count>0, program);
+      print_usage(stdout, cmd_main, v1->count, program);
+    }
+    exit(0);
+  }
+
+  /* Try second syntax -- may be empty, means use default or environment variable parameters */
+  int err_main = arg_parse(argc, argv, cmd_main);
+  if( err_main ) {		/* This is the default desired syntax; give full usage */
+    arg_print_errors(stderr, e2, program);
+    print_usage(stderr, cmd_help, v2->count>0, program);
+    print_usage(stderr, cmd_main, v2->count, program);
     exit(1);
   }
 
-  if(debug_level > 1)		/* Dump global parameters for debugging purposes */
-    debug_params(globals, n_global_params);
+  /* 4. Process parameters:  copy argument values back through the parameter table */
+  ret = arg_results_to_params(cmd_main, globals, n_global_params);
 
-  /* Set up the standard parameters */
-  /* 2. Verify parameters required by the main program/thread */
-  p = find_param_by_name("snapshot", 8, globals, n_global_params);
-  assert(p != NULL);         /* Fatal if parameter not found */
-  if( get_param_value(p, &cmd_addr) < 0 ) {
-    fprintf(stderr, "%s: Cannot get value for snapshot address parameter\n", program);
-    exit(2);
-  }
+  /* 5. Process parameters:  deal with non-parameter table arguments where necessary */
 
-  p = find_param_by_name("tmpdir", 6, globals, n_global_params);
-  assert(p != NULL);         /* Fatal if parameter not found */
-  if( get_param_value(p, &tmpdir_path) < 0 ) {
-    fprintf(stderr, "%s: Cannot get value for TMPDIR parameter\n", program);
-    exit(2);
-  }
+  if(verbose > 2)		/* Dump global parameters for debugging purposes */
+    debug_params(stderr, globals, n_global_params);
+
+  /* 5. Process parameters:  deal with non-parameter table arguments where necessary */
+
+  exit(0);
+
+  /* 5a. Verify parameters required by the main program/thread */
   tmpdir_dirfd = open(tmpdir_path, O_PATH|O_DIRECTORY); /* Verify the TMPDIR path */
   if( tmpdir_dirfd < 0 ) {
     fprintf(stderr, "%s: Cannot access given TMPDIR '%s': %s\n", program, tmpdir_path, strerror(errno));
     exit(2);
   }
 
-  /* Set up the standard parameters */
-  /* 3. Verify and initialise parameters for the reader thread */
-  ret = verify_reader_params(globals, n_global_params);
+   /* 5b. Verify and initialise parameters for the reader thread */
+  if( !reader_parameters.r_schedprio )
+    reader_parameters.r_schedprio = schedprio;
+  ret = verify_reader_params(&reader_parameters);
   if( ret < 0 ) {
     fprintf(stderr, "Reader parameter checks failed at step %d: %s\n", -ret, strerror(errno));
     exit(2);
   }
 
-  /* Set up the standard parameters */
-  /* 4. Verify and initialise parameters for the writer thread */
-  ret = verify_writer_params(globals, n_global_params);
+  /* 5c. Verify and initialise parameters for the writer thread */
+  if( !writer_parameters.w_schedprio)
+    writer_parameters.w_schedprio = schedprio;
+  ret = verify_writer_params(&writer_parameters);
   if( ret < 0 ) {
     fprintf(stderr, "Writer parameter checks failed at step %d: %s\n", -ret, strerror(errno));
     exit(2);
@@ -349,52 +408,34 @@ int main(int argc, char *argv[], char *envp[]) {
   }
 
   /* Create and initialise the sockets: LOG socket */
-  log_socket = zmq_socket(zmq_main_ctx, ZMQ_PULL);
+  log_socket = zh_bind_new_socket(zmq_main_ctx, ZMQ_PULL, LOG_SOCKET);
   if( log_socket == NULL ) {
     fprintf(stderr, "Unable to create internal log socket: %s\n", strerror(errno));
     exit(2);
   }
-  ret = zmq_bind(log_socket, LOG_SOCKET);
-  if( ret < 0) {
-    fprintf(stderr, "Binding internal log socket failed: %s\n", strerror(errno));
-    exit(2);
-  }
 
   /* Create and initialise the sockets: reader and writer command sockets */
-  reader = zmq_socket(zmq_main_ctx, ZMQ_REQ);
+  reader = zh_bind_new_socket(zmq_main_ctx, ZMQ_REQ, READER_CMD_ADDR);
   if( reader == NULL ) {
     fprintf(stderr, "Unable to create internal socket to reader: %s\n", strerror(errno));
     exit(2);
   }
-  writer = zmq_socket(zmq_main_ctx, ZMQ_REQ);
+  writer = zh_bind_new_socket(zmq_main_ctx, ZMQ_REQ, WRITER_CMD_ADDR);
   if( writer == NULL ) {
     fprintf(stderr, "Unable to create internal socket to writer: %s\n", strerror(errno));
     exit(2);
   }
 
   /* Create and initialise the sockets: reader-writer pipe for write queue */
-  wr_queue_reader = zmq_socket(zmq_main_ctx, ZMQ_PAIR);
-  if( wr_queue_reader == NULL ) {
-    fprintf(stderr, "Unable to create internal socket to writer: %s\n", strerror(errno));
-    exit(2);
-  }
-
-  wr_queue_writer = zmq_socket(zmq_main_ctx, ZMQ_PAIR);
+  wr_queue_writer = zh_bind_new_socket(zmq_main_ctx, ZMQ_PAIR, WRITE_QUEUE);
   if( wr_queue_writer == NULL ) {
     fprintf(stderr, "Unable to create internal socket to writer: %s\n", strerror(errno));
     exit(2);
   }
 
-  /* Create and initialise the sockets: connect the reader-writer pipe for write queue */
-  ret = zmq_bind(wr_queue_writer, WRITE_QUEUE);
-  if( ret < 0 ) {
-    fprintf(stderr, "Binding internal write queue (writer) socket failed: %s\n", strerror(errno));
-    exit(2);
-  }
-
-  ret = zmq_connect(wr_queue_reader, WRITE_QUEUE);
-  if( ret < 0 ) {
-    fprintf(stderr, "Connecting internal write queue (reader) socket failed: %s\n", strerror(errno));
+  wr_queue_reader = zh_connect_new_socket(zmq_main_ctx, ZMQ_PAIR, WRITE_QUEUE);
+  if( wr_queue_reader == NULL ) {
+    fprintf(stderr, "Unable to create internal socket to writer: %s\n", strerror(errno));
     exit(2);
   }
 
@@ -414,29 +455,10 @@ int main(int argc, char *argv[], char *envp[]) {
     exit(2);
   }
 
-  /* Connect the sockets to talk to the threads */
-  ret = zmq_connect(reader, READER_CMD_ADDR);
-  if( ret < 0) {
-    fprintf(stderr, "Connecting internal reader socket failed: %s\n", strerror(errno));
-    exit(2);
-  }
-  ret = zmq_connect(writer, WRITER_CMD_ADDR);
-  if( ret < 0) {
-    fprintf(stderr, "Connecting internal writer socket failed: %s\n", strerror(errno));
-    exit(2);
-  }
-
   /* Create and initialise the sockets: command socket */
-  command = zmq_socket(zmq_main_ctx, ZMQ_REP);
+  command = zh_bind_new_socket(zmq_main_ctx, ZMQ_REP, snapshot_addr);
   if( command == NULL ) {
-    fprintf(stderr, "Unable to create external command socket: %s\n", strerror(errno));
-    exit(2);
-  }
-
-  /* Bind the socket to enable command reception */
-  ret = zmq_bind(command, cmd_addr);
-  if( ret < 0) {
-    fprintf(stderr, "%s: Binding snapshot socket to %s failed: %s\n", program, cmd_addr, strerror(errno));
+    fprintf(stderr, "Unable to create external command socket %s: %s\n", snapshot_addr, strerror(errno));
     exit(2);
   }
 

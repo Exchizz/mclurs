@@ -2,7 +2,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <assert.h>
+#include "assert.h"
 #include <time.h>
 #include <sys/time.h>
 #include <sys/resource.h>
@@ -37,6 +37,8 @@
 #define USBDUXFAST_COMEDI_500mV	1 /* Bit 3 control output is 0 iff the CR_RANGE is one */
 #define USBDUXFAST_COMEDI_750mV	0 /* Bit 3 control output is 1 iff the CR_RANGE is zero */
 
+rparams reader_parameters;	/* The externally-visible parameters for the reader thread */
+
 struct comedi_state
 { comedi_t  *device;		/* The Comedi device handle */
   int	     devflags;		/* Comedi device flags */
@@ -57,19 +59,19 @@ struct comedi_state
 };
 
 struct reader_state
-{ int	     rtprio;		/* Thread RT priority */
-  char      *comedi_device;	/* The Comedi device to use */
-  unsigned   bufsz;		/* Comedi streaming buffer target size [pages] */
-  unsigned   ringsz;		/* Ring buffer target size [pages] */
-  int	     sample_ns;		/* The ADC inter-sample interval [ns] */
-  int	     adc_run;		/* Is the ADC capture running? */
-  int	     state;		/* The state of the reader (READER_PARAM, READER_RESTING, READER_RUN, ...) */
-  int	     stoploop;		/* Reader main loop runs when this is false */
-  int	     poll_delay;	/* Delay interval during main reactor loop [ms] */
-  int        permu;		/* Millionths of the ADC buffer represented by the poll_delay */
-  void	    *command;		/* Command socket */
-  void	    *position;		/* Position reporting socket */
-  void	    *rd_log;		/* Reader logging socket */
+{ int	      rtprio;		/* Thread RT priority */
+  const char *comedi_device;	/* The Comedi device to use */
+  unsigned    bufsz;		/* Comedi streaming buffer target size [pages] */
+  unsigned    ringsz;		/* Ring buffer target size [pages] */
+  int	      sample_ns;	/* The ADC inter-sample interval [ns] */
+  int	      adc_run;		/* Is the ADC capture running? */
+  int	      state;		/* The state of the reader (READER_PARAM, READER_RESTING, READER_RUN, ...) */
+  int	      stoploop;		/* Reader main loop runs when this is false */
+  int	      poll_delay;	/* Delay interval during main reactor loop [ms] */
+  int         permu;		/* Millionths of the ADC buffer represented by the poll_delay */
+  void	     *command;		/* Command socket */
+  void	     *position;		/* Position reporting socket */
+  void	     *rd_log;		/* Reader logging socket */
 };
 
 /*
@@ -115,13 +117,6 @@ struct reader_state
 #define	READER_RESTING	2	/* Reader is ready, Comedi and mmap setup has been done */
 #define	READER_ARMED	3	/* The ADC has been started */
 #define READER_RUN	4	/* Data from the ADC has been seen in the buffers */
-
-/*
- * Reader public state variables
- */
-
-int       inter_sample_ns;		/* Inter-sample period [ns], needed by the writer */
-uint64_t  capture_start_time;		/* Start of data, [ns from epoch]: i.e. timestamp of sample 0 */
 
 /*
  * Reader internal state variables
@@ -196,7 +191,7 @@ static int comedi_transfer_initialise() {
 
   /* Initialise the command structure */
   ret = comedi_get_cmd_generic_timed(adc.device, 0, cmd, N_USBDUX_CHANS, 0);
-  assert(ret == 0);
+  assertv(ret == 0, "Unable to initialise a Comedi command structure: %s\n", comedi_strerror(comedi_errno()));
 
   /* Inter-channel sample period [ns] */
   adc.sample_ns = reader.sample_ns;
@@ -335,8 +330,8 @@ static int comedi_stop_data_transfer() {
   close(adc.fd);
   comedi_close(adc.device);
   destroy_ring_buffer(adc.ring_buf);
-  inter_sample_ns = 0;
-  capture_start_time = 0;
+  reader_parameters.r_inter_sample_ns = 0;
+  reader_parameters.r_capture_start_time = 0;
   reader.state = READER_PARAM;
   reader.adc_run = 0;
   reader.poll_delay = -1;	/* No data expected */
@@ -356,8 +351,8 @@ static void compute_data_start_timestamp(struct timespec *ts, int ns) {
   timestamp_ns = ts->tv_sec;
   timestamp_ns = timestamp_ns * 1000000000 + ts->tv_nsec;
   timestamp_ns -= delay;
-  inter_sample_ns = adc.sample_ns;
-  capture_start_time = timestamp_ns;
+  reader_parameters.r_inter_sample_ns = adc.sample_ns;
+  reader_parameters.r_capture_start_time = timestamp_ns;
 } 
 
 /*
@@ -413,7 +408,7 @@ void process_reader_command() {
 	break;
       }
       /* Otherwise, succeeded in updating parameters */
-      ret = verify_reader_params(globals, n_global_params);
+      ret = verify_reader_params(&reader_parameters);
       if( ret < 0 ) { 
         snprintf(err_buf, COMMAND_BUFSIZE, "Verify error at step %d: %s", -ret, strerror(errno));
         err = err_buf;
@@ -423,7 +418,7 @@ void process_reader_command() {
     zh_put_multi(reader.command, 1, "OK Param");
     reader.state = READER_PARAM;
     if(debug_level > 1)
-      debug_params(globals, n_global_params);
+      debug_params(stderr, globals, n_global_params);
     return;
 
   case 'i':
@@ -432,7 +427,7 @@ void process_reader_command() {
       err = "Init issued but not in PARAM state";
       break;
     }
-    ret = verify_reader_params(globals, n_global_params);
+    ret = verify_reader_params(&reader_parameters);
     if( ret < 0 ) { 
       snprintf(err_buf, COMMAND_BUFSIZE, "Param verify error at step %d: %s", -ret, strerror(errno));
       err = err_buf;
@@ -535,7 +530,7 @@ static void process_ready_write_queue_item(snapr *r) {
   r->rd_state = SNAPSHOT_WRITTEN;
   r->count--;						/* Completed 1 snapshot */
   ret = zh_put_msg(wr_queue_reader, 0, sizeof(snapr *), &r);  /* Reply, and return block to writer */
-  assert(ret > 0);
+  assertv(ret > 0, "Failed to send message to writer\n");
   print_rusage();
 }
 
@@ -552,8 +547,8 @@ static void process_queue_message(void *socket) {
   snapr *r = NULL;
 
   ret = zh_get_msg(socket, 0, sizeof(snapr *), (void *)&r);
-  assert(ret == sizeof(snapr *));
-  assert(r != NULL);
+  assertv(ret == sizeof(snapr *), "Reader receives wrongly sized message: %d got vs %d expected\n", ret, sizeof(snapr *));
+  assertv(r != NULL, "Received NULL pointer from writer\n");
 
   if(reader.state != READER_ARMED && reader.state != READER_RUN) {
     r->rd_state = SNAPSHOT_STOPPED; /* Snapshot fine but cannot do it */
@@ -580,7 +575,7 @@ static void process_queue_message(void *socket) {
 
   /* An error was detected:  reply now */
   ret = zh_put_msg(socket, 0, sizeof(snapr *), (void *)&r); /* Send reply */
-  assert(ret > 0);
+  assertv(ret > 0, "Failed to send message to writer\n");
 }
 
 /*
@@ -596,17 +591,10 @@ void *reader_main(void *arg) {
   char *thread_msg = "thread exit";
 
   /* Create necessary sockets */
-  reader.command  = zmq_socket(zmq_main_ctx, ZMQ_REP); /* Receive commands */
-  assert(reader.command != NULL);
-  reader.position = zmq_socket(zmq_main_ctx, ZMQ_PUB); /* Publish data block acquisitions */
-  assert(reader.position != NULL); 
-  reader.rd_log   = zmq_socket(zmq_main_ctx, ZMQ_PUSH);/* Socket for log messages */
-  assert(reader.rd_log != NULL);   
-
-  /* Bind/connect the various sockets */
-  ret = zmq_bind(reader.command,  READER_CMD_ADDR);  assert(ret == 0);
-  ret = zmq_bind(reader.position, READER_POS_ADDR);  assert(ret == 0);
-  ret = zmq_connect(reader.rd_log, LOG_SOCKET);      assert(ret == 0);
+  reader.command  = zh_connect_new_socket(zmq_main_ctx, ZMQ_REP, READER_CMD_ADDR); /* Receive commands */
+  assertv(reader.command != NULL, "Failed to instantiate reader command socket\n");
+  reader.rd_log   = zh_connect_new_socket(zmq_main_ctx, ZMQ_PUSH, LOG_SOCKET);     /* Socket for log messages */
+  assertv(reader.rd_log != NULL, "Failed to instantiate reader log socket\n");
 
   reader.stoploop = false;
   reader.poll_delay = -1;
@@ -626,7 +614,7 @@ void *reader_main(void *arg) {
 
   struct timespec test_stamp;
   ret = clock_gettime(CLOCK_MONOTONIC, &test_stamp);
-  assert(ret == 0);  
+  assertv(ret == 0, "Failed to get monotonic clock time\n");  
 
   /* Main loop:  read messages and process messages */
   zmq_pollitem_t  poll_list[] =
@@ -683,7 +671,7 @@ void *reader_main(void *arg) {
 	(*adc.convert)(out, in, ns);    /* Copy the data from in to out with LUT conversion */
 	adc.tail += ns;			/* Processed this many new samples */
 	ret = comedi_mark_buffer_read(adc.device, 0, nb);
-	assert(ret == nb);
+	assertv(ret == nb, "Comedi mark_buffer_read returned %d instead of %d\n", ret, nb);
       }
     }
 
@@ -727,45 +715,25 @@ void *reader_main(void *arg) {
  * Verify reader parameters and generate reader state description.
  */ 
 
-int verify_reader_params(param_t ps[], int nps) {
-  param_t *p;
-  char *v;
+int verify_reader_params(rparams *rp) {
 
-  if( reader.rtprio <= 0 ) {	/* We have not done this yet (or it was not set) */
-    int pri, max, min;
+  if( rp->r_schedprio != 0 ) { /* Check for illegal value */
+    int max, min;
 
-    p = find_param_by_name("rtprio", 6, ps, nps);
-    assert( p != NULL );		/* Fatal if parameter not found */
-
-    if( get_param_value(p, &v) == 0 ) { /* RTPRIO value set */
-      if( assign_value(p->p_type, v, &pri) < 0 )
-	return -1;
-      min = sched_get_priority_min(SCHED_FIFO);
-      max = sched_get_priority_max(SCHED_FIFO);
-      if( pri < min || pri > max ) {
-	errno = ERANGE;
-	return -1;
-      }
-      /* Got a valid scheduling priority */
-      reader.rtprio = pri;
+    min = sched_get_priority_min(SCHED_FIFO);
+    max = sched_get_priority_max(SCHED_FIFO);
+    if(rp->r_schedprio < min || rp->r_schedprio > max) {
+      errno = ERANGE;
+      return -1;
     }
   }
 
-  p = find_param_by_name("freq", 4, ps, nps);
-  assert( p != NULL );		/* Fatal if parameter not found */
-
-  if( get_param_value(p, &v) == 0 ) { /* FREQ value set */
-    double freq;
-    int ns;
-
-    if( assign_value(p->p_type, v, &freq) < 0 )
-      return -2;
-    if( freq < 6e4 || freq > 3.75e5 ) {
-      errno = ERANGE;
-      return -2;
-    }
-    /* Got a credible sampling frequency */
-    ns = 1e9 / (freq*NCHAN); /* Inter-sample period */
+  if(rp->r_frequency < 6e4 || rp->r_frequency > 3.75e5) {
+    errno = ERANGE;
+    return -2;
+  }
+  else {
+    int ns = 1e9 / (rp->r_frequency*NCHAN); /* Inter-sample period */
     /* Correct for 30[MHz] USBDUXfast clock rate */
     reader.sample_ns = 100 * (ns / 100);
     if( (ns % 100) > 17 && (ns % 100) < 50 )
@@ -774,58 +742,27 @@ int verify_reader_params(param_t ps[], int nps) {
       reader.sample_ns += 67;
     if( (ns & 100) >= 84 )
       reader.sample_ns += 100;
-    inter_sample_ns = reader.sample_ns; /* Need a plausible value at all times for computing snapshot data */
-  }
-  else {
-    return -2;
+    rp->r_inter_sample_ns = reader.sample_ns; /* Need a plausible value at all times for computing snapshot data */
+    rp->r_frequency = 1e9 / reader.sample_ns;
   }
 
-  p = find_param_by_name("window", 6, ps, nps);
-  assert( p != NULL );		/* Fatal if parameter not found */
-
-  if( get_param_value(p, &v) == 0 ) { /* WINDOW value set */
-    int window;
-    double page;
-
-    if( assign_value(p->p_type, v, &window) < 0 )
-      return -3;
-    if( window < 1 || window > 15 ) {
-      errno = ERANGE;
-      return -3;
-    }
-    /* Got a reasonable window, i.e. ring buffer size */
-    page = 1e-9 * reader.sample_ns * sysconf(_SC_PAGESIZE) / sizeof(sampl_t); /* Duration of a page [ns] */
-    reader.ringsz = (window + 2) / page;
-  }
-  else {
+  if(rp->r_window < 1 || rp->r_window > 30) {
+    errno = ERANGE;
     return -3;
   }
+  /* Got a reasonable window, i.e. ring buffer size */
+  long page = 1e-9 * reader.sample_ns * sysconf(_SC_PAGESIZE) / sizeof(sampl_t); /* Duration of a page [ns] */
+  reader.ringsz = (rp->r_window + 2) / page;
 
-  p = find_param_by_name("bufsz", 5, ps, nps);
-  assert( p != NULL );		/* Fatal if parameter not found */
-
-  if( get_param_value(p, &v) == 0 ) { /* WINDOW value set */
-    int bufsz;
-
-    if( assign_value(p->p_type, v, &bufsz) < 0 )
-      return -3;
-    if( bufsz < 8 || bufsz > 256 ) {
-      errno = ERANGE;
-      return -3;
-    }
-    /* Got a reasonable Comedi buffer size */
-    reader.bufsz = bufsz;
-  }
-  else {
+  if(rp->r_bufsz < 8 || rp->r_bufsz > 256) {
+    errno = ERANGE;
     return -3;
   }
+  reader.bufsz = rp->r_bufsz;
 
-  p = find_param_by_name("dev", 3, ps, nps);
-  assert( p != NULL );		/* Fatal if parameter not found */
+  reader.comedi_device = rp->r_device;
 
-  if( get_param_value(p, &reader.comedi_device) < 0 ) /* Device value failed */
-    return -4;
-
+#if 0
   p = find_param_by_name("permu", 5, ps, nps);
   assert( p != NULL );		/* Fatal if parameter not found */
 
@@ -855,7 +792,7 @@ int verify_reader_params(param_t ps[], int nps) {
   else {
     return -5;
   }
-
+#endif
   reader.state = READER_PARAM;
   return 0;
 }
