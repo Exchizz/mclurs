@@ -3,12 +3,53 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
-
-#include <assert.h>
-#include <zmq.h>
 #include <string.h>
+#include <errno.h>
+#include "assert.h"
+
+#include <zmq.h>
 
 #include "util.h"
+
+/*
+ * Create, open and bind a ZMQ socket.
+ */
+
+void *zh_bind_new_socket(void *ctx, int type, const char *url) {
+  void *skt;
+
+  skt = zmq_socket(ctx, type);
+  if(skt != NULL) {
+    int ret = zmq_bind(skt, url);
+    if(ret < 0) {
+      int safe_errno = errno;
+      (void) zmq_close(skt);
+      errno = safe_errno;
+      skt = NULL;
+    }
+  }
+  return skt;
+}
+
+/*
+ * Create, open and connect a ZMQ socket.
+ */
+
+void *zh_connect_new_socket(void *ctx, int type, const char *url) {
+  void *skt;
+
+  skt = zmq_socket(ctx, type);
+  if(skt != NULL) {
+    int ret = zmq_connect(skt, url);
+    if(ret < 0) {
+      int safe_errno = errno;
+      (void) zmq_close(skt);
+      errno = safe_errno;
+      skt = NULL;
+    }
+  }
+  return skt;
+}
 
 /*
  * Retrieve a ZMG message from a socket.  Put it in the buffer buf and
@@ -22,7 +63,7 @@ int zh_get_msg(void *socket, int flags, size_t size, void *buf) {
   size_t msg_size;
 
   ret = zmq_msg_init(&msg);
-  assert(ret == 0);
+  assertv(ret == 0, "Message init failed\n");
   ret = zmq_msg_recv(&msg, socket, flags);
   if( ret < 0 )
     return ret;
@@ -33,10 +74,10 @@ int zh_get_msg(void *socket, int flags, size_t size, void *buf) {
     return 0;
   if( msg_size < size )
     size = msg_size;
-  assert(buf != NULL);
+  assertv(buf != NULL, "Called with null buf argument\n");
   bcopy(zmq_msg_data(&msg), buf, size);
   ret = zmq_msg_close(&msg);
-  assert(ret == 0);
+  assertv(ret == 0, "Message close failed\n");
   return size;
 }
 
@@ -50,7 +91,7 @@ int zh_any_more(void *socket) {
 
   sz = sizeof(more);
   ret = zmq_getsockopt(socket, ZMQ_RCVMORE, &more, &sz);
-  assert(ret == 0);
+  assertv(ret == 0, "Attempt to get 'more' flag failed\n");
   return more != 0;
 }
 
@@ -68,7 +109,7 @@ int zh_collect_multi(void *socket, char *buf, int bufsz, char *spc) {
     int ret, sz;
 
     sz = zh_get_msg(socket, 0, left-nspc, &buf[used]);
-    assert(sz >= 0);
+    assertv(sz >= 0, "Get message error\n");
     used += sz;
     left -= sz;
     if( !zh_any_more(socket) )
@@ -91,11 +132,11 @@ int zh_put_msg(void *socket, int flags, size_t size, void *buf) {
   zmq_msg_t  msg;
   int ret;
 
-  assert(size >= 0);
+  assertv(size >= 0, "Put message with -ve size %d\n", size);
   ret = zmq_msg_init_size(&msg, size);
-  assert(ret == 0);
+  assertv(ret == 0, "Message init failed\n");
   if( size ) {
-    assert(buf != NULL);
+    assertv(buf != NULL, "Non-zero size and NULL buf\n");
     bcopy(buf, zmq_msg_data(&msg), size);
   }
   return zmq_msg_send(&msg, socket, flags);

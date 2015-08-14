@@ -11,10 +11,10 @@ ARGTAB_HDRS=${ARGTAB_SRCS:.c=.h} ${ARGTAB_XTRA}
 build:	${TARGETS}
 
 snapshot:	${OFILES}
-	gcc -o snapshot ${OFILES} -lcomedi -lzmq -lpthread
+	gcc -o snapshot ${OFILES} -lcomedi -lzmq -lpthread -largtable2
 
 snapchat:	snapchat.o util.o param.o
-	gcc -o snapchat snapchat.o util.o param.o  -lzmq
+	gcc -o snapchat snapchat.o util.o param.o -lzmq -largtable2
 
 trig:	trig.o util.o param.o
 	gcc -o trig trig.o util.o param.o -lzmq -largtable2
@@ -22,10 +22,13 @@ trig:	trig.o util.o param.o
 grab:		lut.o mman.o grab.o
 	gcc -o grab lut.o mman.o grab.o -lcomedi -largtable2
 
-
 snapshot.o:	snapshot.c snapshot.h reader.h writer.h util.h param.h
 
-snapchat.o:	snapchat.c snapshot.h util.h param.h
+snapchat.o:	snapchat.c snapshot.h argtab.h util.h param.h
+
+grab.o:		grab.c mman.h lut.h argtab.h
+
+trig.o:		trig.c snapshot.h util.h param.h argtab.h
 
 reader.o:	reader.c reader.h snapshot.h util.h queue.h param.h ring.h mman.h lut.h tidy.h
 
@@ -43,15 +46,13 @@ ring.o:		ring.c ring.h mman.h
 
 mman.o:		mman.c mman.h
 
-param.o:	param.c param.h
+param.o:	param.c param.h argtab.h assert.h
 
 queue.o:	queue.c queue.h
 
 tidy.o:		tidy.c tidy.h
 
 talloc.o:	talloc.c talloc.h queue.h
-
-grab.o:		grab.c mman.h lut.h argtab.h
 
 argtab-int64.o:	argtab-int64.c argtab-int64.h
 

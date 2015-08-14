@@ -11,7 +11,7 @@ typedef struct
 extern void      *zmq_main_ctx;
 
 extern param_t	  globals[];
-extern int	  n_global_params;
+extern const int  n_global_params;
 
 extern int	  debug_level;
 

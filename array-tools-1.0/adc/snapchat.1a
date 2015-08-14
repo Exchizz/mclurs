@@ -21,25 +21,37 @@
 snapchat \- send command messages to \fBsnapshot\fP program
 .SH SYNOPSIS
 .B snapchat
-.RI [ \-vh ]
-.RI [ \-\-snapshot = url ]
+.RI [\-vqh]
+.RI [\-\-version]
+.br
+.B snapchat
+.RI [ \-vq ]
+.RI [ \-s|\-\-snapshot = url ]
+.RI [ \-m|\-\-multi = [<prefix>]]
 .RI " command " ...
 .br
 .SH DESCRIPTION
-The \fBsnapchar\fP program allows a user to communicate manually with
+The \fBsnapchat\fP program allows a user to communicate manually with
 the \fBsnapshot\fP program running on a single array box, using a
 command-line login.  It sends a message composed of its non-option
 arguments to the \fBsnapshot\fP command socket and awaits a reply.
 .PP
-The message to send is constructed by concatenating the program's
-non-option arguments as strings, separated by a single space
+In normal mode the message to send is constructed by concatenating the
+program's non-option arguments as strings, separated by a single space
 character.  The message is sent, per ZeroMQ's conventions, without a
 trailing null character.
 .PP
+In mltiple message mode, \fBsnapchat\fP treats each non-option
+argument as a separate message.  These messages are sent one at a time
+in order.  Each reply is checked: if it begins with the optional
+\fIprefix\fP string, the next message will be sent; if not,
+\fBsnapchat\fP terminates.  Omitting the \fIprefix\fP suppresses the
+reply check.
+.PP
 Because \fBsnapshot\fP provides a REP command socket (see the
 \fBzmq\fP documentation for more details), \fBsnapchat\fP expects a
-reply to its message and will wait until it is received before
-terminating.
+reply to each message and will wait until it is received before
+continuing or terminating.
 .PP
 For the set of command messages one might wish to send to
 \fBsnapshot\fP, see that program's manual page \fBsnapshot(8a)\fP.
@@ -54,10 +66,21 @@ Show summary of options.
 .B \-v
 Become more verbose in output;  may be repeated for greater effect.
 .TP
+.B \-q
+Become less verbose in output.
+.TP
+.B \-\-version
+causes the program to display its version string.
+.TP
 .B \-\-snapshot=\fIurl\fP
 specifies the ZeroMQ URL of the communication endpoint to talk to (the
 snapshot program's command socket).  The default value
 \fIipc://snapshot-CMD\fP matches the default used by \fBsnapshot\fP.
+.TP
+.B \-\-multi=\fI[prefix]\fP
+Switch to multiple message mode and expect replies to begin with the
+optional string \fIprefix\fP.  If \fIprefix\fP is omitted, an empty
+string is used, i.e. any reply is satisfactory.
 .SH EXIT STATUS
 \fBsnapchat\fP exits normally after receiving the reply from
 \fBsnapshot\fP.  It exits with code 1 for parameter errors and with
@@ -65,15 +88,15 @@ code 2 for errors in establishing the necessary ZeroMQ messaging
 environment.  In verbose mode, debugging output sent to standard error
 contains the constructed message sent to \fBsnapshot\fP.
 .SH ENVIRONMENT
-The long option available on the command line has a matching
-environment variable through which it can also be set.  Environment
-variables are matched using a case-insensitive comparison.
+The \fB\-\-snapshot\fP option available on the command line has a
+matching environment variable through which it can also be set.
+Environment variables are matched using a case-insensitive comparison.
 Command-line arguments take precedence over environment variable
 values (which in turn take precedence over built-in defaults).
 .SH NOTES
 ZeroMQ does not insist on the \fBsnapshot\fP socket being available
 when \fBsnapchat\fP attempts to connect, so \fBsnapchat\fP will also
-wait until a correspondent is detected before sending its message.
+wait for its correspondent if necessary before sending its message(s).
 .SH SEE ALSO
 .BR snapshot (8a) ,
 .BR zmq (7) .

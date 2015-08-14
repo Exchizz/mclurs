@@ -1,7 +1,7 @@
 #
 
 #include <stdlib.h>
-#include <assert.h>
+#include "assert.h"
 #include "queue.h"
 
 /*
@@ -13,7 +13,7 @@
 queue *init_queue(queue *p) {
   if( p == NULL ) {
     p = (queue *)calloc(1, sizeof(queue));
-    assert(p != NULL);
+    assert(p != NULL, "Queue alocation failure\n");
   }
   p->q_next = p->q_prev = p;
   return p;

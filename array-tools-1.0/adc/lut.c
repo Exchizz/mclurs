@@ -1,6 +1,6 @@
 #
 
-#include <assert.h>
+#include "assert.h"
 #include <string.h>
 #include <comedi.h>
 
@@ -53,9 +53,9 @@ static int lut_not_ready = 1;
 void populate_conversion_luts() {
   short raw;
 
-  assert(sizeof(sampl_t) == 2);				/* Check type definitions on this architecture */
-  assert(RAW_500mV_TO_OUT_500mV(USBDUXRAW_MAX) > 0);		/* Should work if sampl_t is signed short */
-  assert(RAW_500mV_TO_OUT_500mV(USBDUXRAW_MIN) < 0);
+  assertv(sizeof(sampl_t) == 2, "sizeof(sampl_t) is %d not 2\n", sizeof(sampl_t));	/* Check type definitions on this architecture */
+  assertv(RAW_500mV_TO_OUT_500mV(USBDUXRAW_MAX) > 0, "ADC mapped max not positive\n");	/* Should work if sampl_t is signed short */
+  assertv(RAW_500mV_TO_OUT_500mV(USBDUXRAW_MIN) < 0, "ADC mapped min not negative\n");
 
   if( !lut_not_ready )		/* i.e. the tables are already ready */
     return;

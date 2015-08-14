@@ -20,6 +20,7 @@
 #include <stdint.h>
 #include <assert.h>
 #include <argtable2.h>
+#include <regex.h>
 #include <comedi.h>
 #include <comedilib.h>
 #include <fcntl.h>
@@ -46,7 +47,7 @@ char read_buf[BUFSZ];
 
 /* Standard arguments + flags */
 int   verbose = 0;
-char *program;
+char *program = NULL;
 
 /* Command line syntax options */
 
@@ -62,9 +63,6 @@ BEGIN_CMD_SYNTAX(help) {
   /* No defaults to apply here */
 } END_CMD_SYNTAX(help)
 
-void set_arg_help_defaults() {
-}
-
 struct arg_lit *v2, *rw2;
 struct arg_int *b2;
 struct arg_dbl *f2;
@@ -77,7 +75,7 @@ BEGIN_CMD_SYNTAX(main) {
   f2  = arg_dbl0("f",	"freq", "<real>",		"Sampling frequency [Hz], default 2.5 [MHz]"),
   b2  = arg_int0("B",	"bufsz", "<int>",		"Comedi buffer size [MiB], default 40 [MiB]"),
   d2  = arg_str0("d",	"device", "<path>",		"Comedi device to open, default /dev/comedi0"),
-  rn2 = arg_rex0("r",	"range", "hi|lo", NULL, 0,	"Specify range in {hi, lo}, default hi"),
+  rn2 = arg_rex0("r",	"range", "hi|lo", NULL, REG_EXTENDED,	"Specify range in {hi, lo}, default hi"),
   rw2 = arg_lit0(NULL,	"raw",				"Emit raw ADC sample values"),
   e2  = arg_end(20)
 } APPLY_CMD_DEFAULTS(main) {
@@ -86,10 +84,6 @@ BEGIN_CMD_SYNTAX(main) {
   *d2->sval  = COMEDI_DEVICE;	/* Default device for Comedi */
   *rn2->sval = "hi";		/* Default ADC range (hi) */
 } END_CMD_SYNTAX(main);
-
-void set_arg_main_defaults() {
-}
-
 
 /* Standard help routines: display the version banner */
 void print_version(FILE *fp, int verbosity) {
@@ -128,7 +122,7 @@ int main(int argc, char *argv[]) {
   int	       buf_samples;
   unsigned int convert_arg;
   comedi_t    *dev;
-  int          err, ret, i;
+  int          errs, ret, i;
   unsigned int chanlist[N_CHANS];
   void        *map;
   sampl_t     *start;
@@ -139,40 +133,38 @@ int main(int argc, char *argv[]) {
   program = argv[0];
 
   /* Create and parse the command lines */
-  void **help_cmd = arg_make_help();
-  void **main_cmd = arg_make_main();
+  void **cmd_help = arg_make_help();
+  void **cmd_main = arg_make_main();
 
   /* Try first syntax */
-  set_arg_help_defaults(help_cmd);
-  int help_err = arg_parse(argc, argv, help_cmd);
-  if( !help_err ) {		/* Assume this was the desired command syntax */
+  int err_help = arg_parse(argc, argv, cmd_help);
+  if( !err_help ) {		/* Assume this was the desired command syntax */
     if(vn1->count)
       print_version(stdout, v1->count);
     if(h1->count || !vn1->count) {
-      print_usage(stdout, help_cmd, v1->count>0, program);
-      print_usage(stdout, main_cmd, v1->count, program);
+      print_usage(stdout, cmd_help, v1->count>0, program);
+      print_usage(stdout, cmd_main, v1->count, program);
     }
     exit(0);
   }
 
   /* Try second syntax */
-  set_arg_main_defaults(main_cmd);
-  int main_err = arg_parse(argc, argv, main_cmd);
-  if( main_err ) {		/* This is the default desired syntax; give full usage */
+  int err_main = arg_parse(argc, argv, cmd_main);
+  if( err_main ) {		/* This is the default desired syntax; give full usage */
     arg_print_errors(stderr, e2, program);
-    print_usage(stderr, help_cmd, v2->count>0, program);
-    print_usage(stderr, main_cmd, v2->count, program);
+    print_usage(stderr, cmd_help, v2->count>0, program);
+    print_usage(stderr, cmd_main, v2->count, program);
     exit(1);
   }
 
   /* The second syntax was correctly parsed, so retrieve the important values from the table */
-  err = 0;
+  errs = 0;
 
   /* Deal with the sampling frequency */
   sr_total    = f2->dval[0];
   if(sr_total < 5e4 || sr_total > 3e6) {
     fprintf(stderr, "%s: Error -- total sample rate %g [Hz] out of sensible range (50 [kHz] to 3 [MHz])\n", program, sr_total);
-    err++;
+    errs++;
   }
   convert_arg = (unsigned int) 1e9 / sr_total;
 
@@ -180,7 +172,7 @@ int main(int argc, char *argv[]) {
   bufsz       = b2->ival[0];
   if(bufsz < 8 || bufsz > 256) {
     fprintf(stderr, "%s: Error -- requested buffer size %d [MiB] out of sensible range (8 to 256 [MiB])\n", program, bufsz);
-    err++;
+    errs++;
   }
   bufsz *= 1048576;
   buf_samples = bufsz / sizeof(sampl_t);
@@ -189,7 +181,7 @@ int main(int argc, char *argv[]) {
   device      = (char *) d2->sval[0];
   if( !(dev = comedi_open(device)) ) {
     fprintf(stderr, "%s: Error -- cannot open %s: %s\n", program, device, comedi_strerror(comedi_errno()));
-    err++;
+    errs++;
   }
 
   /* Deal with specification of range and raw */
@@ -204,11 +196,11 @@ int main(int argc, char *argv[]) {
   verbose     = v2->count;
 
   /* All finished with the argument syntax tables */
-  arg_free(main_cmd);
-  arg_free(help_cmd);
+  arg_free(cmd_main);
+  arg_free(cmd_help);
 
   /* Exit 2 if argument errors */
-  if(err) {
+  if(errs) {
     exit(2);
   }
 

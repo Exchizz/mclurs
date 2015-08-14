@@ -2,205 +2,279 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-
-#include <zmq.h>
-
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
-#include <assert.h>
+#include "assert.h"
+
+#include <argtable2.h>
+#include <zmq.h>
+
 #include <getopt.h>
 
 #include "util.h"
 #include "param.h"
-#include "snapshot.h"
+#include "argtab.h"
 
 /*
  * Snapshot version
  */
 
 #define PROGRAM_VERSION	"1.0"
+#define VERSION_VERBOSE_BANNER	"MCLURS ADC toolset...\n"
 
 /*
  * Global parameters for the snapshot program
  */
 
+extern char *snapshot_addr;
+
 param_t globals[] ={
-  { "snapshot",   1, { "ipc://snapshot-CMD", }, PARAM_STRING, PARAM_SRC_ENV|PARAM_SRC_ARG,
+  { "snapshot",   "ipc://snapshot-CMD", &snapshot_addr, param_type_string, PARAM_SRC_ENV|PARAM_SRC_ARG,
     "address of snapshot command socket"
   },
 };
 
-int n_global_params =	(sizeof(globals)/sizeof(param_t));
+const int n_global_params =	(sizeof(globals)/sizeof(param_t));
 
 /*
  * Debugging print out control
  */
 
-int debug_level = 0;
+int   verbose   = 0;
 char *program   = NULL;
 
+/* Command line syntax options */
+
+struct arg_lit *h1, *vn1, *v1, *q1;
+struct arg_end *e1;
+
+BEGIN_CMD_SYNTAX(help) {
+  v1  = arg_litn("v",	"verbose", 0, 2,	"Increase verbosity"),
+  q1  = arg_lit0("q",  "quiet",			"Decrease verbosity"),
+  h1  = arg_lit0("h",	"help",			"Print usage help message"),
+  vn1 = arg_lit0(NULL,	"version",		"Print program version string"),
+  e1  = arg_end(20)
+} APPLY_CMD_DEFAULTS(help) {
+  /* No defaults to apply here */
+} END_CMD_SYNTAX(help)
+
+struct arg_lit *v2, *q2;
+struct arg_end *e2;
+struct arg_str *u2;
+struct arg_str *n2;
+struct arg_str *m2;
+
+BEGIN_CMD_SYNTAX(main) {
+  v2  = arg_litn("v",	"verbose", 0, 3,	"Increase verbosity"),
+  q2  = arg_lit0("q",  "quiet",			"Decrease verbosity"),
+  u2  = arg_str0("s",  "snapshot", "<url>",     "URL of snapshotter command socket"),
+  m2  = arg_str0("m",   "multi", "<prefix>",	"Send multiple messages if replies begin with <prefix>"),
+  n2  = arg_strn(NULL, NULL, "<args>", 1, 30,	"Message content"),
+  e2  = arg_end(20)
+} APPLY_CMD_DEFAULTS(main) {
+  m2->hdr.flag |= ARG_HASOPTVALUE;
+  m2->sval[0] = "";
+  INCLUDE_PARAM_DEFAULTS(globals, n_global_params); /* Use defaults from parameter table */
+} END_CMD_SYNTAX(main);
+
+/* Standard help routines: display the version banner */
+void print_version(FILE *fp, int verbosity) {
+  fprintf(fp, "%s: Vn. %s\n", program, PROGRAM_VERSION);
+  if(verbosity > 0) {		/* Verbose requested... */
+    fprintf(fp, VERSION_VERBOSE_BANNER);
+  }
+}
+
+/* Standard help routines: display the usage summary for a syntax */
+void print_usage(FILE *fp, void **argtable, int verbosity, char *program) {
+  if( !verbosity ) {
+    fprintf(fp, "Usage: %s ", program);
+    arg_print_syntax(fp, argtable, "\n");
+    return;
+  }
+  if( verbosity ) {
+    char *suffix = verbosity>1? "\n\n" : "\n";
+    fprintf(fp, "Usage: %s ", program);
+    arg_print_syntaxv(fp, argtable, suffix);
+    if( verbosity > 1 )
+      arg_print_glossary(fp, argtable, "%-25s %s\n");
+  }
+}
+
 /*
- * Snapchat globals shared between threads
+ * Snapchat globals...
  */
 
 void      *zmq_main_ctx;	/* ZMQ context for messaging */
+char	  *snapshot_addr;	/* The URL of the snapshotter */
 
 /*
- * Process a (possibly multipart) log message.
- * Collect the various pieces and write to stderr
- * Use a 1024 byte logging buffer
+ * Print a reply message to stdout
  */
 
-#define LOGBUF_SIZE	1024
-
-void print_message(void *socket) {
-  char log_buffer[LOGBUF_SIZE];
-  int used;
-
-  used = zh_collect_multi(socket, &log_buffer[0], LOGBUF_SIZE-1, "");
-  if( log_buffer[used-1] != '\n') {
-    log_buffer[used] = '\n';
-    fwrite(log_buffer, used+1, 1, stdout);
+int print_message(char *msg, int size) {
+  if( msg[size-1] != '\n') {
+    msg[size] = '\n';
+    fwrite(msg, size+1, 1, stdout);
   }
   else {
-    fwrite(log_buffer, used, 1, stdout);
+    fwrite(msg, size, 1, stdout);
   }
   fflush(stdout);
 }
 
 /*
- * Display usage summary
+ * Return true if the string p is an initial prefix of str
  */
 
-void usage() {
-  char buf[1024];
-
-  fprintf(stderr, "%s $s\n\n", program, PROGRAM_VERSION);
-  fprintf(stderr, "Usage: ");
-  param_brief_usage(&buf[0], 1024, globals, n_global_params);
-  fprintf(stderr, "%s [-vqh] %s\n", program, &buf[0]);
-
-  if(debug_level >= 1) {
-    fprintf(stderr, "\n");
-    fprintf(stderr, "    -v : increase verbosity\n");
-    fprintf(stderr, "    -q : decrease verbosity\n");
-    fprintf(stderr, "    -h : display usage message\n");
-    fprintf(stderr, "    -V : display program version\n");
-    param_option_usage(stderr, 4, globals, n_global_params);
+int checked_prefix(const char *p, const char *str) {
+  while(*p && *str && *p == *str) {
+    if( *p != *str )		/* Mismatch with prefix */
+      return 0;
+    p++, str++;
   }
+  return *p? 0 : 1;		/* True iff prefix has run out */
 }
 
 /*
- * Option handling code
+ * Main entry point
  */
 
-int opt_handler(int c, char *arg) {
-  switch(c) {
-  case 'v':
-    debug_level++;
-    return 0;
+#define LOGBUF_SIZE	1024
 
-  case 'q':
-    debug_level--;
-    return 0;
+int main(int argc, char *argv[], char *envp[]) {
+  const char *prefix = NULL;
+  char        buf[LOGBUF_SIZE];
+  void       *snapshot;
+  param_t    *p;
+  int         ret, n;
 
-  case 'h':
-    usage();
-    exit(0);
+  program = argv[0];
 
-  case 'V':
-    fprintf(stderr, "%s: $s\n", program, PROGRAM_VERSION);
+  /* Set up the standard parameters */
+  /* 1. Process parameters:  internal default, then environment. */
+  push_param_from_env(envp, globals, n_global_params);
+
+  /* 2. Process parameters:  push values out to program globals */
+  ret = assign_param_values(globals, n_global_params);
+  assertv(ret == n_global_params, "Push parameters missing some %d/%d done\n", ret, n_global_params); /* If not, there is a coding problem */
+
+  /* 3. Create and parse the command lines -- installs defaults from parameter table */
+  void **cmd_help = arg_make_help();
+  void **cmd_main = arg_make_main();
+
+  /* Try first syntax */
+  int err_help = arg_parse(argc, argv, cmd_help);
+  if( !err_help ) {		/* Assume this was the desired command syntax */
+    if(vn1->count)
+      print_version(stdout, v1->count);
+    if(h1->count || !vn1->count) {
+      int verbose = v1->count - q1->count;
+      print_usage(stdout, cmd_help, verbose>0, program);
+      print_usage(stdout, cmd_main, verbose, program);
+    }
     exit(0);
   }
 
-  return -1;
-}
-
-int main(int argc, char *argv[], char *envp[]) {
-  char    *snapshot_addr;
-  char     buf[LOGBUF_SIZE];
-  void    *snapshot;
-  param_t *p;
-  int      ret, n;
-  int      used, left;
-
-  /* Set up the standard parameters */
-  /* 1. Process parameters:  internal default, environment, then command-line argument. */
-  push_param_from_env(envp, globals, n_global_params);
-  program = argv[0];
-  ret = getopt_long_params(argc, argv, "vqh", globals, n_global_params, opt_handler);
-  if( ret < 0 ) {
-    if(errno)
-      fprintf(stderr, "%s: Problem handling arguments: %s\n", program, strerror(errno));
+  /* Try second syntax */
+  int err_main = arg_parse(argc, argv, cmd_main);
+  verbose = v2->count - q2->count;
+  if( err_main ) {		/* This is the default desired syntax; give full usage */
+    arg_print_errors(stderr, e2, program);
+    print_usage(stderr, cmd_help, verbose>0, program);
+    print_usage(stderr, cmd_main, verbose, program);
     exit(1);
   }
 
-  if(debug_level > 1)		/* Dump global parameters for debugging purposes */
-    debug_params(globals, n_global_params);
+  /* 4. Process parameters:  copy argument values back through the parameter table */
+  ret = arg_results_to_params(cmd_main, globals, n_global_params);
+
+  /* 5. Process parameters:  deal with non-parameter table arguments where necessary */
+  if(m2->count) {		/* Repeat-mode with prefix */
+    prefix = m2->sval[0];
+  }
+
+  if(verbose > 2)		/* Dump global parameters for debugging purposes */
+    debug_params(stderr, globals, n_global_params);
 
   /* Create the ZMQ contexts */
   zmq_main_ctx  = zmq_ctx_new();
   if( !zmq_main_ctx ) {
-    fprintf(stderr, "%s: ZeroMQ context creation failed: %s\n", program, strerror(errno));
-    exit(1);
+    fprintf(stderr, "%s: Error -- ZeroMQ context creation failed: %s\n", program, strerror(errno));
+    exit(2);
   }
 
   /* Create the socket to talk to the snapshot program */
-  snapshot = zmq_socket(zmq_main_ctx, ZMQ_REQ);
+  snapshot = zh_connect_new_socket(zmq_main_ctx, ZMQ_REQ, snapshot_addr);
   if( snapshot == NULL ) {
-    fprintf(stderr, "Unable to create socket to snapshot: %s\n", strerror(errno));
+    fprintf(stderr, "%s: Error -- unable to create socket to snapshot at %s: %s\n",
+	    program, snapshot_addr, strerror(errno));
     zmq_ctx_term(zmq_main_ctx);
     exit(2);
   }
 
-  p = find_param_by_name("snapshot", 8, globals, n_global_params);
-  assert( p != NULL );		/* Fatal if parameter not found */
-  if( get_param_value(p, &snapshot_addr) < 0 ) {
-    fprintf(stderr, "%s: Cannot get value for snapshot address parameter\n", program);
-    exit(2);
-  }
+  const char **msg = n2->sval;
+  int          parts = n2->count;
 
-  /* Connect the socket to talk to snapshot */
-  ret = zmq_connect(snapshot, snapshot_addr);
-  if( ret < 0) {
-    fprintf(stderr, "%s: Connecting snapshot socket to %s failed: %s\n", program, snapshot_addr, strerror(errno));
-    zmq_ctx_term(zmq_main_ctx);
-    exit(2);
-  }
+  if(prefix && verbose > 0)
+    fprintf(stderr, "Sending %d parts in multi-message mode with reply prefix '%s'\n", parts, prefix);
 
-  /* Send the message, wait for the reply */
-  if(debug_level > 1)
-    fprintf(stderr, "Sending message...\n");
-  if(debug_level > 0)
-    fprintf(stderr, "Build:");
+  do {
+    int used, left;
 
-  used = 0;
-  left = LOGBUF_SIZE-1;
-  for(n=optind; n<argc; n++) {
-    int  len;
+    /* Send the message, wait for the reply;  data is in arg_str *n2 */
+    if(verbose > 0)
+      fprintf(stderr, "Sending message to %s...\n", snapshot_addr);
 
-    len = snprintf(&buf[used], left, "%s ", argv[n]);
-    if(debug_level > 0)
-      fprintf(stderr, "[%s]", buf);
-    used += len;
-    left -= len;
-  }
-  if(debug_level > 0)
-    fprintf(stderr, "\n");  
+    if(verbose > 1)
+      fprintf(stderr, "Build:");
 
-  ret = zh_put_msg(snapshot, 0, used-1, buf);
-  if( ret < 0 ) {
-    fprintf(stderr, "\n%s: sending message failed\n", program);
-  }
+    if( !prefix ) {
+      used = 0;
+      left = LOGBUF_SIZE-1;
+      for(n=0; n<parts; n++) {
+	int  len;
+      
+	len = snprintf(&buf[used], left, "%s ", msg[n]);
+	if(verbose > 1)
+	  fprintf(stderr, " [%s]", buf);
+	used += len;
+	left -= len;
+      }
+    }
+    else {
+      used = snprintf(&buf[0], LOGBUF_SIZE-1, "%s", *msg++);
+      parts--;
+      if(verbose > 1)
+	fprintf(stderr, " [%s]", buf);
+    }
 
-  /* Wait for reply */
-  if(debug_level > 1)
-    fprintf(stderr, "Awaiting reply...\n");
-  print_message(snapshot);
+    if(verbose > 1)
+      fprintf(stderr, "\n");
+
+    /* Send the message, omit the final null */
+    ret = zh_put_msg(snapshot, 0, used-1, buf);
+    if( ret < 0 ) {
+      fprintf(stderr, "\n%s: Error -- sending message failed: %s\n", program, strerror(errno));
+      zmq_close(snapshot);
+      zmq_ctx_term(zmq_main_ctx);
+      exit(3);
+    }
+
+    /* Wait for reply */
+    if(verbose > 0)
+      fprintf(stderr, "Awaiting reply from %s...\n", snapshot_addr);
+    used = zh_collect_multi(snapshot, &buf[0], LOGBUF_SIZE-1, "");
+    buf[LOGBUF_SIZE-1] = '\0';
+    if(verbose >= 0)
+      print_message(&buf[0], used);
+
+  } while( prefix && parts > 0 && checked_prefix(prefix, &buf[0]) );
 
   /* Clean up ZeroMQ sockets and context */
   zmq_close(snapshot);
   zmq_ctx_term(zmq_main_ctx);
   exit(0);
 }
+

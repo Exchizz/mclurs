@@ -21,15 +21,10 @@
 trig \- send manual triggered snapshot commands to \fBsnapshot\fP program
 .SH SYNOPSIS
 .B trig
-.RI [ \-vh ]
-.RI [ \-\-snapshot = url ]
-.RI [ \-\-trigger = int64 ]
-.RI [ \-\-pre = int32 ]
-.RI [ \-\-pst = int32 ]
-.RI "name"
+.RI [ \-vqh ] [--version]
 .br
 .B trig
-.RI [ \-vh ]
+.RI [ \-vq ]
 .RI \-a
 .RI [ \-\-snapshot = url ]
 .RI [ \-\-trigger = int64 ]
@@ -38,7 +33,7 @@ trig \- send manual triggered snapshot commands to \fBsnapshot\fP program
 .br
 .sp 1
 .B trig
-.RI [ \-vh ]
+.RI [ \-vq ]
 .RI \-w
 .RI [ \-\-snapshot = url ]
 .RI [ \-\-pre = int32 ]
@@ -46,7 +41,7 @@ trig \- send manual triggered snapshot commands to \fBsnapshot\fP program
 .RI "name"
 .br
 .B trig
-.RI [ \-vh ]
+.RI [ \-vq ]
 .RI \-w " " \-a
 .RI [ \-\-snapshot = url ]
 .RI [ \-\-pre = int32 ]
@@ -54,7 +49,7 @@ trig \- send manual triggered snapshot commands to \fBsnapshot\fP program
 .br
 .sp 1
 .B trig
-.RI [ \-vh ]
+.RI [ \-vq ]
 .RI \-r
 .RI [ \-wa ]
 .RI [ \-\-snapshot = url ]

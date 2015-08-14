@@ -1,8 +1,27 @@
 #
 
+#ifndef _PARAM_H
+#define _PARAM_H
+
+#include <stdio.h>
+#include <stdint.h>
+
+typedef const struct {
+  const char *t_name;
+  int	      t_size;
+}
+  param_type;
+
+/* Needed to make sizeof() work in the macros below */
+typedef int       bool;
+typedef char     *string;
+typedef uint64_t  int64;
+typedef uint32_t  int32;
+typedef uint16_t  int16;
+
 #define PARAM_TYPE(name) param_type_ ## name
-#define PARAM_TYPE_DECL(name) const char PARAM_TYPE(name)[] = "<" #name ">"
-#define PARAM_TYPE_EXPORT(name) extern const char PARAM_TYPE(name)[]
+#define PARAM_TYPE_DECL(name) param_type PARAM_TYPE(name)[] = { "<" #name ">" , sizeof(name) }
+#define PARAM_TYPE_EXPORT(name) extern param_type PARAM_TYPE(name)[];
 
 PARAM_TYPE_EXPORT(bool);
 PARAM_TYPE_EXPORT(int16);
@@ -11,27 +30,14 @@ PARAM_TYPE_EXPORT(int64);
 PARAM_TYPE_EXPORT(double);
 PARAM_TYPE_EXPORT(string);
 
-#define	MAX_PARAM_VALS	5
-
-typedef enum
-{ PARAM_INT16,			/* Parameter is a short integer */
-  PARAM_INT32,			/* Parameter is a standard integer */
-  PARAM_INT64,			/* Parameter is a long integer */
-  PARAM_BOOL,			/* Parameter is a boolean */
-  PARAM_STRING,			/* Parameter is a string */
-  PARAM_FLOAT,			/* Parameter is a real number (float) */
-  PARAM_DOUBLE			/* Parameter is a real number (double) */
-}
-  param_type;
-
 typedef struct
 { char		*p_name;			/* Name of this parameter */
-  int		 p_nv;				/* Number of values recorded -- we take the last */
-  char		*p_vals[MAX_PARAM_VALS];	/* Stack of values for this parameter;  top is the one chosen */
-  param_type	 p_type;			/* Type of the parameter, for value conversion */
+  char		*p_str;				/* String value for this parameter */
+  void          *p_val;				/* Location where value is to be stored */
+  param_type	*p_type;			/* Type of the parameter, for value conversion */
   int		 p_source;			/* Possible sources of the values */
   char          *p_gloss;			/* Explanation of this parameter */
-  int		 p_ftop;			/* If true, free and replace top on push */
+  int		 p_ftop;			/* If true, free and replace str on push */
 }
   param_t;
 
@@ -40,10 +46,15 @@ typedef struct
 #define	PARAM_SRC_CMD	0x4
 
 extern int push_param_value(param_t *, char *);
-extern param_t *find_param_by_name(char *, int, param_t [], int);
+extern param_t *find_param_by_name(const char *, int, param_t [], int);
 extern int push_param_from_env(char *[], param_t [], int);
 extern int get_param_value(param_t *, char **);
-extern int assign_value(param_type, char *, void *);
-extern int getopt_long_params(int, char *[], const char *, param_t [], int, int (*)(int, char *));
-extern void param_option_usage(FILE *, int, param_t [], int);
+// extern void param_brief_usage(char *, int, param_t [], int);
+// extern void param_option_usage(FILE *, int, param_t [], int);
 extern char *pop_param_value(param_t *);
+extern int assign_param_values(param_t *, int);
+extern int arg_defaults_from_params(void **, int, param_t [], int);
+extern int arg_results_to_params(void **, param_t [], int);
+extern void debug_params(FILE *, param_t [], int);
+
+#endif /* _PARAM_H */
