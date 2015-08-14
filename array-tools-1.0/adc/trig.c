@@ -48,8 +48,38 @@
  * Auto-name format options
  */
 
-#define AUTO_NAME_FORMAT_DEFAULT "hex"
-#define AUTO_NAME_FORMAT_REX     "hex|iso"
+#define AUTO_NAME_FORMAT_DEFAULT "iso"
+#define AUTO_NAME_FORMAT_REX     "hex|iso|utc|tai|seq"
+
+/*
+ * Code for automatic snapshot name generation -- interprets format options
+ */
+
+typedef enum {
+  SNAPNAME = 0,
+  HEXADECIMAL,
+  TAI64N,
+  ISOUTC,
+  ISODATE,
+  SEQUENTIAL,
+  SPECIAL,
+} name_mode;
+
+static name_mode determine_auto_mode(const char *auto_name) {
+  if( !auto_name )
+    return SNAPNAME;
+  if( !strcmp("hex", auto_name) )
+    return HEXADECIMAL;
+  if( !strcmp("tai", auto_name) )
+    return TAI64N;
+  if( !strcmp("utc", auto_name) )
+    return ISODATE;
+  if( !strcmp("iso", auto_name) )
+    return ISODATE;
+  if( !strcmp("seq", auto_name) )
+    return SEQUENTIAL;
+  return SPECIAL;
+}
 
 /*
  * Global parameters for the snapshot program
@@ -190,14 +220,13 @@ void print_usage(FILE *fp, void **argtable, int verbosity, char *program) {
 void   *zmq_main_ctx;		/* ZMQ context for messaging */
 
 const char *auto_name;		/* Auto-generate snapshot path value */
+name_mode   auto_mode;		/* The basis for snapshot name generation */
 const char *snap_name;		/* The base name if not auto */
 const char *snapshot_addr;	/* URL of the snapshotter program */
 int	    wait_for_it;	/* Wait for keypress before making message */
 int	    repeat;		/* Don't just do one, do many triggers */
 uint32_t    window_pre;		/* Window pre-trigger interval [ms] */
 uint32_t    window_pst;		/* Window post-trigger interval [ms] */
-
-char  (*auto_name_fn)(char *, int); /* Generate an automatic name */
 
 /*
  * Process a (possibly multipart) log message.
@@ -254,46 +283,64 @@ uint64_t wait_for_keypress(uint64_t *now_as_ns) {
   return 0;
 }
 
-typedef enum {
-  HEXADECIMAL = 1,
-  TAI64N = 2,
-  ISODATE = 3,
-} time_name_mode;
+/*
+ * Construct the name of a snapshot file.  Use the supplied name unless in auto mode.
+ */
 
-int auto_name_by_time(char *buf, int len, uint64_t trigger, int mode) {
-  uint64_t   secs;
+char *make_path_value(char buf[], int size, const char *snapname, uint64_t trigger, name_mode mode) {
+  static int counter = 0;
   time_t     trig;
+  uint64_t   secs;
   int        ns;
   int        used;
   struct tm *t;
 
   switch(mode) {
-  case TAI64N:
+
+  case SNAPNAME:		/* Use the supplied snapshot name */
+    snprintf(&buf[0], size, "%s", snapname);
+    break;
+
+  case TAI64N:			/* Use a TAI64N format timestamp */
+    assertv(size >= 25, "Buffer too small (%d) for TAI path\n", size);
     secs = trigger / 1000000000;
     ns = trigger - secs * 1000000000;
-    return snprintf(buf, len, "@%016llx%08lx", secs|0x4000000000000000, ns);
+    snprintf(&buf[0], size, "@%016llx%08lx", secs|0x4000000000000000, ns);
+    break;
 
   case ISODATE:
+  case ISOUTC:			/* Use an ISO standard date with fractional seconds */
+    assertv(size >= 26, "Buffer too small (%d) for ISO path\n", size);
     trig = trigger / 1000000000;
     ns = trigger - trig * 1000000000;
-    t = gmtime(&trig);
-    used = strftime(buf, len, "%FT%T", t); /* 2015-07-14T16:55:32 */
-    if( used ) {			   /* Something was written, buffer was big enough */
-      if(used < len) {
-	used += snprintf(&buf[used], len-used, ".%0d", ns);
-      }
-      return used;
-    }
-    /* FALL THROUGH:  if buffer too small for ISODATE then try HEX */
+    t = (mode==ISOUTC? gmtime(&trig) : localtime(&trig));
+    used = strftime(&buf[0], size, "%FT%T", t); /* 2015-07-14T16:55:32.nnnnnn */
+    snprintf(&buf[used], size-used, ".%06d", ns/1000);
+    break;
 
-  case HEXADECIMAL:
-    return snprintf(buf, len, "%016llx", trigger);
+  case HEXADECIMAL:		/* Use a hexadecimal print of the trigger time */
+    assertv(size >= 16, "Buffer too small (%d) for HEX path\n", size);
+    snprintf(&buf[0], size, "%016llx", trigger);
+    break;
+
+  case SEQUENTIAL:		/* Generate a sequentially incrementing snapshot name */
+    assertv(size >= 10, "Buffer too small (%d) for SEQ path\n", size);
+    snprintf(&buf[0], size, "snap%06d", counter++);
+    break;
+
+  case SPECIAL:			/* User-supplied format, not yet implemented */
+  default:
+    snprintf(&buf[0], size, "%s%d", "unimplemented", counter++);
+    break;
   }
+  return &buf[0];
 }
 
 /*
  * Main entry point
  */
+
+#define PATHBUF_SIZE 128
 
 int main(int argc, char *argv[], char *envp[]) {
   char     buf[LOGBUF_SIZE];
@@ -410,6 +457,9 @@ int main(int argc, char *argv[], char *envp[]) {
   /* 4. Process parameters:  copy argument values back through the parameter table */
   ret = arg_results_to_params(table, globals, n_global_params);
 
+  /* Check the auto argument and compute the path generation mode */
+  auto_mode = determine_auto_mode(auto_name);
+
   /* 5. All syntax tables are finished with now: clean up the mess :-)) */
   arg_free(cmd_help);
   arg_free(cmd_single);
@@ -443,8 +493,8 @@ int main(int argc, char *argv[], char *envp[]) {
 
   trigger = now_as_ns;
   do {
-    const char *path = snap_name;
-    char  path_buf[64];
+    const char *path;
+    char  path_buf[PATHBUF_SIZE];
     int   ret = 0;
 
     if( wait_for_it )
@@ -454,10 +504,7 @@ int main(int argc, char *argv[], char *envp[]) {
       break;
     }
 
-    if( auto_name ) {
-      snprintf(&path_buf[0], 64, "%016llx", trigger);
-      path = &path_buf[0];
-    }
+    path = make_path_value(&path_buf[0], PATHBUF_SIZE-1, snap_name, trigger, auto_mode);
 
     time_start = trigger - 1000000 * (uint64_t) window_pre;
     time_stop  = trigger + 1000000 * (uint64_t) window_pst;
