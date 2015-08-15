@@ -157,7 +157,7 @@ int main(int argc, char *argv[], char *envp[]) {
   push_param_from_env(envp, globals, n_global_params);
 
   /* 2. Process parameters:  push values out to program globals */
-  ret = assign_param_values(globals, n_global_params);
+  ret = assign_all_params(globals, n_global_params);
   assertv(ret == n_global_params, "Push parameters missing some %d/%d done\n", ret, n_global_params); /* If not, there is a coding problem */
 
   /* 3. Create and parse the command lines -- installs defaults from parameter table */

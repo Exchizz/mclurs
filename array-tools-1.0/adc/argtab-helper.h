@@ -3,7 +3,7 @@
 #ifndef _ARGTAB_HELPER_H
 #define _ARGTAB_HELPER_H
 
-#include <assert.h>
+#include "assert.h"
 
 /*
  * Simplify definition of command line parsing tables 
@@ -40,7 +40,7 @@
   int rv = arg_defaults_from_params(argtable,				\
 				    sizeof(argtable)/sizeof(void *),	\
 				    (ps), (nps));			\
-  assert(rv == 0);  /* Argtable has no end mark */
+  assertv(rv == 0, "Argtable has no end mark\n");
 
 #define END_CMD_SYNTAX(name)						\
 									\

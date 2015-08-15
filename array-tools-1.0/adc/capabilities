@@ -1,0 +1,64 @@
+CAP_IPC_LOCK -- needed for mmap, mlock etc.
+CAP_SYS_NICE -- needed to set priorities and scheduling properties
+SECBIT_KEEP_CAPS -- needed to retain capabilities when dropping privileges
+CAP_SETPCAP -- probably required to manipulate the capability sets
+PR_SET_KEEPCAPS -- argument to prctl for retaining capabilities on demotion to non-zro uid
+CAP_SYS_ADMIN -- needed for RT priority IO class manipulation
+PR_CAPBSET_DROP -- prctl argument for removing capabilities from the bounding set
+PR_CAPBSET_READ -- figure out what is in the bounding set
+SECBIT_KEEP_CAPS_LOCKED -- locks changes to the SECBIT_KEEP_CAPS bit
+PR_SET_SECUREBITS -- prctl argument to set the secure bits
+PR_GET_SECUREBITS -- prctl argument to get the secure bits, need CAP_SETPCAP to manipulate these
+
+Reader needs CAP_SYS_ADMIN to change Comedi maximum buffer size.
+
+The Reader needs CAP_IPC_LOCK and CAP_SYS_NICE to set RT priority and mmmp the Comedi buffer.
+The Writer needs CAP_IPC_LOCK and CAP_SYS_NICE to set RT priority and mmap the output files.
+The main thread needs no special capabilities after spawning the Reader and Writer.
+The tidy thread needs no special capabilities at all.
+
+Note that all threads share uid/gid, so when one thread drops privileges so do they all.
+
+So:
+
+1.  Main thread should either run as root or have CAP_IPC_LOCK, CAP_SYS_NICE and CAP_SYS_ADMIN.
+2.  Main thread should lock the three capabilities we need and drop privilege.
+3.  Main thread should spawn the reader and writer.
+4.  Main thread can drop all privileges and spawn the tidy thread...
+
+Complications: whoever spawns the IO thread for ZMQ should ensure it runs unprivileged,
+which means that we can't create the context until we have dropped to normal user and
+group...  Since the context is thread-safe, anyone can create it, and installing the
+context pointer is effectively an atomic operation.  Thus a thread can wait for the
+context pointer to become non-NULL before creating its sockets. 
+
+If we use a log socket scheme then the main thread needs to bind it before the others try to
+connect to it.  This suggests that main should initialise the context, immediately before 3.
+However, it would also be possible for tidy() to initialise the log socket but leave it to
+main to operate...
+
+So the sequence should be:
+
+Main thread sorts out capabilities and then drops privilege if requested by argument or
+environment.  Then it spawns the tidy, reader and writer threads.  Once the reader and
+writer state flags reach READY, it opens its internal sockets and connects to the threads.
+FInally it binds its external socket and starts the command processing loop.  If startup
+problems occur, it sets a global all-stop flag and waits for the threads to rejoin.
+
+The reader thread checks its capabilities.  It waits for the ZMQ context to become set.
+It creates and binds its internal sockets, does any necessary setup and sets its state to
+READY.  It then runs its message loop.  If fatal errors occur it does not reach READY, but
+tidies up and returns instead. 
+
+The writer thread checks its capabilities.  It waits for the ZMQ context to become set,
+creates and binds its internal sockets, does any necessary setup and sets its state to
+READY.  It then runs its message loop.  If fatal errors occur it does not reach READY, but
+tidies up and returns instead.
+
+The tidy thread starts unprivileged.  It creates the ZMQ context.  Then it creates and
+binds its sockets, and starts work.  If it sees a stop-all flag, it exits normally.
+
+For shutdown, the tidy thread exits on a zero address message.  The reader and writer
+close down in response to a quit or error and turn off the READY states.  The main thread
+waits for sockets to drain and then exits, once it sees the xxx_running flags are both
+off.  It rejoins the other three threads and closes the ZMQ context. 

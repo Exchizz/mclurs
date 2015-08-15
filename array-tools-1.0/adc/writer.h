@@ -1,7 +1,7 @@
 #
 
 /*
- * The main functino for the writer thread
+ * The main function for the writer thread
  */
 
 #define	WRITER_CMD_ADDR	"inproc://Writer-CMD"
@@ -10,10 +10,10 @@
 typedef struct {
   const char  *w_snapdir;
   int	       w_schedprio;
+
   /* The values below are computed and exported */
   int	       w_snap_dirfd;
-  uid_t	       w_uid;
-  gid_t	       w_gid;
+  int	       w_running;	    /* Thread is running and ready */
 }
   wparams;
 

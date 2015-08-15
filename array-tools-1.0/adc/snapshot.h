@@ -21,12 +21,6 @@ extern int	   reader_thread_running,
 extern int	   tmpdir_dirfd;
 extern const char *tmpdir_path;
 
-/* Main thead needs to set up both ends of this pipe */
-
-extern void        *wr_queue_reader;
-extern void        *wr_queue_writer;
-
 /* Common definitions */
 
 #define LOG_SOCKET	"inproc://Main-LOG"
-#define WRITE_QUEUE	"inproc://Writer-Q"

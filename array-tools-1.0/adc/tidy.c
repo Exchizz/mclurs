@@ -6,7 +6,8 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <assert.h>
+#include "assert.h"
+#include <errno.h>
 #include <sys/mman.h>
 #include <pthread.h>
 #include <zmq.h>
@@ -14,52 +15,46 @@
 #include "util.h"
 #include "tidy.h"
 
-#define TIDY_SOCKET "inproc://snapshot-TIDY"
+extern void *snapshot_zmq_ctx;
+
+static socket *tidy;
 
 /*
- * Unmap data blocks after writing.  The thread continues until a
- * zero-length message is received, which signals the end of the unmap
- * requests.
+ * Establish tidy comms:  this routine gets called first of all threads, so it
+ * creates the context.
  */
 
-static void *tidy(void *s) {
+static int create_tidy_comms() {
+  if( !zmq_main_ctx )
+    zmq_main_ctx = zmq_ctx_new();
+  if( !zmq_main_ctx ) {
+    return 1;
+  }
+  tidy = zh_bind_new_socket(ctx, ZMQ_PAIR, TIDY_SOCKET);
+  return tidy != NULL;
+}
+
+/*
+ * Unmap data blocks after writing.  Runs as a thread which continues
+ * until a zero-length message is received signallings the end of the
+ * unmap requests.
+ */
+
+void *tidy_main(void *arg) {
   int ret;
   block b;
 
-  while( ret = zh_get_msg(s, 0, sizeof(block), &b) ) {
-    assert(ret > 0);
+  ret = create_tidy_comms();
+  if(ret != 0)
+    return (void *) "Comms initialisation failure";
+
+  while( ret = zh_get_msg(tidy, 0, sizeof(block), &b) ) {
+    assertv(ret > 0, "Tidy read message error, ret=%d\n", ret);
     if(b.b_data == NULL)
       break;
     munmap(b.b_data, b.b_bytes);
   }
-  zmq_close(s);
+  zmq_close(tidy);
   return (void *) "Tidy thread terminates normally";
-}
-
-/*
- * Create the tidy thread and its socket pair.  Return the thread
- * identifier and the socket handle.
- */
-
-int create_tidy_thread(void *ctx, pthread_t *tp, void **sp) {
-  void *in, *out;
-  pthread_attr_t  tidy_attr;
-  int   ret;
-
-  in = zmq_socket(ctx, ZMQ_PAIR);
-  assert(in != NULL);
-  ret = zmq_bind(in, TIDY_SOCKET);
-  assert(ret >= 0);
-
-  out = zmq_socket(ctx, ZMQ_PAIR);
-  assert(out != NULL);
-  ret = zmq_connect(out, TIDY_SOCKET);
-  assert(ret >= 0);
-
-  pthread_attr_init(&tidy_attr);
-  if( pthread_create(tp, &tidy_attr, tidy, out) < 0 )
-    return -1;
-  *sp = in;
-  return 0;
 }
 

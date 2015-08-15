@@ -18,7 +18,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdint.h>
-#include <assert.h>
+#include "assert.h"
 #include <argtable2.h>
 #include <regex.h>
 #include <comedi.h>

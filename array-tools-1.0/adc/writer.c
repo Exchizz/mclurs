@@ -81,16 +81,30 @@ param_t snapshot_params[N_SNAP_PARAMS] ={
 const int n_snapshot_params =	N_SNAP_PARAMS; // (sizeof(snapshot_params)/sizeof(param_t));
 
 /*
- * Socket for sending log messages from writer thread
- */
-
-static void *wr_log;
-
-/*
  * Writer parameter structure.
  */
 
 wparams writer_parameters;
+
+/*
+ * Reader thread comms initialisation.
+ *
+ * Called after the context is created.
+ */
+
+static void *wr_log;
+static void *wr_queue_writer;
+static void *command;
+
+static int create_reader_comms() {
+  /* Create necessary sockets */
+  command  = zh_bind_new_socket(zmq_main_ctx, ZMQ_REP, WRITER_CMD_ADDR);	/* Receive commands */
+  assertv(command != NULL, "Failed to instantiate reader command socket\n");
+  wr_log   = zh_connect_new_socket(zmq_main_ctx, ZMQ_PUSH, LOG_SOCKET);  /* Socket for log messages */
+  assertv(wr_log != NULL, "Failed to instantiate reader log socket\n");
+  wr_queue_writer = zh_connect_new_socket(zmq_main_ctx, ZMQ_PAIR, READER_QUEUE_ADDR);
+  assertv(wr_queue_writer != NULL, "Failed to instantiate reader queue socket\n");
+}
 
 /*
  * Debug writer parameters
@@ -105,8 +119,7 @@ void debug_writer_params() {
     return;
 
   snprintf(buf, MSGBUFSIZE,
-	   "Writer: TMPDIR=%s, SNAPDIR=%s, WUID=%d, WGID=%d\n", tmpdir_path, writer_parameters.w_snapdir,
-	   writer_parameters.w_uid, writer_parameters.w_gid);
+	   "Writer: TMPDIR=%s, SNAPDIR=%s\n", tmpdir_path, writer_parameters.w_snapdir);
   zh_put_multi(wr_log, 1, buf);
 }
 
@@ -309,14 +322,16 @@ static int initialise_snapshot_buffer(snapw *s, snapr *r) {
   if(debug_level > 0)
     debug_snapshot_descriptor(s);
 
-  fd = openat(s->dirfd, r->file, O_RDWR|O_CREAT|O_EXCL|O_NONBLOCK, 0600);
+  fd = openat(s->dirfd, r->file, O_RDWR|O_CREAT|O_EXCL, 0600);
   if(fd < 0) {
     return -15;
   }
+#if 0
   ret = fchown(fd, writer_parameters.w_uid, writer_parameters.w_gid);
   if(ret < 0) {
     return -16;
   }
+#endif
   ret = ftruncate(fd, r->bytes); /* Pre-size the file */
   if(ret < 0) {
     return -17;
@@ -358,9 +373,7 @@ static int build_snapshot_descriptor(snapw **sp) {
 
   /* Mandatory path: create/open a correctly-owned directory for this data */
   s->path = s->params[SNAP_PATH];
-  s->dirfd = new_directory(writer_parameters.w_snap_dirfd, s->path, 
-			   writer_parameters.w_uid,
-			   writer_parameters.w_gid);
+  s->dirfd = new_directory(writer_parameters.w_snap_dirfd, s->path, 0, 0);
   if(s->dirfd < 0) {					     /* Give up on failure */
     return -14;
   }
@@ -426,7 +439,7 @@ static void destroy_snapshot_descriptor(snapw *s) {
  * Manage the write queue:  deal with queue message from reader.
  */
 
-static void process_queue_message(void *socket, void *command) {
+static int process_queue_message(void *socket) {
   snapr *r = NULL;
   snapw *s;
   int ret;
@@ -512,7 +525,7 @@ static void process_queue_message(void *socket, void *command) {
       s->wr_state = SNAPSHOT_REPLIED;
       ret = zh_put_msg(socket, 0, sizeof(snapr *), (void *)&r);	 /* Hand it off to Reader */
       assertv(ret > 0, "Message to reader failed with %d\n", ret);
-      return;
+      return true;
     }
   }
 
@@ -522,12 +535,12 @@ static void process_queue_message(void *socket, void *command) {
 
   if( s->wr_state == SNAPSHOT_DONE ) {				 /* Finished with this descriptor */
     destroy_snapshot_descriptor(s);
-    return;
+    return true;
   }
 
   /* SHOULD NOT REACH HERE, IF THE STATE MACHINE IS WORKING AS EXPECTED! */
-  fprintf(stderr, "Writer: queue message in illegal state pair (%d,%d)\n", r->rd_state, s->wr_state);
-  abort();
+  assertv(false, "Writer: queue message in illegal state pair (%d,%d)\n", r->rd_state, s->wr_state);
+  return false;
 }
 
 /*
@@ -601,35 +614,30 @@ int process_writer_command(void *socket) {
 }
 
 /*
- * Writer thread main routine
+ * Writer thread message loop
  */
 
-void *writer_main(void *arg) {
-  int ret, n;
-  void *command;
+static void writer_thread_msg_loop() {    /* Read and process messages */
+  int ret;
   int running;
-
-  /* Open and attach the writer thread's sockets */
-  wr_log = zh_connect_new_socket(zmq_main_ctx, ZMQ_PUSH, LOG_SOCKET);
-  assertv(wr_log != NULL, "Failed to instantiate log socket\n");
-  command = zh_connect_new_socket(zmq_main_ctx, ZMQ_REP, WRITER_CMD_ADDR);
-  assertv(command != NULL, "Failed to instantiate command socket\n");
-
-  if(debug_level > 1)
-    debug_writer_params();
+  int n;
 
   zmq_pollitem_t  poll_list[] =
-    { { command, 0, ZMQ_POLLIN, 0 },
-      { wr_queue_writer, 0, ZMQ_POLLIN, 0 },
+    {  { wr_queue_writer, 0, ZMQ_POLLIN, 0 },
+       { command, 0, ZMQ_POLLIN, 0 },
     };
-#define	POLL_NITEMS	(sizeof(poll_list)/sizeof(zmq_pollitem_t))
+#define	N_POLL_ITEMS	(sizeof(poll_list)/sizeof(zmq_pollitem_t))
+  int (*poll_responders[N_POLL_ITEMS])(void *) =
+    { process_queue_message,
+      process_writer_command,
+    };
 
-/* Writer initialisation is complete */
+  /* Writer initialisation is complete */
   zh_put_multi(wr_log, 1, "Writer thread is initialised");
 
   running = true;
   while( running ) {
-    int ret = zmq_poll(&poll_list[0], POLL_NITEMS, -1);
+    int ret = zmq_poll(&poll_list[0], N_POLL_ITEMS, -1);
 
     if( ret < 0 && errno == EINTR ) { /* Interrupted */
       zh_put_multi(wr_log, 1, "Writer loop interrupted");
@@ -637,18 +645,27 @@ void *writer_main(void *arg) {
     }
     if(ret < 0)
       break;
-    if( poll_list[0].revents & ZMQ_POLLIN ) {
-      if(debug_level > 2)
-	fprintf(stderr, "Writer thread gets command message\n");
-      running = process_writer_command(command);
-    }
-    if( poll_list[1].revents & ZMQ_POLLIN ) {
-      if(debug_level > 2)
-	fprintf(stderr, "Writer thread gets queue message\n");
-      process_queue_message(wr_queue_writer, command);
+
+    for(n=0; n<N_POLL_ITEMS; n++) {
+      if( poll_list[n].revents & ZMQ_POLLIN ) {
+	running = (*poll_responders[n])(poll_list[n].socket);
+      }
     }
   }
+}
 
+/*
+ * Writer thread main routine
+ */
+
+void *writer_main(void *arg) {
+  int ret, n;
+  void *command;
+
+  if(debug_level > 1)
+    debug_writer_params();
+
+  writer_thread_msg_loop();
   zh_put_multi(wr_log, 1, "Writer thread is terminating by return");
 
   /* Clean up ZeroMQ sockets */
@@ -675,52 +692,12 @@ int verify_writer_params(wparams *wp) {
     }
   }
 
-  /* Compute the UID and GID for file creation.
-   *
-   * If the GID parameter is set, use that for the group; if not, but
-   * the UID parameter is set, get the group from that user and set
-   * the uid from there too.  If neither is set, use the real uid/gid
-   * of the thread.
-   */
-#if 0  
-  p = find_param_by_name("gid", 3, ps, nps);
-  assert(p != NULL);		/* Fatal if parameter not found */
-
-  errno = 0;
-  wp->w_gid = -1;
-  if( get_param_value(p, &wgid) == 0 ) { /* Got a GID value */
-    struct group *grp = getgrnam(wgid);
-
-    if(grp == NULL)		/* The WGID name was invalid  */
-      return -2;
-    wp->w_gid = grp->gr_gid;
-  }
-
-  p = find_param_by_name("uid", 3, ps, nps);
-  assert(p != NULL);		/* Fatal if parameter not found */
-
-  errno = 0;
-  wp->w_uid = -1;
-  if( get_param_value(p, &wuid) == 0 ) { /* Got a UID value */
-    struct passwd *pwd = getpwnam(wuid);
-
-    if(pwd == NULL)		/* The WUID name was invalid */
-      return -3;
-    wp->w_uid = pwd->pw_uid;	/* Use this user's UID */
-    if( wp->w_gid < 0 )
-      wp->w_gid = pwd->pw_gid;	/* Use this user's principal GID */
-  }
-  else {
-    wp->w_uid = getuid();		/* Use the real UID of this thread */
-    wp->w_gid = getgid();		/* Use the real GID of this thread */
-  }
-#endif  
   /*
    * Check the snapdir directory exists and is correctly owned, and
    * get a path fd for it.
    */
 
-  wp->w_snap_dirfd = new_directory(tmpdir_dirfd, wp->w_snapdir, wp->w_uid, wp->w_gid);
+  wp->w_snap_dirfd = new_directory(tmpdir_dirfd, wp->w_snapdir, 0, 0);
   if( wp->w_snap_dirfd < 0 )	/* Give up on failure */
     return -4;
 

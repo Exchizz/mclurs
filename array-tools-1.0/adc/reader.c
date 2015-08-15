@@ -126,6 +126,25 @@ static struct reader_state	reader; /* Reader state + parameters */
 static struct comedi_state	adc;	/* Comedi state + parameters */
 
 /*
+ * Reader thread comms initialisation.
+ *
+ * Called after the context is created.
+ */
+
+static void *wr_queue_reader;
+static void *command;
+
+static int create_reader_comms() {
+  /* Create necessary sockets */
+  command  = zh_bind_new_socket(zmq_main_ctx, ZMQ_REP, READER_CMD_ADDR);	/* Receive commands */
+  assertv(command != NULL, "Failed to instantiate reader command socket\n");
+  reader.rd_log   = zh_connect_new_socket(zmq_main_ctx, ZMQ_PUSH, LOG_SOCKET);  /* Socket for log messages */
+  assertv(reader.rd_log != NULL, "Failed to instantiate reader log socket\n");
+  wr_queue_reader = zh_bind_new_socket(zmq_main_ctx, ZMQ_PAIR, READER_QUEUE_ADDR);
+  assertv(wr_queue_reader != NULL, "Failed to instantiate reader queue socket\n");
+}
+
+/*
  * Resource usage debugging
  */
 
@@ -362,14 +381,14 @@ static void compute_data_start_timestamp(struct timespec *ts, int ns) {
 #define	COMMAND_BUFSIZE		1024
 char command_buffer[COMMAND_BUFSIZE];
 
-void process_reader_command() {
+static void process_reader_command(void *s) {
   int   used;
   int   ret;
   char *err = "OK";
   char *p;
   static char err_buf[COMMAND_BUFSIZE];
 
-  used = zh_collect_multi(reader.command, &command_buffer[0], COMMAND_BUFSIZE, "");
+  used = zh_collect_multi(s, &command_buffer[0], COMMAND_BUFSIZE, "");
   if(debug_level > 2)
     zh_put_multi(reader.rd_log, 3, "Reader cmd: '", &command_buffer[0], "'");
   switch(command_buffer[0]) {
@@ -378,7 +397,7 @@ void process_reader_command() {
     if(reader.state == READER_ARMED || reader.state == READER_RUN || reader.state == READER_RESTING)
       comedi_stop_data_transfer();
     reader.stoploop = true;	/* No more waiting in the main loop */
-    // zh_put_multi(reader.command, 1, "OK Quit");  /* Reply handled in main thread */
+    // zh_put_multi(s, 1, "OK Quit");  /* Reply handled in main thread */
     return;
 
   case 'h':
@@ -388,7 +407,7 @@ void process_reader_command() {
       break;
     }
     comedi_stop_data_transfer();
-    zh_put_multi(reader.command, 1, "OK Stop");
+    zh_put_multi(s, 1, "OK Stop");
     return;
 
   case 'p':
@@ -415,7 +434,7 @@ void process_reader_command() {
         break;
       }
     }
-    zh_put_multi(reader.command, 1, "OK Param");
+    zh_put_multi(s, 1, "OK Param");
     reader.state = READER_PARAM;
     if(debug_level > 1)
       debug_params(stderr, globals, n_global_params);
@@ -441,7 +460,7 @@ void process_reader_command() {
       err = err_buf;
       break;
     }
-    zh_put_multi(reader.command, 1, "OK Ready");
+    zh_put_multi(s, 1, "OK Ready");
     return;
 
   case 'g':
@@ -457,7 +476,7 @@ void process_reader_command() {
       err = err_buf;
       break;
     }      
-    zh_put_multi(reader.command, 1, "OK Go");
+    zh_put_multi(s, 1, "OK Go");
     return;
 
   default:
@@ -465,7 +484,7 @@ void process_reader_command() {
     break;
   }
   zh_put_multi(reader.rd_log, 2, err, &command_buffer[0]); /* Error occurred, return message */
-  zh_put_multi(reader.command, 4, "NO: ERROR ", err, " in ", &command_buffer[0]);
+  zh_put_multi(s, 4, "NO: ERROR ", err, " in ", &command_buffer[0]);
 }
 
 /*
@@ -542,11 +561,11 @@ static void process_ready_write_queue_item(snapr *r) {
  * reply with an error.
  */
 
-static void process_queue_message(void *socket) {
+static void process_queue_message(void *s) {
   int   ret;
   snapr *r = NULL;
 
-  ret = zh_get_msg(socket, 0, sizeof(snapr *), (void *)&r);
+  ret = zh_get_msg(s, 0, sizeof(snapr *), (void *)&r);
   assertv(ret == sizeof(snapr *), "Reader receives wrongly sized message: %d got vs %d expected\n", ret, sizeof(snapr *));
   assertv(r != NULL, "Received NULL pointer from writer\n");
 
@@ -574,54 +593,30 @@ static void process_queue_message(void *socket) {
   }
 
   /* An error was detected:  reply now */
-  ret = zh_put_msg(socket, 0, sizeof(snapr *), (void *)&r); /* Send reply */
+  ret = zh_put_msg(s, 0, sizeof(snapr *), (void *)&r); /* Send reply */
   assertv(ret > 0, "Failed to send message to writer\n");
 }
 
 /*
- * Reader thread main loop
- *
- * This loop either waits for a command on the command socket, or
- * loops reading from Comedi.  It aborts if it cannot get the sockets
- * it needs.
+ * Reader thread message loop
  */
 
-void *reader_main(void *arg) {
+static void reader_thread_msg_loop() {    /* Read and process messages */
   int ret;
-  char *thread_msg = "thread exit";
-
-  /* Create necessary sockets */
-  reader.command  = zh_connect_new_socket(zmq_main_ctx, ZMQ_REP, READER_CMD_ADDR); /* Receive commands */
-  assertv(reader.command != NULL, "Failed to instantiate reader command socket\n");
-  reader.rd_log   = zh_connect_new_socket(zmq_main_ctx, ZMQ_PUSH, LOG_SOCKET);     /* Socket for log messages */
-  assertv(reader.rd_log != NULL, "Failed to instantiate reader log socket\n");
 
   reader.stoploop = false;
   reader.poll_delay = -1;
 
-  ret = set_reader_rt_scheduling();
-  switch(ret) {
-  case 1:
-    zh_put_multi(reader.rd_log, 1, "Reader RT scheduling succeeded");
-    break;
-  case 0:
-    zh_put_multi(reader.rd_log, 1, "Reader using normal scheduling: RTPRIO unset");
-    break;
-  default:
-    zh_put_multi(reader.rd_log, 2, "Reader RT scheduling setup failed:", strerror(errno));
-    break;
-  }
-
-  struct timespec test_stamp;
-  ret = clock_gettime(CLOCK_MONOTONIC, &test_stamp);
-  assertv(ret == 0, "Failed to get monotonic clock time\n");  
-
   /* Main loop:  read messages and process messages */
   zmq_pollitem_t  poll_list[] =
-    { { reader.command, 0, ZMQ_POLLIN, 0 },
-      { wr_queue_reader, 0, ZMQ_POLLIN, 0 },
+    { { wr_queue_reader, 0, ZMQ_POLLIN, 0 },
+      { command, 0, ZMQ_POLLIN, 0 },
     };
-#define	POLL_NITEMS	(sizeof(poll_list)/sizeof(zmq_pollitem_t))
+#define	N_POLL_ITEMS	(sizeof(poll_list)/sizeof(zmq_pollitem_t))
+  void (*poll_responders[N_POLL_ITEMS])(void *) =
+    { process_queue_message,
+      process_reader_command,
+    };
 
   zh_put_multi(reader.rd_log, 1, "Reader thread is initialised");
   reader.state = READER_PARAM;
@@ -634,6 +629,7 @@ void *reader_main(void *arg) {
     int ret; 
     int nb;
     int delay = reader.poll_delay;
+    int n;
 
     if( reader.adc_run ) {		/* If ADC is running, process data  */
 
@@ -675,7 +671,7 @@ void *reader_main(void *arg) {
       }
     }
 
-    ret = zmq_poll(&poll_list[0], POLL_NITEMS, delay);	/* Look for commands here */
+    ret = zmq_poll(&poll_list[0], N_POLL_ITEMS, delay);	/* Look for commands here */
     if( ret < 0 && errno == EINTR ) { /* Interrupted */
       zh_put_multi(reader.rd_log, 1, "Reader loop interrupted");
       break;
@@ -683,29 +679,55 @@ void *reader_main(void *arg) {
     if(ret < 0)
       break;
 
-    if( poll_list[1].revents & ZMQ_POLLIN ) {
-      if(debug_level > 2)
-	fprintf(stderr, "Reader thread gets queue message\n");
-      process_queue_message(wr_queue_reader);
-    }
-
-    /* Lowest priority -- handle commands */
-    if( poll_list[0].revents & ZMQ_POLLIN ) {
-      if(debug_level > 2)
-	fprintf(stderr, "Reader thread gets command message\n");
-      process_reader_command();
+    for(n=0; n<N_POLL_ITEMS; n++) {
+      if( poll_list[n].revents & ZMQ_POLLIN ) {
+	(*poll_responders[n])(poll_list[n].socket);
+      }
     }
   }
+}
 
-  if( reader.state == READER_ARMED || reader.state == READER_RUN || reader.state == READER_RESTING ) {
+/*
+ * Reader thread main routine
+ *
+ * This loop either waits for a command on the command socket, or
+ * loops reading from Comedi.  It aborts if it cannot get the sockets
+ * it needs.
+ */
+
+void *reader_main(void *arg) {
+  int ret;
+  char *thread_msg = "thread exit";
+
+  create_reader_comms();
+
+  ret = set_reader_rt_scheduling();
+  switch(ret) {
+  case 1:
+    zh_put_multi(reader.rd_log, 1, "Reader RT scheduling succeeded");
+    break;
+  case 0:
+    zh_put_multi(reader.rd_log, 1, "Reader using normal scheduling: RTPRIO unset");
+    break;
+  default:
+    zh_put_multi(reader.rd_log, 2, "Reader RT scheduling setup failed:", strerror(errno));
+    break;
+  }
+
+  struct timespec test_stamp;
+  ret = clock_gettime(CLOCK_MONOTONIC, &test_stamp);
+  assertv(ret == 0, "Failed to get monotonic clock time\n");  
+
+  reader_thread_msg_loop();
+  if(reader.state == READER_ARMED || reader.state == READER_RUN || reader.state == READER_RESTING) {
     comedi_stop_data_transfer();
   }
 
   zh_put_multi(reader.rd_log, 1, "Reader thread terminating by return");
 
   /* Clean up ZeroMQ sockets */
-  zmq_close(reader.position);
-  zmq_close(reader.command);
+  zmq_close(wr_queue_reader);
+  zmq_close(command);
   zmq_close(reader.rd_log);
   reader_thread_running = false;
   return (void *) thread_msg;

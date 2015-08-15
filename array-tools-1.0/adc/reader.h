@@ -5,7 +5,7 @@
  */
 
 #define READER_CMD_ADDR	"inproc://Reader-CMD"
-#define READER_POS_ADDR	"inproc://Reader-POS"
+#define READER_QUEUE_ADDR "inproc://Reader-Q"
 
 #define READER_MSGBUF	16		/* Size of internal command frame */
 
@@ -19,9 +19,11 @@ typedef struct {
   int         r_bufsz;		/* Reader buffer size */
   double      r_window;		/* Snapshot window (must fit in buffer) */
   const char *r_device;		/* Comedi device to use */
+
   /* These below are computed by the reader and exported */
   int	      r_inter_sample_ns;    /* [ns] for one sample */
   uint64_t    r_capture_start_time; /* [ns from epoch] */
+  int	      r_running;	    /* Thread is running and ready */
 }
   rparams;
 

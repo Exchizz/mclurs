@@ -26,12 +26,12 @@ PARAM_TYPE_EXPORT(double);
 PARAM_TYPE_EXPORT(string);
 
 typedef struct
-{ char		*p_name;			/* Name of this parameter */
-  char		*p_str;				/* String value for this parameter */
+{ const char	*p_name;			/* Name of this parameter */
+  const char	*p_str;				/* String value for this parameter */
   void          *p_val;				/* Location where value is to be stored */
   param_type	*p_type;			/* Type of the parameter, for value conversion */
   int		 p_source;			/* Possible sources of the values */
-  char          *p_gloss;			/* Explanation of this parameter */
+  const char    *p_gloss;			/* Explanation of this parameter */
   int		 p_ftop;			/* If true, free and replace str on push */
 }
   param_t;
@@ -43,11 +43,13 @@ typedef struct
 extern int push_param_value(param_t *, char *);
 extern param_t *find_param_by_name(const char *, int, param_t [], int);
 extern int push_param_from_env(char *[], param_t [], int);
-extern int get_param_value(param_t *, char **);
+extern int get_param_value(param_t *, const char **);
 // extern void param_brief_usage(char *, int, param_t [], int);
 // extern void param_option_usage(FILE *, int, param_t [], int);
 extern char *pop_param_value(param_t *);
-extern int assign_param_values(param_t *, int);
+extern int assign_param(param_t *);
+extern int assign_all_params(param_t *, int);
+extern int param_value_to_string(param_t *, const char **);
 extern int arg_defaults_from_params(void **, int, param_t [], int);
 extern int arg_results_to_params(void **, param_t [], int);
 extern void debug_params(FILE *, param_t [], int);

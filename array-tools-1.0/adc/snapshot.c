@@ -6,7 +6,11 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/capability.h>
+#include <sys/prctl.h>
 #include <fcntl.h>
+#include <pwd.h>
+#include <grp.h>
 #include <argtable2.h>
 #include "argtab.h"
 
@@ -28,6 +32,7 @@
 #include "snapshot.h"
 #include "reader.h"
 #include "writer.h"
+#include "tidy.h"
 
 /*
  * Snapshot version
@@ -180,33 +185,146 @@ static int	   schedprio;		  /* Real-time priority for reader and writer */
 
 void       *zmq_main_ctx;	/* ZMQ context for messaging */
 
-int	    reader_thread_running, /* For cleanly stopping main loop */
-	    writer_thread_running;
-
 int	    tmpdir_dirfd;	/* The file descriptor obtained for the TMPDIR directory */
 const char *tmpdir_path;		/* The path for the file descriptor above */
-
-void       *wr_queue_reader;	/* Pipe between Reader and Writer for queue handling */
-void       *wr_queue_writer;
 
 /*
  * Thread handles for reader and writer
  */
 
 static pthread_t  reader_thread,
-		  writer_thread;
+		  writer_thread,
+		  tidy_thread;
 
 static pthread_attr_t reader_thread_attr,
-		      writer_thread_attr;
+		      writer_thread_attr,
+		      tidy_thread_attr;
 
 /*
- * Public sockets for main thread
+ * Establish main comms:  this routine runs last, so it mostly does connect() calls.
+ * It must run when the other three threads are already active.
  */
 
 static void *log_socket;
 static void *reader;
 static void *writer;
 static void *command;
+
+static int create_main_comms() {
+  int ret;
+
+  /* Create and initialise the sockets: LOG socket */
+  log_socket = zh_bind_new_socket(zmq_main_ctx, ZMQ_PULL, LOG_SOCKET);
+  if( log_socket == NULL ) {
+    fprintf(stderr, "%s: Error -- unable to create internal log socket: %s\n", program, strerror(errno));
+    return -1;
+  }
+
+  /* Create and initialise the sockets: reader and writer command sockets */
+  reader = zh_connect_new_socket(zmq_main_ctx, ZMQ_REQ, READER_CMD_ADDR);
+  if( reader == NULL ) {
+    fprintf(stderr, "%s: Error -- unable to cconnect internal socket to reader: %s\n", program, strerror(errno));
+    return -1;
+  }
+  writer = zh_connect_new_socket(zmq_main_ctx, ZMQ_REQ, WRITER_CMD_ADDR);
+  if( writer == NULL ) {
+    fprintf(stderr, "%s: Error -- unable to connect internal socket to writer: %s\n", program, strerror(errno));
+    return -1;
+  }
+
+  /* Create and initialise the external command socket */
+  command = zh_bind_new_socket(zmq_main_ctx, ZMQ_REP, snapshot_addr);
+  if( command == NULL ) {
+    fprintf(stderr, "%s: Error -- unable to bind external command socket %s: %s\n",
+	    program, snapshot_addr, strerror(errno));
+    return -1;
+  }
+
+  return 0;
+}
+
+/*
+ * Sort out the capabilities required by the process.  (If not running
+ * as root, check that we have the capabilities we require.)  Release
+ * any capabilities not needed and lock against dropping privilege.
+ *
+ * The threads need the following capabilities:
+ *
+ * CAP_IPC_LOCK  (Reader and Writer) -- ability to mmap and mlock pages.
+ * CAP_SYS_NICE  (Reader and Writer) -- ability to set RT scheduling priorities
+ * CAP_SYS_ADMIN (Reader) -- ability to set (increase) the Comedi buffer maximum size
+ * CAP_SYS_ADMIN (Writer) -- ability to set RT IO scheduling priorities (unused at present)
+ * CAP_SYS_ADMIN (Tidy)   -- ability to set RT IO scheduling priorities (unused at present)
+ *
+ * Otherwise the main thread and the tidy thread need no special powers.  The ZMQ IO thread
+ * is also unprivileged, and is currently spawned during context creation from tidy.
+ */
+
+static int snap_adjust_capabilities() {
+  cap_t c = cap_get_proc();
+  cap_flag_value_t v = CAP_CLEAR;
+  uid_t u = geteuid();
+  int ret = 0;
+
+  if( !c )			/* No memory? */
+    return -1;
+
+  if( cap_get_flag(c, CAP_IPC_LOCK,  CAP_PERMITTED, &v) < 0 || v == CAP_CLEAR ||
+      cap_get_flag(c, CAP_SYS_NICE,  CAP_PERMITTED, &v) < 0 || v == CAP_CLEAR ||
+      cap_get_flag(c, CAP_SYS_ADMIN, CAP_PERMITTED, &v) < 0 || v == CAP_CLEAR
+      ) {
+    cap_free(c);
+    fprintf(stderr, "%s: I do not have the necessary capbilities to operate\n", program);
+    errno = EPERM;
+    return -1;
+  }
+
+  if( !u ) {
+    const cap_value_t vs[] = { CAP_IPC_LOCK, CAP_SYS_NICE, CAP_SYS_ADMIN, };
+
+    /* So we are root and have the capabilities we need.  Prepare to drop the others... */
+    cap_clear(c);
+    cap_set_flag(c, CAP_PERMITTED, sizeof(vs)/sizeof(cap_value_t), &vs[0], CAP_SET);
+    if( prctl(PR_SET_KEEPCAPS, 1L) <0 ) {
+      cap_free(c);
+      fprintf(stderr, "%s: unable to keep required capabilities on user change\n", program);
+      return -1;
+    }
+
+    ret = cap_set_proc(c);
+  }
+
+  cap_free(c);
+  return ret;
+}
+
+/*
+ * Drop privileges and capabilities when appropriate.
+ */
+
+static int main_adjust_capabilities(uid_t uid, gid_t gid) {
+  uid_t u = getuid();
+  gid_t g = getgid();
+  cap_t c = cap_get_proc();
+
+  if(c) {
+    cap_clear(c);
+    if( cap_set_proc(c) < 0 ) {
+      cap_free(c);
+      fprintf(stderr, "%s: Error -- main thread fails to clear capabilities: %s\n", program, strerror(errno));
+      return -1;
+    }
+  }
+  if(u == uid && g == gid)
+    return 0;
+
+  if( !u ) { /* Running as root */
+    if( setgid(gid) == 0 && setuid(uid) == 0 )
+      return 0;
+  }
+
+  return -1;
+}
 
 /*
  * Process a (possibly multipart) log message.
@@ -216,7 +334,7 @@ static void *command;
 
 #define LOGBUF_SIZE	1024
 
-void process_log_message(void *socket) {
+int process_log_message(void *socket) {
   char log_buffer[LOGBUF_SIZE];
   int used;
 
@@ -229,6 +347,7 @@ void process_log_message(void *socket) {
     fwrite(log_buffer, used, 1, stderr);
   }
   fflush(stderr);
+  return 0;
 }
 
 /*
@@ -268,7 +387,7 @@ int process_snapshot_command() {
   buf[size] = '\0';
   if( !size ) {
     ret = zh_put_msg(command, 0, 0, NULL); /* If empty message received, send empty reply at once */
-    assert(ret == 0);
+    assertv(ret == 0, "Reply to command failed, %d\n", ret);
     return 0;
   }
   // fprintf(stderr, "Msg '%c' (%d)\n", buf[0], buf[0]);
@@ -276,11 +395,11 @@ int process_snapshot_command() {
   case 'q':
   case 'Q':			/* Deal specially with Quit command, to close down nicely... */
     ret = zh_put_msg(reader, 0, size, buf); /* Forward this commands to the reader thread */
-    assert(ret > 0);
+    assertv(ret > 0, "Quit to reader failed, %d\n", ret);
     ret = zh_put_msg(writer, 0, size, buf); /* Forward this commands to the writer thread */
-    assert(ret > 0);
+    assertv(ret > 0, "Quit to writer failed, %d\n", ret);
     ret = zh_put_msg(command, 0, 7, "OK Quit"); /* Reply to Quit here */
-    assert(ret > 0);
+    assertv(ret > 0, "Quit reply failed, %d\n", ret);
     break;
 
   case 'g':
@@ -292,35 +411,81 @@ int process_snapshot_command() {
   case 'p':
   case 'P':
     ret = zh_put_msg(reader, 0, size, buf); /* Forward these commands to the reader thread */
-    assert(ret > 0);
+    assertv(ret > 0, "Forward to reader failed, %d\n", ret);
     break;
 
   case 's':
   case 'S':
     ret = zh_put_msg(writer, 0, size, buf); /* Forward snapshot command to writer */
-    assert(ret > 0);
+    assertv(ret > 0, "Forward to writer failed, %d\n", ret);
     break;
 
   case '?':
     buf[0] = '!';
     ret = zh_put_msg(command, 0, size, buf); /* Reply to 'ping' message */
-    assert(ret > 0);
+    assertv(ret > 0, "Reply to ping failed, %d\n", ret);
     break;
 
   default:
     ret = zh_put_multi(command, 2, "Unknown command: ", buf);
-    assert(ret == 0);
+    assertv(ret == 0, "Reject unknown reply failed, %d\n", ret);
     break;
   }
   return 0;
 }
 
 /*
- * Snapshot main routine.
- *
+ * Main thread message loop
  */
 
 #define	MAIN_LOOP_POLL_INTERVAL	20
+
+static void main_thread_msg_loop() {    /* Read and process messages */
+  int poll_delay;
+  int running;
+  zmq_pollitem_t  poll_list[] =
+    { { log_socket, 0, ZMQ_POLLIN, 0 },
+      { command, 0, ZMQ_POLLIN, 0 },
+      { reader, 0, ZMQ_POLLIN, 0 },
+      { writer, 0, ZMQ_POLLIN, 0 },
+    };
+#define  N_POLL_ITEMS  (sizeof(poll_list)/sizeof(zmq_pollitem_t))
+  int (*poll_responders[N_POLL_ITEMS])(void *) =
+    { process_log_message,
+      process_snapshot_command,
+      process_reply,
+      process_reply,
+    };
+
+  fprintf(stderr, "%s: starting main thread polling loop with %d items\n", program, N_POLL_ITEMS);
+  running = true;
+  poll_delay = MAIN_LOOP_POLL_INTERVAL;
+  while(running) {
+    int n;
+    int ret = zmq_poll(&poll_list[0], N_POLL_ITEMS, poll_delay);
+
+    if( ret < 0 && errno == EINTR ) { /* Interrupted */
+      fprintf(stderr, "%s: main thread loop interrupted\n", program);
+      break;
+    }
+    if(ret < 0)
+      break;
+    running = reader_parameters.r_running || writer_parameters.w_running;
+    if( !running )		/* Flush out last messages */
+      poll_delay = 1000;
+    for(n=0; n<N_POLL_ITEMS; n++) {
+      if( poll_list[n].revents & ZMQ_POLLIN ) {
+	ret = (*poll_responders[n])(poll_list[n].socket);
+	assertv(ret >= 0, "Error in message processing in main poll loop, ret %d\n", ret);
+	running = true;
+      }
+    }
+  }
+}
+
+/*
+ * Snapshot main routine.
+ */
 
 int main(int argc, char *argv[], char *envp[]) {
   char *thread_return = NULL;
@@ -335,7 +500,7 @@ int main(int argc, char *argv[], char *envp[]) {
   push_param_from_env(envp, globals, n_global_params);
 
   /* 2. Process parameters:  push values out to program globals */
-  ret = assign_param_values(globals, n_global_params);
+  ret = assign_all_params(globals, n_global_params);
   assertv(ret == n_global_params, "Push parameters missing some %d/%d done\n", ret, n_global_params); /* If not, there is a coding problem */
 
   /* 3. Create and parse the command lines -- installs defaults from parameter table */
@@ -378,8 +543,45 @@ int main(int argc, char *argv[], char *envp[]) {
   /* 5a. Verify parameters required by the main program/thread */
   tmpdir_dirfd = open(tmpdir_path, O_PATH|O_DIRECTORY); /* Verify the TMPDIR path */
   if( tmpdir_dirfd < 0 ) {
-    fprintf(stderr, "%s: Cannot access given TMPDIR '%s': %s\n", program, tmpdir_path, strerror(errno));
+    fprintf(stderr, "%s: Error -- cannot access given TMPDIR '%s': %s\n", program, tmpdir_path, strerror(errno));
     exit(2);
+  }
+
+  /* Compute the UID and GID for unprivileged operation.
+   *
+   * If the GID parameter is set, use that for the group; if not, but
+   * the UID parameter is set, get the group from that user and set
+   * the uid from there too.  If neither is set, use the real uid/gid
+   * of the thread.
+   */
+
+  gid_t gid = -1;
+  if(snapshot_group) {
+    struct group *grp = getgrnam(snapshot_group);
+
+    if(grp == NULL) {		/* The group name was invalid  */
+      fprintf(stderr, "%s: Error -- given group %s is not recognised: %s\n", program, snapshot_group, strerror(errno));
+      exit(2);
+    }
+    gid = grp->gr_gid;
+  }
+
+  uid_t uid = -1;
+  if(snapshot_user) { /* Got a UID value */
+    struct passwd *pwd = getpwnam(snapshot_user);
+
+    if(pwd == NULL) {		/* The user name was invalid */
+      fprintf(stderr, "%s: Error -- given user %s is not recognised: %s\n", program, snapshot_user, strerror(errno));
+      exit(2);
+    }
+
+    uid = pwd->pw_uid;	/* Use this user's UID */
+    if(gid < 0)
+      gid = pwd->pw_gid;	/* Use this user's principal GID */
+  }
+  else {
+    uid = getuid();		/* Use the real UID of this thread */
+    gid = getgid();		/* Use the real GID of this thread */
   }
 
    /* 5b. Verify and initialise parameters for the reader thread */
@@ -400,133 +602,64 @@ int main(int argc, char *argv[], char *envp[]) {
     exit(2);
   }
 
-  /* Create the ZMQ context */
-  zmq_main_ctx  = zmq_ctx_new();
-  if( !zmq_main_ctx ) {
-    fprintf(stderr, "%s: ZeroMQ context creation failed: %s\n", program, strerror(errno));
-    exit(1);
-  }
-
-  /* Create and initialise the sockets: LOG socket */
-  log_socket = zh_bind_new_socket(zmq_main_ctx, ZMQ_PULL, LOG_SOCKET);
-  if( log_socket == NULL ) {
-    fprintf(stderr, "Unable to create internal log socket: %s\n", strerror(errno));
-    exit(2);
-  }
-
-  /* Create and initialise the sockets: reader and writer command sockets */
-  reader = zh_bind_new_socket(zmq_main_ctx, ZMQ_REQ, READER_CMD_ADDR);
-  if( reader == NULL ) {
-    fprintf(stderr, "Unable to create internal socket to reader: %s\n", strerror(errno));
-    exit(2);
-  }
-  writer = zh_bind_new_socket(zmq_main_ctx, ZMQ_REQ, WRITER_CMD_ADDR);
-  if( writer == NULL ) {
-    fprintf(stderr, "Unable to create internal socket to writer: %s\n", strerror(errno));
-    exit(2);
-  }
-
-  /* Create and initialise the sockets: reader-writer pipe for write queue */
-  wr_queue_writer = zh_bind_new_socket(zmq_main_ctx, ZMQ_PAIR, WRITE_QUEUE);
-  if( wr_queue_writer == NULL ) {
-    fprintf(stderr, "Unable to create internal socket to writer: %s\n", strerror(errno));
-    exit(2);
-  }
-
-  wr_queue_reader = zh_connect_new_socket(zmq_main_ctx, ZMQ_PAIR, WRITE_QUEUE);
-  if( wr_queue_reader == NULL ) {
-    fprintf(stderr, "Unable to create internal socket to writer: %s\n", strerror(errno));
-    exit(2);
+  /* Create the tidy thread */
+  pthread_attr_init(&tidy_thread_attr);
+  if( pthread_create(&tidy_thread, &tidy_thread_attr, tidy_main, NULL) < 0 ) {
+    fprintf(stderr, "%s: Error -- tidy thread creation failed: %s\n", program, strerror(errno));
+    exit(3);
   }
 
   /* Create the reader thread */
-  reader_thread_running = true;
   pthread_attr_init(&reader_thread_attr);
   if( pthread_create(&reader_thread, &reader_thread_attr, reader_main, NULL) < 0 ) {
-    fprintf(stderr, "Reader thread creation failed: %s\n", strerror(errno));
-    exit(2);
+    fprintf(stderr, "%s: Error -- reader thread creation failed: %s\n", program, strerror(errno));
+    exit(3);
   }
 
   /* Create the writer thread */
-  writer_thread_running = true;
   pthread_attr_init(&writer_thread_attr);
   if( pthread_create(&writer_thread, &writer_thread_attr, writer_main, NULL) < 0 ) {
-    fprintf(stderr, "Writer thread creation failed: %s\n", strerror(errno));
-    exit(2);
+    fprintf(stderr, "%s: Error -- writer thread creation failed: %s\n", program, strerror(errno));
+    exit(3);
   }
 
-  /* Create and initialise the sockets: command socket */
-  command = zh_bind_new_socket(zmq_main_ctx, ZMQ_REP, snapshot_addr);
-  if( command == NULL ) {
-    fprintf(stderr, "Unable to create external command socket %s: %s\n", snapshot_addr, strerror(errno));
-    exit(2);
-  }
+  /* Wait for the threads to establish comms etc. */
 
-  /* Read and process messages */
-  zmq_pollitem_t  poll_list[] =
-    { { log_socket, 0, ZMQ_POLLIN, 0 },
-      { command, 0, ZMQ_POLLIN, 0 },
-      { reader, 0, ZMQ_POLLIN, 0 },
-      { writer, 0, ZMQ_POLLIN, 0 },
-    };
-#define	POLL_NITEMS	(sizeof(poll_list)/sizeof(zmq_pollitem_t))
-
-  fprintf(stderr, "Main thread initialised, starting polling loop with %d items\n", POLL_NITEMS);
-  running = true;
-  poll_delay = MAIN_LOOP_POLL_INTERVAL;
-  while(running) {
-    int ret = zmq_poll(&poll_list[0], POLL_NITEMS, poll_delay);
-
-    if( ret < 0 && errno == EINTR ) { /* Interrupted */
-      fprintf(stderr, "Main loop interrupted\n");
-      break;
-    }
-    if(ret < 0)
-      break;
-    running = reader_thread_running || writer_thread_running;
-    if( !running )		/* Flush out last messages */
-      poll_delay = 1000;
-    if( poll_list[0].revents & ZMQ_POLLIN ) { /* Deal with log messages from other threads */
-      //      fprintf(stderr, "Main thread loop gets a log message...\n");
-      process_log_message(log_socket);
-      running = true;
-    }
-    if( poll_list[1].revents & ZMQ_POLLIN ) { /* Deal with incoming commands */
-      fprintf(stderr, "Main thread loop gets a command message...\n");
-      process_snapshot_command();
-      running = true;
-    }
-    if( poll_list[2].revents & ZMQ_POLLIN ) { /* Deal with replies from reader */
-      fprintf(stderr, "Main thread loop gets a reader message...\n");
-      process_reply(reader);
-      running = true;
-    }
-    if( poll_list[3].revents & ZMQ_POLLIN ) { /* Deal with replies from writer */
-      fprintf(stderr, "Main thread loop gets a writer message...\n");
-      process_reply(writer);
-      running = true;
-    }
+  /* Now ready to start main loop */
+  if(reader_parameters.r_running && writer_parameters.w_running) {
+    
   }
 
   /* Tidy up threads */
   if( pthread_join(reader_thread, (void *)&thread_return) < 0 ) {
-    fprintf(stderr, "Reader thread join error: %s\n", strerror(errno));
+    fprintf(stderr, "%s: Error -- reader thread join error: %s\n", program, strerror(errno));
     thread_return = NULL;
   }
   else {
     if( thread_return ) {
-      fprintf(stderr, "Reader thread rejoined -- %s\n", thread_return);
+      fprintf(stderr, "%s: reader thread rejoined -- %s\n", program, thread_return);
       thread_return = NULL;
     }
   }
 
   if( pthread_join(writer_thread, (void *)&thread_return) < 0 ) {
-    fprintf(stderr, "Writer thread join error: %s\n", strerror(errno));
+    fprintf(stderr, "%s: Error -- writer thread join error: %s\n", program, strerror(errno));
     thread_return = NULL;
   }
   else {
     if( thread_return ) {
-      fprintf(stderr, "Writer thread rejoined -- %s\n", thread_return);
+      fprintf(stderr, "%s: writer thread rejoined -- %s\n", program, thread_return);
+      thread_return = NULL;
+    }
+  }
+
+  if( pthread_join(tidy_thread, (void *)&thread_return) < 0 ) {
+    fprintf(stderr, "%s: Error -- tidy thread join error: %s\n", program, strerror(errno));
+    thread_return = NULL;
+  }
+  else {
+    if( thread_return ) {
+      fprintf(stderr, "%s: tidy thread rejoined -- %s\n", program, thread_return);
       thread_return = NULL;
     }
   }
@@ -536,8 +669,6 @@ int main(int argc, char *argv[], char *envp[]) {
   zmq_close(reader);
   zmq_close(writer);
   zmq_close(command);
-  zmq_close(wr_queue_reader);
-  zmq_close(wr_queue_writer);
   zmq_ctx_term(zmq_main_ctx);
   exit(0);
 }

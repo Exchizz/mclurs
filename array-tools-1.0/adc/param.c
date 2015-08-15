@@ -34,9 +34,9 @@ int push_param_value(param_t *p, char *v) {
     return -1;
   }
   if( p->p_ftop && p->p_str ) {
-    if(p->p_val == p->p_str)
-      p->p_val = NULL;
-    free(p->p_str);
+    if(p->p_val && *(const char **)p->p_val == p->p_str)
+      *(const char **)p->p_val = NULL;
+    free((void *)p->p_str);
     p->p_str = NULL;
   }
   p->p_str = v;
@@ -192,7 +192,7 @@ int assign_param(param_t *p) {
 
   param_type *pt = p->p_type;
   if(pt == PARAM_TYPE(bool)) {	/* Special cases for booleans */
-    char *s = p->p_str;	/* May be NULL, for a boolean (== false) */
+    const char *s = p->p_str;	/* May be NULL, for a boolean (== false) */
 
     if( !*s || !strncasecmp(s, "false", 6) || !strncasecmp(s, "no", 3) || !strncasecmp(s, "off", 4) ) {
       *(int *)p->p_val = 0;
@@ -208,7 +208,7 @@ int assign_param(param_t *p) {
     return 0;
 
   if(pt == PARAM_TYPE(string)) { /* Special case for strings -- no conversion needed */
-    *(char **)p->p_val = p->p_str;
+    *(const char **)p->p_val = p->p_str;
     return 0;
   }
 
@@ -220,7 +220,7 @@ int assign_param(param_t *p) {
  * appropriate types and installing them in the external addresses where provided.
  */
 
-int assign_param_values(param_t ps[], int nps) {
+int assign_all_params(param_t ps[], int nps) {
   int n, done;
 
   done = 0;
@@ -238,8 +238,8 @@ int assign_param_values(param_t ps[], int nps) {
  * buffer pointed to by vp, which must be suitable to receive it.
  */
 
-int get_param_value(param_t *p, char **vp) {
-  char *v = NULL;
+int get_param_value(param_t *p, const char **vp) {
+  const char *v = NULL;
   if( !p->p_str  ) {
     if( p->p_type == PARAM_TYPE(bool) ) {
       *vp = "false";
@@ -346,12 +346,14 @@ int arg_defaults_from_params(void **argtable, int nargs, param_t ps[], int nps) 
  * arg_defaults_from_params() routine above.  Unfortunately, there is no way to know what
  * kind of value the argxxx structure describes -- we have to assume that the parameter
  * knows the type (and therefore the size to copy).
+ *
+ * We also copy the value back into the parameter string form -- this might entail some loss
+ * of precision for real number values.
  */
 
 int arg_results_to_params(void **argtable, param_t ps[], int nps) {
   struct arg_hdr **ate =  (struct arg_hdr **)argtable;
   param_t *endp = &ps[nps];
-  int n = 0;
 
   while( (*ate) && !((*ate)->flag & ARG_TERMINATOR) ) ate++; /* Find the end */
   if( !(*ate) || !((*ate)->flag & ARG_TERMINATOR) ) {
@@ -362,7 +364,7 @@ int arg_results_to_params(void **argtable, param_t ps[], int nps) {
   struct arg_hdr **atp;
   for(atp=(struct arg_hdr **)argtable; atp<ate; atp++) {
     struct arg_hdr *a = *atp;
-    n++;
+
     if( ARG_COUNT(a) == 0 )	/* There is no command-line argument value */
       continue;
 
@@ -373,10 +375,36 @@ int arg_results_to_params(void **argtable, param_t ps[], int nps) {
     if( !p->p_val )		/* Nowhere to put the value */
       continue;
 
-    fprintf(stderr, "Param %d %s has argcount %d\n", n, p->p_name, ARG_COUNT(a));
-
     void *av = ARG_DATA(a) + (ARG_COUNT(a)-1)*p->p_type->t_size;
     memcpy(p->p_val, av, p->p_type->t_size);
+
+    /*
+     * This one copy back is tricky...  If *p->p_val is not already the
+     * same as p->p_str, it must have come from a static string from
+     * argument or environment, since only the assign code changes the
+     * val content and it copies the str.  Therefore we copy back the
+     * val content and turn off the free-it flag.
+     *
+     * On the other hand, if p->p_str is in fact *p->p_val, there is
+     * nothing further to do.
+     */
+    if(p->p_type == PARAM_TYPE(string)) {
+      const char *v = *(char **)p->p_val;
+      if(v != p->p_str) {
+	if(p->p_ftop)
+	  free((void *)p->p_str);
+	p->p_ftop = 0;
+	p->p_str = v;
+      }
+      continue;			/* We are done, in this case */
+    }
+    
+    if(p->p_ftop)		/* Free the old str value if necessary */
+      free((void *)p->p_str);
+    int ret = param_value_to_string(p, &p->p_str);
+    p->p_ftop = 1;		/* The new value is a dynamic string */
+    assertv(ret >=0, "Update of parameter %s str from val for arg %d failed\n", 
+	    p->p_name, ate-atp+1); 
   }
   return 0;
 }
@@ -418,6 +446,45 @@ void param_brief_usage(char *buf, int sz, param_t ps[], int nps) {
     rest -= n;
   }
   buf[used] ='\0';
+}
+
+/*
+ * Convert a parameter value and store in a dynamically allocated string
+ */
+
+#define LOCALBUF_SIZE 64
+
+int param_value_to_string(param_t *p, const char **s) {
+  param_type *pt = p->p_type;
+  char buf[LOCALBUF_SIZE];
+  int  used = 0;
+
+  if( !p->p_val )		/* Nowhere to get the value from */
+    return 0;
+
+  /* These cases are systematically treatable */
+  if(pt == PARAM_TYPE(string)) {
+    used = snprintf(&buf[0], LOCALBUF_SIZE-1, pt->t_show, *(char **)p->p_val);
+  }
+  if(pt == PARAM_TYPE(bool)) {
+    used = snprintf(&buf[0], LOCALBUF_SIZE-1, pt->t_show, *(int *)p->p_val);
+  }
+  if(pt == PARAM_TYPE(int16)) {
+    used = snprintf(&buf[0], LOCALBUF_SIZE-1, pt->t_show, *(uint16_t *)p->p_val);
+  }
+  if(pt == PARAM_TYPE(int32)) {
+    used = snprintf(&buf[0], LOCALBUF_SIZE-1, pt->t_show, *(uint32_t *)p->p_val);
+  }
+  if(pt == PARAM_TYPE(int64)) {
+    used = snprintf(&buf[0], LOCALBUF_SIZE-1, pt->t_show, *(uint64_t *)p->p_val);
+  }
+  if(pt == PARAM_TYPE(double)) {
+    used = snprintf(&buf[0], LOCALBUF_SIZE-1, pt->t_show, *(double *)p->p_val);
+  }
+  if( !(*s = strndup(&buf[0], used)) )
+    return -1;
+
+  return used;
 }
 
 void debug_params(FILE *fp, param_t ps[], int nps) {
