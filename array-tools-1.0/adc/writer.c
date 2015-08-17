@@ -7,6 +7,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
+#include <sys/capability.h>
 #include <time.h>
 #include <pwd.h>
 #include <grp.h>
@@ -31,16 +32,15 @@
 #include "writer.h"
 
 /*
- * Snapshot parameters, used by the snapshot commadn line.  Local to this thread.
+ * Snapshot parameters, used by the S command line.
+ * Local to this thread.
  *
  * Note the #defines, which are used to extract the parameter values
  * when building snapshot descriptors -- there is no need to search
  * for the parameter when we know exactly where it is.
  */
 
-// #define N_SNAP_PARAMS 7
-
-param_t snapshot_params[N_SNAP_PARAMS] ={
+static param_t snapshot_params[] ={
 #define SNAP_BEGIN  0
   { "begin",  NULL, NULL,
     PARAM_TYPE(int64), PARAM_SRC_CMD,
@@ -78,7 +78,33 @@ param_t snapshot_params[N_SNAP_PARAMS] ={
   },
 };
 
-const int n_snapshot_params =	N_SNAP_PARAMS; // (sizeof(snapshot_params)/sizeof(param_t));
+static const int n_snapshot_params = (sizeof(snapshot_params)/sizeof(param_t));
+
+/*
+ * Snapshot working directory parameter(s), used by the D command line.
+ */
+
+static param_t snapwd_params[] ={
+#define SNAP_SETWD  0
+  { "dir",    NULL, NULL,
+    PARAM_TYPE(string), PARAM_SRC_CMD,
+    "working (sub-)directory for snapshots"
+  },
+};
+
+static const int n_snapwd_params =  (sizeof(snapwd_params)/sizeof(param_t));
+
+/*
+ * --------------------------------------------------------------------------------
+ *
+ * INITIALISATION ROUTINES FOR WRITER THREAD:
+ *
+ * - Establish the communication endpoints needed
+ * - Set up the required effective capabilities
+ * - Set up RT priority scheduling (if requested)
+ *
+ * --------------------------------------------------------------------------------
+ */
 
 /*
  * Writer parameter structure.
@@ -87,23 +113,44 @@ const int n_snapshot_params =	N_SNAP_PARAMS; // (sizeof(snapshot_params)/sizeof(
 wparams writer_parameters;
 
 /*
- * Reader thread comms initialisation.
+ * Reader thread comms initialisation (failure is fatal).
  *
- * Called after the context is created.
+ * Called after the process-wide ZMQ context is created (elsewhere).
  */
 
-static void *wr_log;
-static void *wr_queue_writer;
+static void *log;
+static void *reader;
 static void *command;
 
-static int create_reader_comms() {
+static int create_writer_comms() {
   /* Create necessary sockets */
   command  = zh_bind_new_socket(zmq_main_ctx, ZMQ_REP, WRITER_CMD_ADDR);	/* Receive commands */
   assertv(command != NULL, "Failed to instantiate reader command socket\n");
-  wr_log   = zh_connect_new_socket(zmq_main_ctx, ZMQ_PUSH, LOG_SOCKET);  /* Socket for log messages */
-  assertv(wr_log != NULL, "Failed to instantiate reader log socket\n");
-  wr_queue_writer = zh_connect_new_socket(zmq_main_ctx, ZMQ_PAIR, READER_QUEUE_ADDR);
-  assertv(wr_queue_writer != NULL, "Failed to instantiate reader queue socket\n");
+  log      = zh_connect_new_socket(zmq_main_ctx, ZMQ_PUSH, LOG_SOCKET);  /* Socket for log messages */
+  assertv(log != NULL,     "Failed to instantiate reader log socket\n");
+  reader   = zh_connect_new_socket(zmq_main_ctx, ZMQ_PAIR, READER_QUEUE_ADDR);
+  assertv(reader != NULL,  "Failed to instantiate reader queue socket\n");
+}
+
+/*
+ * Copy the necessary capabilities from permitted to effective set (failure is fatal).
+ *
+ * The writer needs:
+ *
+ * CAP_IPC_LOCK -- ability to mmap and mlock pages.
+ * CAP_SYS_NICE -- ability to set RT scheduling priorities
+ * CAP_SYS_ADMIN (Writer) -- ability to set RT IO scheduling priorities (unused at present)
+ *
+ * These capabilities should be in the CAP_PERMITTED set, but not in CAP_EFFECTIVE which was cleared
+ * when the main thread dropped privileges by changing to the desired non-root uid/gid.
+ */
+
+static int set_up_writer_capability() {
+  cap_t c = cap_get_proc();
+  const cap_value_t vs[] = { CAP_IPC_LOCK, CAP_SYS_NICE, CAP_SYS_ADMIN, };
+
+  cap_set_flag(c, CAP_EFFECTIVE, sizeof(vs)/sizeof(cap_value_t), &vs[0], CAP_SET);
+  return cap_set_proc(c);
 }
 
 /*
@@ -112,7 +159,7 @@ static int create_reader_comms() {
 
 #define MSGBUFSIZE 1024
 
-void debug_writer_params() {
+static void debug_writer_params() {
   char buf[MSGBUFSIZE];
 
   if(debug_level<1)
@@ -120,17 +167,23 @@ void debug_writer_params() {
 
   snprintf(buf, MSGBUFSIZE,
 	   "Writer: TMPDIR=%s, SNAPDIR=%s\n", tmpdir_path, writer_parameters.w_snapdir);
-  zh_put_multi(wr_log, 1, buf);
+  zh_put_multi(log, 1, buf);
 }
 
 /*
- * Utility function: get a handle to a directory, creating it if
- * necessary and making sure the ownership is correct.
+ * --------------------------------------------------------------------------------
+ *
+ * UTILITY FUNCTIONS USED ONLY BY THE WRITER THREAD
+ *
+ * --------------------------------------------------------------------------------
  */
 
-static int new_directory(int dirfd, const char *name, uid_t uid, gid_t gid) {
+/*
+ * Get a path handle to a directory, creating it if necessary.
+ */
+
+static int new_directory(int dirfd, const char *name) {
   int ret;
-  struct stat dir;
 
   ret = openat(dirfd, name, O_PATH|O_DIRECTORY); /* Try to open the directory */
   if(ret < 0 ) {
@@ -143,73 +196,128 @@ static int new_directory(int dirfd, const char *name, uid_t uid, gid_t gid) {
     if(ret < 0)					 /* Give up on failure */
       return -1;
   }
-  if( fstatat(ret, "", &dir, AT_EMPTY_PATH) < 0 )
-    return -1;
-  if( (dir.st_uid != uid || dir.st_gid != gid) && fchownat(ret, "", uid, gid, AT_EMPTY_PATH ) < 0 )
-    return -1;
-  return ret;			/* Path fd for directory, with correct ownership */
 }
 
 /*
- * Debugging function for snapshot descriptors...
+ * Manage the writer's 'working directory':  clear the old, resetting to snapdir;
+ * find/create and set a new one, clearing an old if necessary.
  */
 
-static void debug_snapshot_descriptor(snapw *s) {
-  char buf[MSGBUFSIZE];
-  char *parch = "BESFLCP";
-  char params[N_SNAP_PARAMS+1];
-  snapr *r = s->this_snap;
-  int i;
+static void clear_writer_wd() {
+  int fd = writer_parameters.w_snap_curfd;
 
-  for(i=0; i<N_SNAP_PARAMS; i++)
-    params[i] = (s->params[i]? parch[i] : ' ');
-  params[N_SNAP_PARAMS] = '\0';
+  if( fd != writer_parameters.w_snap_dirfd ) {
+    writer_parameters.w_snap_curfd = writer_parameters.w_snap_dirfd;
+    close(fd);
+  }
+}
 
-  snprintf(buf, MSGBUFSIZE,
-	   "Snap %s: file '%s' path '%s' state (%d,%d) P:%s; S:%08lx B:%08lx C:%08lx F:%016llx L:%016llx\n",
-	   &s->name[0], &r->file[0], s->path,
-	   r->rd_state, s->wr_state, &params[0],
-	   r->samples, r->bytes, r->count, r->first, r->last);
-  zh_put_multi(wr_log, 1, buf);
+
+static int set_writer_new_wd(const char *dir) {
+  int fd;
+
+  clear_writer_wd();
+  fd = new_directory(writer_parameters.w_snap_dirfd, dir);
+  if(fd < 0)
+    return -1;
+  writer_parameters.w_snap_curfd = fd;
+  return 0;
 }
 
 /*
- * Manage the write queue:  get parameters for a snapshot descriptor (queue entry).
- * Check the necessary parameters are present...
+ * --------------------------------------------------------------------------------
+ * FUNCTIONS ETC. TO MANAGE SNAPSHOT DESCRIPTORS
+ *
+ * The writer maintains a list of "active" snapshot descriptors.  A descriptor
+ * is created in response to an S command and is "active" until it has been both
+ * (a) completely processed and also (b) reported back in response to a Z
+ * command.  These data structures are entirely private to the writer.
+ *
+ * --------------------------------------------------------------------------------
  */
 
-static int get_writer_params(snapw *s) {
-  int i;
+typedef struct {		/* Private snapshot descriptor structure used by writer */
+  queue	      s_Q;		/* Queue header -- must be first member */
+  char        s_name[SNAP_NAME_SIZE];	/* Printable name for snapshot */
+  int         s_dirfd;		/* Dirfd of the samples directory */
+  uint64_t    s_first;		/* The first sample to collect */
+  uint64_t    s_last;		/* Collect up to but not including this sample */
+  uint32_t    s_samples;	/* The number of samples to save */
+  int	      s_bytes;		/* The total size of one sample file */
+  uint32_t    s_count;		/* The remaining repetition count for this snapshot */
+  int	      s_pending;	/* Count of pending repetitions */
+  int	      s_status;		/* Status of this snapshot */
+  const char *s_path;		/* Directory path for this snapshot (dynamic) */
+  const char *s_error;		/* Error string for this snapshot (dynamic) */
+}
+  snap_t;
 
-  assertv(n_snapshot_params <= N_SNAP_PARAMS, "Inconsistent snapshot parameter list size (%d vs %d)\n", n_snapshot_params, N_SNAP_PARAMS);
-  for(i=0; i<n_snapshot_params; i++)
-    s->params[i] = pop_param_value(&snapshot_params[i]);
+static QUEUE_HEADER(snapQ);	/* The list of active snapshots */
+
+#define qp2snap(qp)  ((snap_t *)qp)
+#define snap2qp(s)   (&((s)->s_Q))
+
+/*
+ * Allocate and free snap_t structures
+ */
+
+static snap_t *alloc_snapshot() {
+  static int snap_counter = 0;
+  snap_t *ret = calloc(1, sizeof(snap_t));
+
+  if(ret) {
+    init_queue( snap2qp(ret) );
+    ret->s_dirfd = -1;
+    snprintf(&ret->s_name[0], SNAP_NAME_SIZE, "snap_%08x", snap_counter);
+  }
+  return ret;
+}
+
+static void free_snapshot(snap_t *s) {
+  if(s->s_dirfd >= 0)
+    close(s->s_dirfd);
+  if(s->s_error)
+    free( (void *)s->s_error );
+  if(s->s_path)
+    free( (void *)s->s_path );
+  free( (void *)s );
+}
+
+/*
+ * Manage the writer snapshot queue:
+ *
+ * - Check the parameters in an S command
+ * - Init a snap_t structure from an S command
+ * - Refresh a snap_t structure when a file capture completes
+ */
+
+static int check_writer_params(const char *p[]) {
 
   /* path= is MANDATORY */
-  if( !s->params[SNAP_PATH] )
+  if( p[SNAP_PATH] )
     return -1;
 
   /* EITHER begin= OR start= is MANDATORY */
-  if( !s->params[SNAP_BEGIN] && !s->params[SNAP_START] )
+  if( !p[SNAP_BEGIN] && !p[SNAP_START] )
     return -2;
 
   /* IF begin= THEN end= XOR length= AND NOT finish= is REQUIRED */
-  if( s->params[SNAP_BEGIN] ) {
-    if( s->params[SNAP_FINISH] )
+  if( p[SNAP_BEGIN] ) {
+    if( p[SNAP_FINISH] )
       return -3;
-    if( !s->params[SNAP_END] && !s->params[SNAP_LENGTH] )
+    if( !p[SNAP_END] && !p[SNAP_LENGTH] )
       return -3;
-    if( s->params[SNAP_END] && s->params[SNAP_LENGTH] )
+    if( p[SNAP_END] && p[SNAP_LENGTH] )
       return -3;
   }
 
   /* IF start= THEN finish= XOR length= AND NOT end= is REQUIRED */
-  if( s->params[SNAP_START] ) {
-    if( s->params[SNAP_END] )
+  if( p[SNAP_START] ) {
+    if( p[SNAP_END] )
       return -4;
-    if( !s->params[SNAP_FINISH] && !s->params[SNAP_LENGTH] )
+    if( !p[SNAP_FINISH] && !p[SNAP_LENGTH] )
       return -4;
-    if( s->params[SNAP_FINISH] && s->params[SNAP_LENGTH] )
+    if( p[SNAP_FINISH] && p[SNAP_LENGTH] )
       return -4;
   }
 
@@ -217,6 +325,150 @@ static int get_writer_params(snapw *s) {
 
   return 0;
 }
+
+/*
+ * Complete the snap_t structure sample-range contents -- we know the parameter
+ * subset is correct We can also assume that the various members of the snap_t
+ * structure have been instantiated by parameter assignment handled by the
+ * caller.  We need the param[] array to determine which case we are handling.
+ * No errors can occur here because they are dealt with by the caller(s) of this
+ * routine.
+ */
+
+static void setup_snapshot_samples(snap_t *s, const char *params[]) {
+
+  /* Start with length= -- if present, no finish= or end= spec. needed */
+  if( params[SNAP_LENGTH] ) {	/* Length was stored in s_samples, round up to integral number of pages */
+    s->s_bytes = s->s_samples * sizeof(sampl_t);
+    s->s_bytes += (sysconf(_SC_PAGE_SIZE) - s->s_bytes % sysconf(_SC_PAGE_SIZE)) % sysconf(_SC_PAGE_SIZE);
+    s->s_samples = s->s_bytes / sizeof(sampl_t);
+  }
+
+  /* Mandatory EITHER begin= OR start= -- it was begin= */
+  if( params[SNAP_BEGIN] ) {	/* Begin time was stored in s_first */
+    s->s_first -= reader_parameters.r_capture_start_time; /* Time index of desired sample */
+    s->s_first /= reader_parameters.r_inter_sample_ns;    /* Sample index of desired sample */
+    s->s_first = s->s_first - (s->s_first % NCHAN);	  /* Fix to NCHAN boundary */
+    if( !s->s_samples ) {				  /* No length given, need end from s_last */
+      s->s_last -= reader_parameters.r_capture_start_time;
+      s->s_last /= reader_parameters.r_inter_sample_ns;
+      s->s_last = s->s_last + ((NCHAN - (s->s_last % NCHAN)) % NCHAN); /* Round up to integral number of channel sweeps */
+      s->s_samples = s->s_last - s->s_first;
+      s->s_bytes = s->s_samples * sizeof(sampl_t);
+      s->s_bytes += (sysconf(_SC_PAGE_SIZE) - s->s_bytes % sysconf(_SC_PAGE_SIZE)) % sysconf(_SC_PAGE_SIZE);
+      s->s_samples = s->s_bytes / sizeof(sampl_t);	    /* Round up to integral number of system pages */
+    }
+    s->s_last = s->s_first + s->s_samples;		    /* Calculate end point using rounded-up sample count */
+  }
+
+  /* Mandatory EITHER begin= OR start= -- it was start= */
+  if( params[SNAP_START] ) {	/* Start sample was stored in s_first */
+    if( !s->s_samples ) {	/* No length given, need end from s_last */
+      s->s_last += ((NCHAN - (s->s_last % NCHAN)) % NCHAN); /* Round up to integral number of channel sweeps */
+      s->s_samples = s->s_last - s->s_first;		    /* Compute requested length */
+      s->s_bytes = s->s_samples * sizeof(sampl_t);
+      s->s_bytes += (sysconf(_SC_PAGE_SIZE) - s->s_bytes % sysconf(_SC_PAGE_SIZE)) % sysconf(_SC_PAGE_SIZE);
+      s->s_samples = s->s_bytes / sizeof(sampl_t);	    /* Round up to integral number of system pages */
+    }
+    s->s_last = s->s_first + s->s_samples;		    /* Calculate end point using rounded-up sample count */
+  }
+
+  /* Optional count=, default is 1 */
+  if( !params[SNAP_COUNT] ) { /* The count parameter was written to s_count */
+    s->s_count = 1;
+  }
+
+  s->s_pending = 0;
+  s->s_status  = 0;
+}
+
+/*
+ * Called when a snapshot file has just been written.
+ */
+
+static void refresh_snapshot(snap_t *s) {
+
+  if( !s->s_count ) {	/* No files left to request. */
+
+  }
+  else {			/* A file request has just completed */
+    s->s_pending--;
+  }
+}
+
+/*
+ * Debugging function for snapshot descriptors...
+ */
+
+static void debug_snapshot_descriptor(snap_t *s) {
+  char buf[MSGBUFSIZE];
+
+  snprintf(buf, MSGBUFSIZE,
+	   "Snap %s: path '%s' status %d  P:%s; S:%08lx B:%08lx C:%08lx F:%016llx L:%016llx\n",
+	   &s->s_name[0], s->s_path, s->s_status,
+	   s->s_samples, s->s_bytes, s->s_count, s->s_first, s->s_last);
+  zh_put_multi(log, 1, buf);
+}
+
+/*
+ * --------------------------------------------------------------------------------
+ * FUNCTIONS ETC. FOR SNAPSHOT FILE DESCRIPTOR STRUCTURES:  ONE OF THESE PER FILE TO CAPTURE.
+ *
+ * --------------------------------------------------------------------------------
+ */
+
+typedef struct {
+  snap_t     *f_parent;			/* The snap_t structure that generated this file capture */
+  int         f_fd;			/* System file descriptor -- only needed while pages left to map */
+  char        f_name[SNAP_NAME_SIZE];	/* Name of this file:  the hexadecimal first sample number .s16 */
+
+}
+  snapfile_t;
+
+/*
+ * Allocate and free snapfile_t structures
+ */
+
+static snapfile_t *alloc_snapfile() {
+  snapfile_t *ret = calloc(1, sizeof(snapfile_t));
+
+  if(ret) {
+    ret->f_fd = -1;
+  }
+  return ret;
+}
+
+static void free_snapfile(snapfile_t *f) {
+  if(f->f_fd >= 0)
+    close(f->f_fd);
+  free((void *)f);
+}
+
+/*
+ * Initialise a snapfile_t structure from a snap_t structure.
+ */
+
+static int init_snapfile(snapfile_t *f, snap_t *s) {
+  int fd;
+  int ret;
+
+  snprintf(&f->f_name[0], SNAP_NAME_SIZE, "%016llx.s16", s->s_first);
+  fd = openat(s->s_dirfd, &f->f_name[0], O_RDWR|O_CREAT|O_EXCL, 0600);
+  if(fd < 0) {
+    return -1;
+  }
+  ret = ftruncate(fd, s->s_bytes); /* Pre-size the file */
+  if(ret < 0) {			   /* Try to tidy up... */
+    int e = errno;		   /* Save the original errno */
+    unlinkat(s->s_dirfd, &f->f_name[0], 0);
+    close(fd);
+    errno = e;
+    return -2;
+  }
+  f->f_fd = fd;
+  return 0;
+}
+
 
 /*
  * Manage the write queue:  build a snapshot descriptor (queue entry).
@@ -240,111 +492,17 @@ static int build_snapshot_rd_descriptor(snapw *s, snapr *r) {
   init_queue(&r->Q);
   r->parent = s;
 
-    /* Complete the snapr structure sample-range contents */
-
-    /* Start with length= -- if present, no finish= or end= spec. needed */
-    if( s->params[SNAP_LENGTH] ) {
-      if( assign_value(snapshot_params[SNAP_LENGTH].p_type, s->params[SNAP_LENGTH], &r->samples) < 0 )
-	return -5;
-      r->bytes = r->samples * sizeof(sampl_t);
-      r->bytes += (sysconf(_SC_PAGE_SIZE) - r->bytes % sysconf(_SC_PAGE_SIZE)) % sysconf(_SC_PAGE_SIZE);
-      r->samples = r->bytes / sizeof(sampl_t);
-    }
-
-    /* Mandatory EITHER begin= OR start= -- it was begin= */
-    if( s->params[SNAP_BEGIN] ) {
-      uint64_t time_val;
-      if( assign_value(snapshot_params[SNAP_BEGIN].p_type, s->params[SNAP_BEGIN], &time_val) < 0 )
-	return -6;
-      time_val -= reader_parameters.r_capture_start_time; /* Time index of desired sample */
-      time_val /= reader_parameters.r_inter_sample_ns;	/* Sample index of desired sample */
-      r->first = time_val - (time_val % NCHAN); /* Fix to NCHAN boundary */
-      if( !r->samples ) {			/* No length given, need end */
-	if( assign_value(snapshot_params[SNAP_END].p_type, s->params[SNAP_END], &time_val) < 0 )
-	  return -7;
-	time_val -= reader_parameters.r_capture_start_time;
-	time_val /= reader_parameters.r_inter_sample_ns;
-	r->last = time_val + ((NCHAN - (time_val % NCHAN)) % NCHAN); /* Round up to integral number of channel sweeps */
-	if(r->last <= r->first) {
-	  errno = ERANGE;
-	  return -8;
-	}
-	r->samples = r->last - r->first;
-	r->bytes = r->samples * sizeof(sampl_t);
-	r->bytes += (sysconf(_SC_PAGE_SIZE) - r->bytes % sysconf(_SC_PAGE_SIZE)) % sysconf(_SC_PAGE_SIZE);
-	r->samples = r->bytes / sizeof(sampl_t);	 /* Round up to integral number of system pages */
-      }
-      r->last = r->first + r->samples;
-    }
-
-    /* Mandatory EITHER begin= OR start= -- it was start= */
-    if( s->params[SNAP_START] ) {
-      if( assign_value(snapshot_params[SNAP_START].p_type, s->params[SNAP_START], &r->first) < 0 )
-	return -9;
-      if( !r->samples ) {			/* No length given, need end */
-	if( assign_value(snapshot_params[SNAP_FINISH].p_type, s->params[SNAP_FINISH], &r->last) < 0 )
-	  return -10;
-	if(r->last <= r->first) {
-	  errno = ERANGE;
-	  return -11;
-	}
-	r->last += ((NCHAN - (r->last % NCHAN)) % NCHAN); /* Round up to integral number of channel sweeps */
-	r->samples = r->last - r->first;
-	r->bytes = r->samples * sizeof(sampl_t);
-	r->bytes += (sysconf(_SC_PAGE_SIZE) - r->bytes % sysconf(_SC_PAGE_SIZE)) % sysconf(_SC_PAGE_SIZE);
-	r->samples = r->bytes / sizeof(sampl_t);	 /* Round up to integral number of system pages */
-      }
-      r->last = r->first + r->samples;
-    }
-
-    /* Optional count=, default is 1 */
-    if( s->params[SNAP_COUNT] ) {
-      if( assign_value(snapshot_params[SNAP_COUNT].p_type, s->params[SNAP_COUNT], &r->count) < 0 )
-	return -12;
-      if(r->count < 1) {
-	errno = ERANGE;
-	return -13;
-      }
-    }
-    else {
-      r->count = 1;
-    }
 
     return 0;
 }
 
-static int initialise_snapshot_buffer(snapw *s, snapr *r) {
+static int initialise_snapshot_file(snapw *s, snapr *r) {
   int ret, fd;
 
-  /* Open/mmap the (next) file for the sample data */
-  snprintf(&r->file[0], SNAP_NAME_SIZE, "%016llx.s16", r->first);
-
-  if(debug_level > 0)
-    debug_snapshot_descriptor(s);
-
-  fd = openat(s->dirfd, r->file, O_RDWR|O_CREAT|O_EXCL, 0600);
-  if(fd < 0) {
-    return -15;
-  }
-#if 0
-  ret = fchown(fd, writer_parameters.w_uid, writer_parameters.w_gid);
-  if(ret < 0) {
-    return -16;
-  }
-#endif
-  ret = ftruncate(fd, r->bytes); /* Pre-size the file */
-  if(ret < 0) {
-    return -17;
-  }
-
-  errno = 0;
-  r->mmap = mmap(NULL, r->bytes, PROT_READ|PROT_WRITE, MAP_SHARED|MAP_LOCKED, fd, 0);
+  r->mmap = mmap_and_lock(fd, 0, r->bytes, PREFAULT_RDWR|MAL_LOCKED);
   if( r->mmap == NULL || errno )
     return -18;
   close(fd);
-
-  /* Touch the pages, pre-fault write and mark dirty */
-  prefault_pages(r->mmap, r->bytes / sysconf(_SC_PAGESIZE), PREFAULT_RDWR);
 
   r->rd_state = SNAPSHOT_INIT;
   return 0;
@@ -373,7 +531,7 @@ static int build_snapshot_descriptor(snapw **sp) {
 
   /* Mandatory path: create/open a correctly-owned directory for this data */
   s->path = s->params[SNAP_PATH];
-  s->dirfd = new_directory(writer_parameters.w_snap_dirfd, s->path, 0, 0);
+  s->dirfd = new_directory(writer_parameters.w_snap_dirfd, s->path);
   if(s->dirfd < 0) {					     /* Give up on failure */
     return -14;
   }
@@ -434,6 +592,14 @@ static void destroy_snapshot_descriptor(snapw *s) {
   free(s);
   return;
 }
+
+/*
+ * --------------------------------------------------------------------------------
+ *
+ * DEAL WITH COMMAND AND QUEUE MESSAGES AS THEY ARRIVE.
+ *
+ *  --------------------------------------------------------------------------------
+ */
 
 /*
  * Manage the write queue:  deal with queue message from reader.
@@ -500,12 +666,12 @@ static int process_queue_message(void *socket) {
     snprintf(timebuf, 256, " [%d,%09d]", iv1.tv_sec, iv1.tv_nsec);
     switch( r->rd_state ) {
     case SNAPSHOT_ERROR:					 /* Snapshot capture parameters unacceptable */
-      zh_put_multi(wr_log, 4, "Snapshot ", s->name, " aborted", timebuf);
+      zh_put_multi(log, 4, "Snapshot ", s->name, " aborted", timebuf);
       s->wr_state = SNAPSHOT_DONE;
       break;
 
     case SNAPSHOT_WRITTEN:					 /* The reader has finished with this one */
-      zh_put_multi(wr_log, 4, "Snapshot ", s->name, " completed", timebuf);
+      zh_put_multi(log, 4, "Snapshot ", s->name, " completed", timebuf);
       s->wr_state = r->count? SNAPSHOT_REPEAT : SNAPSHOT_DONE;
       break;
     }
@@ -519,7 +685,7 @@ static int process_queue_message(void *socket) {
     ret = refresh_snapshot_descriptor(s);			 /* Re-initialise for next file */
     if(ret < 0) {
       s->wr_state = SNAPSHOT_DONE;
-      zh_put_multi(wr_log, 3, "Snapshot ", s->name, " rollover failed");
+      zh_put_multi(log, 3, "Snapshot ", s->name, " rollover failed");
     }
     else {							 /* New snapshot descriptor ready */
       s->wr_state = SNAPSHOT_REPLIED;
@@ -559,14 +725,18 @@ int process_writer_command(void *socket) {
 
   used = zh_collect_multi(socket, &command_buffer[0], COMMAND_BUFSIZE, "");
   if(debug_level > 2)
-    zh_put_multi(wr_log, 3, "Writer cmd: '", &command_buffer[0], "'");
+    zh_put_multi(log, 3, "Writer cmd: '", &command_buffer[0], "'");
   switch(command_buffer[0]) {
   case 'q':
   case 'Q':
     // zh_put_multi(socket, 1, "Quit OK"); /* Reply handled in main thread */
     return false;
 
-  case 's':
+  case 'd':			/* Dir command */
+  case 'D':
+    return false;
+
+  case 's':			/* Snap command */
   case 'S':
     p=&command_buffer[1];
     while( *p && !isspace(*p) ) p++; /* Are there parameters to process? */
@@ -589,7 +759,7 @@ int process_writer_command(void *socket) {
 
     if( ret == 0 ) {		    /* Send it to the reader for queueing */
       s->wr_state = SNAPSHOT_CHECK; /* We shall reply when reader has finished with it */
-      ret = zh_put_msg(wr_queue_writer, 0, sizeof(snapr *), (void *)&s->this_snap);
+      ret = zh_put_msg(reader, 0, sizeof(snapr *), (void *)&s->this_snap);
       assertv(ret == sizeof(snapr *), "Queue message size inconsistent, %d vs. %d\n", ret, sizeof(snapr *));
       return true;
     }
@@ -608,7 +778,7 @@ int process_writer_command(void *socket) {
     err = "Unexpected reader command: ";
     break;
   }
-  zh_put_multi(wr_log, 2, err, &command_buffer[0]); /* Error occurred, return message */
+  zh_put_multi(log, 2, err, &command_buffer[0]); /* Error occurred, return message */
   zh_put_multi(socket, 4, "NO: ERROR ", err, " in ", &command_buffer[0]);
   return true;
 }
@@ -623,7 +793,7 @@ static void writer_thread_msg_loop() {    /* Read and process messages */
   int n;
 
   zmq_pollitem_t  poll_list[] =
-    {  { wr_queue_writer, 0, ZMQ_POLLIN, 0 },
+    {  { reader, 0, ZMQ_POLLIN, 0 },
        { command, 0, ZMQ_POLLIN, 0 },
     };
 #define	N_POLL_ITEMS	(sizeof(poll_list)/sizeof(zmq_pollitem_t))
@@ -633,14 +803,14 @@ static void writer_thread_msg_loop() {    /* Read and process messages */
     };
 
   /* Writer initialisation is complete */
-  zh_put_multi(wr_log, 1, "Writer thread is initialised");
+  zh_put_multi(log, 1, "Writer thread is initialised");
 
   running = true;
   while( running ) {
     int ret = zmq_poll(&poll_list[0], N_POLL_ITEMS, -1);
 
     if( ret < 0 && errno == EINTR ) { /* Interrupted */
-      zh_put_multi(wr_log, 1, "Writer loop interrupted");
+      zh_put_multi(log, 1, "Writer loop interrupted");
       break;
     }
     if(ret < 0)
@@ -660,16 +830,21 @@ static void writer_thread_msg_loop() {    /* Read and process messages */
 
 void *writer_main(void *arg) {
   int ret, n;
-  void *command;
+
+  /* Verify parameter structure data */
+  assertv(n_snapshot_params <= N_SNAP_PARAMS,
+	  "Inconsistent snapshot parameter list size (%d vs %d)\n",
+	  n_snapshot_params, N_SNAP_PARAMS);
 
   if(debug_level > 1)
     debug_writer_params();
 
   writer_thread_msg_loop();
-  zh_put_multi(wr_log, 1, "Writer thread is terminating by return");
+  zh_put_multi(log, 1, "Writer thread is terminating by return");
 
   /* Clean up ZeroMQ sockets */
-  zmq_close(wr_log);
+  zmq_close(log);
+  zmq_close(reader);
   zmq_close(command);
   writer_thread_running = false;
   return (void *)"normal exit";
@@ -680,6 +855,7 @@ void *writer_main(void *arg) {
  */
 
 int verify_writer_params(wparams *wp) {
+  extern int tmpdir_dirfd;	/* Imported from snapshot.c */
 
   if( wp->w_schedprio != 0 ) { /* Check for illegal value */
     int max, min;
@@ -697,7 +873,7 @@ int verify_writer_params(wparams *wp) {
    * get a path fd for it.
    */
 
-  wp->w_snap_dirfd = new_directory(tmpdir_dirfd, wp->w_snapdir, 0, 0);
+  wp->w_snap_dirfd = new_directory(tmpdir_dirfd, wp->w_snapdir);
   if( wp->w_snap_dirfd < 0 )	/* Give up on failure */
     return -4;
 

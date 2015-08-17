@@ -30,7 +30,7 @@ void prefault_pages(void *p, int n, int w) {
 void *mmap_and_lock(int fd, off_t offset, size_t length, int flags) {
   void *map;
 
-  map = mmap(map, length, PROT_READ|PROT_WRITE, MAP_SHARED|MAP_FIXED, fd, 0);
+  map = mmap(NULL, length, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
   if(map == NULL || map == (void *)-1)
     return NULL;
 

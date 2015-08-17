@@ -22,4 +22,6 @@ extern queue *splice_queue(queue *,queue *);
 
 #define queue_singleton(q)  ((q)->q_next == (q) && (q)->q_prev == (q))
 
+#define QUEUE_HEADER(name)  queue name = { &name, &name }
+
 #endif /* _QUEUE_H */

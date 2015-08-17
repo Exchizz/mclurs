@@ -414,9 +414,11 @@ int process_snapshot_command() {
     assertv(ret > 0, "Forward to reader failed, %d\n", ret);
     break;
 
+  case 'd':
+  case 'D':
   case 's':
   case 'S':
-    ret = zh_put_msg(writer, 0, size, buf); /* Forward snapshot command to writer */
+    ret = zh_put_msg(writer, 0, size, buf); /* Forward snapshot and dir commands to writer */
     assertv(ret > 0, "Forward to writer failed, %d\n", ret);
     break;
 

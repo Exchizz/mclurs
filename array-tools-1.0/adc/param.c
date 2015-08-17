@@ -21,8 +21,36 @@ PARAM_TYPE_DECL(double, double,   "%lg",  "%Lg");
 PARAM_TYPE_DECL(string, char *,   NULL,   "%s");
 
 /*
+ * Reset the str and val pointers in a param_t structure.  Free strings
+ * as needed, but assume that a string val that is dynamic is dealt with
+ * by the caller.
+ */
+
+void reset_param(param_t *p) {
+  if(p->p_type == PARAM_TYPE(string)) { /* Special case of dynamic string in two places */
+    if( p->p_val && *(char **)p->p_val == p->p_str) { /* String copy is in both places */
+      p->p_dyn = 0;				     /* Ignore dynamic:  caller is responsible */
+    }
+  }
+  if(p->p_dyn)
+    free( (void *)p->p_str );
+  p->p_str = NULL;
+  p->p_dyn = 0;
+  if(p->p_val)
+    p->p_val = NULL;
+}
+
+/*
+ * Set the val pointer for a param.
+ */
+
+void setval_param(param_t *p, void **val) {
+  p->p_val = val;
+}
+
+/*
  * Push an extra value for the given parameter onto its value stack,
- * if there is room.  If p_ftop is set, the last (top) value is an
+ * if there is room.  If p_dyn is set, the last (top) value is an
  * allocated copy; free it and overwrite the slot.  Otherwise the
  * value is a permanent buffer, so just push.
  */
@@ -33,7 +61,7 @@ int push_param_value(param_t *p, char *v) {
     errno = EPERM;
     return -1;
   }
-  if( p->p_ftop && p->p_str ) {
+  if( p->p_dyn && p->p_str ) {
     if(p->p_val && *(const char **)p->p_val == p->p_str)
       *(const char **)p->p_val = NULL;
     free((void *)p->p_str);
@@ -43,18 +71,31 @@ int push_param_value(param_t *p, char *v) {
   return 0;
 }
 
+#if 0
 /*
- * Copy the string value from a parameter and return it as a dynamic
- * string, i.e. a buffer allocated using malloc().
+ * Return the string value from a parameter as a dynamic string,
+ * i.e. a buffer allocated using malloc().  Set the string value to
+ * NULL.  If this is a string parameter, deal with the value too.
  */
 
-char *pop_param_value(param_t *p) {
+const char *pop_param_value(param_t *p) {
+  const char *v;
+
   if( !p->p_str ) {
     errno = EINVAL;
     return NULL;
   }
-  return strdup( p->p_str ); /* Make a dynamic copy of the value */
+  /* Make a dynamic copy of the value */
+  v = p->p_dyn? p->p_str : strdup(p->p_str);
+  if(p->p_type == PARAM_TYPE(string) && v == *(char **)p->p_val) {
+    if(p->p_dyn)
+      *p->p_val = NULL;
+  }
+  p->p_str = NULL;
+  p->p_dyn = 0;
+  return v;
 }
+#endif
 
 /*
  * Locate the parameter descriptor in the ps array for the named
@@ -141,7 +182,7 @@ int push_param_from_cmd(char *cmd, param_t ps[], int nps) {
   ret = push_param_value(p, v);
   if( ret < 0 )
     return ret;
-  p->p_ftop = 1;		/* Top value is now a malloc'd copy */
+  p->p_dyn = 1;		/* Top value is now a malloc'd copy */
   return 0;
 }
 
@@ -238,7 +279,7 @@ int assign_all_params(param_t ps[], int nps) {
  * buffer pointed to by vp, which must be suitable to receive it.
  */
 
-int get_param_value(param_t *p, const char **vp) {
+int get_param_str(param_t *p, const char **vp) {
   const char *v = NULL;
   if( !p->p_str  ) {
     if( p->p_type == PARAM_TYPE(bool) ) {
@@ -391,18 +432,18 @@ int arg_results_to_params(void **argtable, param_t ps[], int nps) {
     if(p->p_type == PARAM_TYPE(string)) {
       const char *v = *(char **)p->p_val;
       if(v != p->p_str) {
-	if(p->p_ftop)
+	if(p->p_dyn)
 	  free((void *)p->p_str);
-	p->p_ftop = 0;
+	p->p_dyn = 0;
 	p->p_str = v;
       }
       continue;			/* We are done, in this case */
     }
     
-    if(p->p_ftop)		/* Free the old str value if necessary */
+    if(p->p_dyn)		/* Free the old str value if necessary */
       free((void *)p->p_str);
     int ret = param_value_to_string(p, &p->p_str);
-    p->p_ftop = 1;		/* The new value is a dynamic string */
+    p->p_dyn = 1;		/* The new value is a dynamic string */
     assertv(ret >=0, "Update of parameter %s str from val for arg %d failed\n", 
 	    p->p_name, ate-atp+1); 
   }

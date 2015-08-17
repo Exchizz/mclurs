@@ -12,7 +12,8 @@ typedef struct {
   int	       w_schedprio;
 
   /* The values below are computed and exported */
-  int	       w_snap_dirfd;
+  int	       w_snap_dirfd;	/* The snapdir path fd */
+  int	       w_snap_curfd;	/* The path fd of the 'working' directory */
   int	       w_running;	    /* Thread is running and ready */
 }
   wparams;
@@ -20,7 +21,7 @@ typedef struct {
 extern int   verify_writer_params(wparams *);
 extern void *writer_main(void *);
 
-#define SNAP_NAME_SIZE	24	/* Big enough to hold a 64 bit integer/pointer as hex */
+#define SNAP_NAME_SIZE	24		/* Big enough to hold a 64 bit integer/pointer as hex */
 
 typedef struct _snapr	snapr;		/* Information needed by the Reader thread to snapshot a range of samples */
 typedef struct _snapw	snapw;		/* Information needed by the Writer thread to set up a snapshot series */
