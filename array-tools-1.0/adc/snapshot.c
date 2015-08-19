@@ -102,9 +102,9 @@ param_t globals[] ={
     PARAM_TYPE(string), PARAM_SRC_ENV|PARAM_SRC_ARG,
     "the group/GID for file system access and creation"
   },
-  { "permu",	"500", 0,
+  { "ram",	"192", 0,
     PARAM_TYPE(int32), PARAM_SRC_ENV|PARAM_SRC_ARG,
-    "the proportion of the ADC buffer to wait, in millionths"
+    "the maximum amount of data RAM to lock [MiB]"
   },
 };
 

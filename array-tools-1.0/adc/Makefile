@@ -1,7 +1,7 @@
 #
 
 TARGETS=grab trig snapchat snapshot
-OFILES=snapshot.o reader.o writer.o util.o lut.o ring.o mman.o param.o talloc.o queue.o rtprio.o error.o
+OFILES=snapshot.o reader.o writer.o util.o lut.o ring.o mman.o param.o talloc.o queue.o rtprio.o strbuf.o
 XTRAS=grab.o snapchat.o trig.o
 ARGTAB_SRCS=argtab-int16.c argtab-int64.c
 ARGTAB_XTRA=argtab-helper.h
@@ -46,7 +46,7 @@ ring.o:		ring.c ring.h mman.h
 
 mman.o:		mman.c mman.h
 
-error.o:	error.c queue.h error.h
+strbuf.o:	strbuf.c queue.h strbuf.h
 
 param.o:	param.c param.h argtab.h assert.h
 
