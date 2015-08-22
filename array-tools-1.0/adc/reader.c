@@ -391,7 +391,7 @@ static void process_reader_command(void *s) {
   char   *cmd_buf;
   strbuf  err;
 
-  used = zh_get_msg(s, 0, sizeof(cmd), &cmd);
+  used = zh_get_msg(s, 0, sizeof(strbuf), &cmd);
   if( !used ) {			/* It was a quit message */
     if(reader.state == READER_ARMED || reader.state == READER_RUN || reader.state == READER_RESTING)
       comedi_stop_data_transfer();
@@ -484,7 +484,7 @@ static void process_reader_command(void *s) {
     break;
   }
   zh_put_multi(log, 3, strbuf_string(err), "\n   ", &cmd_buf[0]); /* Error occurred, log it */
-  zh_put_msg(s, 0, sizeof(err), (void *)err); /* return message */
+  zh_put_msg(s, 0, sizeof(strbuf), (void *)&err); /* return message */
 }
 
 /*

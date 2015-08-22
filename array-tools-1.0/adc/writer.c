@@ -802,46 +802,50 @@ static int process_queue_message(void *socket) {
 }
 
 /*
- * Handle command message
+ * Handle command messages
  */
 
-#define	COMMAND_BUFSIZE		1024
-char command_buffer[COMMAND_BUFSIZE];
+int process_writer_command(void *s) {
+  int     used;
+  int     ret;
+  char   *p;
+  strbuf  cmd;
+  char   *cmd_buf;
+  strbuf  err;
 
-int process_writer_command(void *socket) {
-  int used;
-  int   ret;
-  char *err = "OK";
-  char *p;
-  static char err_buf[COMMAND_BUFSIZE];
-
-  used = zh_collect_multi(socket, &command_buffer[0], COMMAND_BUFSIZE, "");
-  if(debug_level > 2)
-    zh_put_multi(log, 3, "Writer cmd: '", &command_buffer[0], "'");
-  switch(command_buffer[0]) {
-  case 'q':
-  case 'Q':
-    // zh_put_multi(socket, 1, "Quit OK"); /* Reply handled in main thread */
+  used = zh_get_msg(s, 0, sizeof(strbuf), &cmd);
+  if( !used ) {			/* Quit */
     return false;
+  }
 
+  cmd_buf = strbuf_string(cmd);
+  err = strbuf_next(cmd);
+
+  switch(cmd_buf[0]) {
   case 'd':			/* Dir command */
   case 'D':
-    return false;
+    strbuf_printf(err, "OK Dir");
+    break;
+
+  case 'z':
+  case 'Z':
+    strbuf_printf(err, "OK Status");
+    break;
 
   case 's':			/* Snap command */
   case 'S':
-    p=&command_buffer[1];
+    p=&cmd_buf[1];
     while( *p && !isspace(*p) ) p++; /* Are there parameters to process? */
     while( *p && isspace(*p) ) p++;
     if( !*p ) {			     /* There should be more string here */
-      err = "Snapshot parameters apparently missing";
+      strbuf_printf(err, "NO: Snap -- parameters apparently missing");
       break;
     }
+
     /* Process the snapshot parameters */
     int ret = push_params_from_string(p, snapshot_params, n_snapshot_params);
     if( ret < 0 ) { 
-      snprintf(err_buf, COMMAND_BUFSIZE, "Snapshot param error at %d: %s", -ret, strerror(errno));
-      err = err_buf;
+      strbuf_printf(err, "NO: Snap -- param error at %d: %m", -ret);
       break;
     }
 
@@ -853,25 +857,24 @@ int process_writer_command(void *socket) {
       s->wr_state = SNAPSHOT_CHECK; /* We shall reply when reader has finished with it */
       ret = zh_put_msg(reader, 0, sizeof(snapr *), (void *)&s->this_snap);
       assertv(ret == sizeof(snapr *), "Queue message size inconsistent, %d vs. %d\n", ret, sizeof(snapr *));
-      return true;
+      strbuf_printf(err, "OK Snap");
     }
     else {
       int error = errno;
       if(s != NULL) {
         destroy_snapshot_descriptor(s);
       }
-      snprintf(err_buf, COMMAND_BUFSIZE, "Problem building snapshot descriptor at step %d: %s", -ret, strerror(error));
-      err = err_buf;
-      break;
+      errno = error;
+      strbuf_printf(err, "NO: Snap -- problem building snapshot descriptor at step %d: %m", -ret);
     }
     return true;
 
   default:
-    err = "Unexpected reader command: ";
+    strbuf_printf(err, "NO: Writer -- unexpected writer command");
     break;
   }
-  zh_put_multi(log, 2, err, &command_buffer[0]); /* Error occurred, return message */
-  zh_put_multi(socket, 4, "NO: ERROR ", err, " in ", &command_buffer[0]);
+  zh_put_multi(log, 3, strbuf_string(err), "\n  ", &cmd_buf[0]); /* Error occurred, return message */
+  zh_put_msg(s, 0, sizeof(strbuf), (void *)&err);
   return true;
 }
 

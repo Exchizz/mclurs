@@ -361,7 +361,7 @@ int process_reply(void *s) {
   strbuf  err;
   char   *err_buf;
 
-  size = zh_get_msg(s, 0, sizeof(err), (void *)&err);
+  size = zh_get_msg(s, 0, sizeof(strbuf), (void *)&err);
   assertv(size==sizeof(err), "Reply message of wrong size %d\n", size);
   err_buf = strbuf_string(err);
   size = strbuf_used(err);
@@ -416,7 +416,7 @@ int process_snapshot_command() {
   case 'p':
   case 'P':
     /* Forward these commands to the reader thread */
-    ret = zh_put_msg(reader, 0, sizeof(c_n_e), (void *)c_n_e);
+    ret = zh_put_msg(reader, 0, sizeof(strbuf), (void *)c_n_e);
     assertv(ret > 0, "Forward to reader failed, %d\n", ret);
     fwd++;
     break;
@@ -428,7 +428,7 @@ int process_snapshot_command() {
   case 'z':
   case 'Z':
     /* Forward snapshot and dir commands to writer */
-    ret = zh_put_msg(writer, 0, sizeof(c_n_e), (void *)c_n_e);
+    ret = zh_put_msg(writer, 0, sizeof(strbuf), (void *)c_n_e);
     assertv(ret > 0, "Forward to writer failed, %d\n", ret);
     fwd++;
     break;
