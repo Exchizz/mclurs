@@ -27,6 +27,7 @@
 #include "param.h"
 #include "queue.h"
 #include "mman.h"
+#include "strbuf.h"
 #include "snapshot.h"
 #include "reader.h"
 #include "writer.h"
@@ -247,8 +248,9 @@ typedef struct {		/* Private snapshot descriptor structure used by writer */
   uint32_t    s_count;		/* The remaining repetition count for this snapshot */
   int	      s_pending;	/* Count of pending repetitions */
   int	      s_status;		/* Status of this snapshot */
-  const char *s_path;		/* Directory path for this snapshot (dynamic) */
-  const char *s_error;		/* Error string for this snapshot (dynamic) */
+  const char *s_path;		/* Directory path for this snapshot */
+  strbuf      s_cmdetc;		/* Command and Error string buffers */
+  queue	      s_fileQhdr;	/* Header for the queue of file descriptor structures */
 }
   snap_t;
 
@@ -269,17 +271,19 @@ static snap_t *alloc_snapshot() {
     init_queue( snap2qp(ret) );
     ret->s_dirfd = -1;
     snprintf(&ret->s_name[0], SNAP_NAME_SIZE, "snap_%08x", snap_counter);
+    init_queue(&ret->s_fileQhdr);
   }
   return ret;
 }
 
 static void free_snapshot(snap_t *s) {
+  if( !queue_singleton(snap2qp(s)) )
+    de_queue(snap2qp(s));
+  if( !queue_singleton(&s->s_fileQhdr) ) {
+    /* Panic! */
+  }
   if(s->s_dirfd >= 0)
     close(s->s_dirfd);
-  if(s->s_error)
-    free( (void *)s->s_error );
-  if(s->s_path)
-    free( (void *)s->s_path );
   free( (void *)s );
 }
 
@@ -287,37 +291,35 @@ static void free_snapshot(snap_t *s) {
  * Manage the writer snapshot queue:
  *
  * - Check the parameters in an S command
- * - Init a snap_t structure from an S command
- * - Refresh a snap_t structure when a file capture completes
  */
 
-static int check_writer_params(const char *p[]) {
+static int check_snapshot_params(param_t ps[]) {
 
   /* path= is MANDATORY */
-  if( p[SNAP_PATH] )
+  if( ps[SNAP_PATH].p_str )
     return -1;
 
   /* EITHER begin= OR start= is MANDATORY */
-  if( !p[SNAP_BEGIN] && !p[SNAP_START] )
+  if( !ps[SNAP_BEGIN].p_str && !ps[SNAP_START].p_str )
     return -2;
 
   /* IF begin= THEN end= XOR length= AND NOT finish= is REQUIRED */
-  if( p[SNAP_BEGIN] ) {
-    if( p[SNAP_FINISH] )
+  if( ps[SNAP_BEGIN].p_str ) {
+    if( ps[SNAP_FINISH].p_str )
       return -3;
-    if( !p[SNAP_END] && !p[SNAP_LENGTH] )
+    if( !ps[SNAP_END].p_str && !ps[SNAP_LENGTH].p_str )
       return -3;
-    if( p[SNAP_END] && p[SNAP_LENGTH] )
+    if( ps[SNAP_END].p_str && ps[SNAP_LENGTH].p_str )
       return -3;
   }
 
   /* IF start= THEN finish= XOR length= AND NOT end= is REQUIRED */
-  if( p[SNAP_START] ) {
-    if( p[SNAP_END] )
+  if( ps[SNAP_START].p_str ) {
+    if( ps[SNAP_END].p_str )
       return -4;
-    if( !p[SNAP_FINISH] && !p[SNAP_LENGTH] )
+    if( !ps[SNAP_FINISH].p_str && !ps[SNAP_LENGTH].p_str )
       return -4;
-    if( p[SNAP_FINISH] && p[SNAP_LENGTH] )
+    if( ps[SNAP_FINISH].p_str && ps[SNAP_LENGTH].p_str )
       return -4;
   }
 
@@ -335,17 +337,17 @@ static int check_writer_params(const char *p[]) {
  * routine.
  */
 
-static void setup_snapshot_samples(snap_t *s, const char *params[]) {
+static void setup_snapshot_samples(snap_t *s, param_t p[]) {
 
   /* Start with length= -- if present, no finish= or end= spec. needed */
-  if( params[SNAP_LENGTH] ) {	/* Length was stored in s_samples, round up to integral number of pages */
+  if( p[SNAP_LENGTH].p_str ) {	/* Length was stored in s_samples, round up to integral number of pages */
     s->s_bytes = s->s_samples * sizeof(sampl_t);
     s->s_bytes += (sysconf(_SC_PAGE_SIZE) - s->s_bytes % sysconf(_SC_PAGE_SIZE)) % sysconf(_SC_PAGE_SIZE);
     s->s_samples = s->s_bytes / sizeof(sampl_t);
   }
 
   /* Mandatory EITHER begin= OR start= -- it was begin= */
-  if( params[SNAP_BEGIN] ) {	/* Begin time was stored in s_first */
+  if( p[SNAP_BEGIN].p_str ) {	/* Begin time was stored in s_first */
     s->s_first -= reader_parameters.r_capture_start_time; /* Time index of desired sample */
     s->s_first /= reader_parameters.r_inter_sample_ns;    /* Sample index of desired sample */
     s->s_first = s->s_first - (s->s_first % NCHAN);	  /* Fix to NCHAN boundary */
@@ -362,7 +364,7 @@ static void setup_snapshot_samples(snap_t *s, const char *params[]) {
   }
 
   /* Mandatory EITHER begin= OR start= -- it was start= */
-  if( params[SNAP_START] ) {	/* Start sample was stored in s_first */
+  if( p[SNAP_START].p_str ) {	/* Start sample was stored in s_first */
     if( !s->s_samples ) {	/* No length given, need end from s_last */
       s->s_last += ((NCHAN - (s->s_last % NCHAN)) % NCHAN); /* Round up to integral number of channel sweeps */
       s->s_samples = s->s_last - s->s_first;		    /* Compute requested length */
@@ -374,12 +376,70 @@ static void setup_snapshot_samples(snap_t *s, const char *params[]) {
   }
 
   /* Optional count=, default is 1 */
-  if( !params[SNAP_COUNT] ) { /* The count parameter was written to s_count */
+  if( !p[SNAP_COUNT].p_str ) { /* The count parameter was written to s_count */
     s->s_count = 1;
   }
 
   s->s_pending = 0;
   s->s_status  = 0;
+}
+
+/*
+ * Build snapshot from S command line: the main thread passes a ring
+ * of strbufs comprising the command buffer and the error buffer.
+ *
+ * The sequence of operations is:
+ * - allocate a snap_t structure and bind the parameter val pointers to it
+ * - populate the parameter structures from the string in the command buffer
+ * - check the parameter set for correctness (check_snapshot_params)
+ * - check the snapshot path and create the dirfd
+ * - populate the sample value elements (setup_snapshot_samples)
+ * - return the complete structure
+ *
+ * Errors arising during the above process cause an error status mark and are
+ * reported in the error buffer.
+ */
+
+static snap_t *build_snapshot_descriptor(strbuf c) {
+  strbuf   e   = strbuf_next(c);
+  param_t *ps  = &snapshot_params[0]; 
+  int      nps = n_snapshot_params;
+  snap_t  *ret;
+  int	   err;
+
+  if( !(ret = alloc_snapshot()) ) { /* Allocation failed: no memory? */
+
+    return ret;
+  }
+
+  /* Initialise the targets for the parameters */
+  ps[SNAP_BEGIN].p_val  = (void **) &ret->s_first;
+  ps[SNAP_END].p_val    = (void **) &ret->s_last;
+  ps[SNAP_START].p_val  = (void **) &ret->s_first;
+  ps[SNAP_FINISH].p_val = (void **) &ret->s_first;
+  ps[SNAP_LENGTH].p_val = (void **) &ret->s_samples;
+  ps[SNAP_COUNT].p_val  = (void **) &ret->s_count;
+  ps[SNAP_PATH].p_val   = (void **) &ret->s_path;
+
+  /* Check the populated parameters */
+  err = check_snapshot_params(ps);
+  if(err < 0) {
+
+  }
+
+  /* Assign parameters to values */
+
+  if(ret->s_last <= ret->s_first) { /* Parameter error:  end before start */
+
+  }
+  /* Do path */
+
+  /* Set up the sample-dependent values */
+  setup_snapshot_samples(ret, ps);
+
+  /* All done, no errors */
+  ret->s_status = SNAPSHOT_INIT;
+  return ret;
 }
 
 /*
@@ -418,10 +478,12 @@ static void debug_snapshot_descriptor(snap_t *s) {
  */
 
 typedef struct {
+  queue	      f_Q;			/* Queue header for file descriptor structures */
   snap_t     *f_parent;			/* The snap_t structure that generated this file capture */
   int         f_fd;			/* System file descriptor -- only needed while pages left to map */
   char        f_name[SNAP_NAME_SIZE];	/* Name of this file:  the hexadecimal first sample number .s16 */
-
+  int	      f_ixnr;			/* Index number of this file in the full set for the snapshot */
+  queue	      f_chunkQhdr;		/* Header for this file's writer chunk queue */
 }
   snapfile_t;
 
@@ -469,6 +531,36 @@ static int init_snapfile(snapfile_t *f, snap_t *s) {
   return 0;
 }
 
+/*
+ * --------------------------------------------------------------------------------
+ * FUNCTIONS ETC. FOR SNAPSHOT FILE CHUNK STRUCTURES:  MANY OF THESE PER FILE TO CAPTURE.
+ *
+ * --------------------------------------------------------------------------------
+ */
+
+typedef struct {
+  queue	      rc_Q;	   /* Q header for READER capture queue */
+  uint32_t    rc_samples;  /* The number of samples to copy */
+  sampl_t    *rc_ring;	   /* The ring buffer start for this chunk */
+  block	      rc_memblk;   /* The mmap'd file buffer for this chunk */
+  int	      rc_status;   /* The status of this capture chunk */
+  strbuf      rc_error;	   /* The error buffer, for error messages (copy from snapshot_t origin) */
+}
+  rchunk_t;
+
+typedef struct {
+  queue	      wc_Q;		/* Queue header for WRITER's file chunk list */
+  snapfile_t *wc_parent;	/* The chunk belongs to this file */
+  uint64_t    wc_first;		/* First and last samples of this chunk */
+  uint64_t    wc_last;
+}
+  wchunk_t;
+
+typedef struct {
+  rchunk_t    ch_reader;	/* The information needed by the reader */
+  wchunk_t    ch_writer;	/* The information needed by the writer */
+}
+  chunk_t;
 
 /*
  * Manage the write queue:  build a snapshot descriptor (queue entry).

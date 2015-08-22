@@ -49,3 +49,34 @@ queue *splice_queue(queue *q, queue *p) {
   pp->q_next = qn;
   return q;
 }
+
+/*
+ * Unsplice a queue: cut the ring at start and end and relink.  Also
+ * join start and end.
+ */
+
+queue *unsplice_queue(queue *start, queue *end) {
+}
+
+/*
+ * Apply a function to each queue member in [start,end).  The function
+ * is called with arg as its first argument and the queue structure
+ * pointer as its second.  The first function, map_queue_nxt,
+ * traverses the segment "forward" while the second goes "backward".
+ */
+
+void map_queue_nxt(queue *start, queue *end, void (*fn)(void *, queue *), void *arg) {
+  queue *p;
+
+  for(p=start; p != start && p != end; p=queue_next(p)) {
+    (*fn)(arg, p);
+  }
+}
+
+void map_queue_prv(queue *start, queue *end, void (*fn)(void *, queue *), void *arg) {
+  queue *p;
+
+  for(p=start; p != start && p != end; p=queue_prev(p)) {
+    (*fn)(arg, p);
+  }
+}

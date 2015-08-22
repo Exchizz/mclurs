@@ -21,6 +21,7 @@
 #include "util.h"
 #include "param.h"
 #include "queue.h"
+#include "strbuf.h"
 #include "mman.h"
 #include "ring.h"
 #include "lut.h"
@@ -132,14 +133,15 @@ static struct comedi_state	adc;	/* Comedi state + parameters */
  */
 
 static void *wr_queue_reader;
+static void *log;
 static void *command;
 
 static int create_reader_comms() {
   /* Create necessary sockets */
   command  = zh_bind_new_socket(zmq_main_ctx, ZMQ_REP, READER_CMD_ADDR);	/* Receive commands */
   assertv(command != NULL, "Failed to instantiate reader command socket\n");
-  reader.rd_log   = zh_connect_new_socket(zmq_main_ctx, ZMQ_PUSH, LOG_SOCKET);  /* Socket for log messages */
-  assertv(reader.rd_log != NULL, "Failed to instantiate reader log socket\n");
+  log      = zh_connect_new_socket(zmq_main_ctx, ZMQ_PUSH, LOG_SOCKET);  /* Socket for log messages */
+  assertv(log != NULL, "Failed to instantiate reader log socket\n");
   wr_queue_reader = zh_bind_new_socket(zmq_main_ctx, ZMQ_PAIR, READER_QUEUE_ADDR);
   assertv(wr_queue_reader != NULL, "Failed to instantiate reader queue socket\n");
 }
@@ -382,59 +384,60 @@ static void compute_data_start_timestamp(struct timespec *ts, int ns) {
 char command_buffer[COMMAND_BUFSIZE];
 
 static void process_reader_command(void *s) {
-  int   used;
-  int   ret;
-  char *err = "OK";
-  char *p;
-  static char err_buf[COMMAND_BUFSIZE];
+  int     used;
+  int     ret;
+  char   *p;
+  strbuf  cmd;
+  char   *cmd_buf;
+  strbuf  err;
 
-  used = zh_collect_multi(s, &command_buffer[0], COMMAND_BUFSIZE, "");
-  if(debug_level > 2)
-    zh_put_multi(reader.rd_log, 3, "Reader cmd: '", &command_buffer[0], "'");
-  switch(command_buffer[0]) {
-  case 'q':
-  case 'Q':
+  used = zh_get_msg(s, 0, sizeof(cmd), &cmd);
+  if( !used ) {			/* It was a quit message */
     if(reader.state == READER_ARMED || reader.state == READER_RUN || reader.state == READER_RESTING)
       comedi_stop_data_transfer();
     reader.stoploop = true;	/* No more waiting in the main loop */
-    // zh_put_multi(s, 1, "OK Quit");  /* Reply handled in main thread */
     return;
+  }
 
+  cmd_buf = strbuf_string(cmd);
+  err = strbuf_next(cmd);
+
+  if(debug_level > 2)
+    zh_put_multi(log, 3, "Reader cmd: '", &command_buffer[0], "'");
+  switch(cmd_buf[0]) {
   case 'h':
   case 'H':
     if( reader.state != READER_ARMED && reader.state != READER_RUN ) {
-      err = "Halt issued but not in ARMED or RUN state";
+      strbuf_printf(err, "NO: Halt issued but not in ARMED or RUN state");
       break;
     }
     comedi_stop_data_transfer();
-    zh_put_multi(s, 1, "OK Stop");
-    return;
+    strbuf_printf(err, "OK Halt");
+    break;
 
   case 'p':
   case 'P':
     if( reader.state != READER_PARAM && reader.state != READER_RESTING && reader.state != READER_ERROR ) {
-      err = "Param issued but not in PARAM, RESTING or ERROR state";
+      strbuf_printf(err, "NO: Param issued but not in PARAM, RESTING or ERROR state");
       break;
     }
-    p=&command_buffer[1];
+    p=&cmd_buf[1];
     while( *p && !isspace(*p) ) p++; /* Are there parameters to process? */
     while( *p && isspace(*p) ) p++;
     if( *p ) {			       /* Assume yes if there is more string */
       int ret = push_params_from_string(p, globals, n_global_params);
       if( ret < 0 ) { 
-	snprintf(err_buf, COMMAND_BUFSIZE, "Param error at step %d: %s", -ret, strerror(errno));
-	err = err_buf;
+	strbuf_printf(err, "NO: Param -- error at step %d: %m", -ret);
 	break;
       }
       /* Otherwise, succeeded in updating parameters */
       ret = verify_reader_params(&reader_parameters);
       if( ret < 0 ) { 
-        snprintf(err_buf, COMMAND_BUFSIZE, "Verify error at step %d: %s", -ret, strerror(errno));
-        err = err_buf;
+	strbuf_printf(err, "NO: Param -- verify error at step %d: %m", -ret);
         break;
       }
     }
-    zh_put_multi(s, 1, "OK Param");
+    strbuf_printf(err, "OK Param");
     reader.state = READER_PARAM;
     if(debug_level > 1)
       debug_params(stderr, globals, n_global_params);
@@ -443,48 +446,45 @@ static void process_reader_command(void *s) {
   case 'i':
   case 'I':
     if( reader.state != READER_PARAM ) {
-      err = "Init issued but not in PARAM state";
+      strbuf_printf(err, "NO: Init issued but not in PARAM state");
       break;
     }
     ret = verify_reader_params(&reader_parameters);
-    if( ret < 0 ) { 
-      snprintf(err_buf, COMMAND_BUFSIZE, "Param verify error at step %d: %s", -ret, strerror(errno));
-      err = err_buf;
+    if( ret < 0 ) {
+      strbuf_printf(err, "NO: Init -- param verify error at step %d: %m", -ret);
       reader.state = READER_ERROR;
       break;
     }
     ret = comedi_transfer_initialise();
     if( ret < 0 ) {
       reader.state = READER_ERROR;
-      snprintf(err_buf, COMMAND_BUFSIZE, "Init error at step %d: %s", -ret, strerror(errno));
-      err = err_buf;
+      strbuf_printf(err, "NO: Init -- error at step %d: %m", -ret);
       break;
     }
-    zh_put_multi(s, 1, "OK Ready");
-    return;
+    strbuf_printf(err, "OK Init");
+    break;
 
   case 'g':
   case 'G':
     if( reader.state != READER_RESTING ) {
-      err = "Go issued but not in RESTING state";
+      strbuf_printf(err, "NO: Go issued but not in RESTING state");
       break;
     }
     ret = comedi_start_data_transfer();
     if( ret < 0 ) {
       reader.state = READER_ERROR;
-      snprintf(err_buf, COMMAND_BUFSIZE, "Go error at step %d: %s", -ret, strerror(errno));
-      err = err_buf;
+      strbuf_printf(err, "NO: Go error at step %d: %m", -ret);
       break;
     }      
-    zh_put_multi(s, 1, "OK Go");
-    return;
+    strbuf_printf(err, "OK Go");
+    break;
 
   default:
-    err = "Unexpected reader command: ";
+    strbuf_printf(err, "NO: Reader -- Unexpected reader command");
     break;
   }
-  zh_put_multi(reader.rd_log, 2, err, &command_buffer[0]); /* Error occurred, return message */
-  zh_put_multi(s, 4, "NO: ERROR ", err, " in ", &command_buffer[0]);
+  zh_put_multi(log, 3, strbuf_string(err), "\n   ", &cmd_buf[0]); /* Error occurred, log it */
+  zh_put_msg(s, 0, sizeof(err), (void *)err); /* return message */
 }
 
 /*
@@ -618,7 +618,7 @@ static void reader_thread_msg_loop() {    /* Read and process messages */
       process_reader_command,
     };
 
-  zh_put_multi(reader.rd_log, 1, "Reader thread is initialised");
+  zh_put_multi(log, 1, "Reader thread is initialised");
   reader.state = READER_PARAM;
 
   print_rusage();
@@ -673,7 +673,7 @@ static void reader_thread_msg_loop() {    /* Read and process messages */
 
     ret = zmq_poll(&poll_list[0], N_POLL_ITEMS, delay);	/* Look for commands here */
     if( ret < 0 && errno == EINTR ) { /* Interrupted */
-      zh_put_multi(reader.rd_log, 1, "Reader loop interrupted");
+      zh_put_multi(log, 1, "Reader loop interrupted");
       break;
     }
     if(ret < 0)
@@ -704,13 +704,13 @@ void *reader_main(void *arg) {
   ret = set_reader_rt_scheduling();
   switch(ret) {
   case 1:
-    zh_put_multi(reader.rd_log, 1, "Reader RT scheduling succeeded");
+    zh_put_multi(log, 1, "Reader RT scheduling succeeded");
     break;
   case 0:
-    zh_put_multi(reader.rd_log, 1, "Reader using normal scheduling: RTPRIO unset");
+    zh_put_multi(log, 1, "Reader using normal scheduling: RTPRIO unset");
     break;
   default:
-    zh_put_multi(reader.rd_log, 2, "Reader RT scheduling setup failed:", strerror(errno));
+    zh_put_multi(log, 2, "Reader RT scheduling setup failed: ", strerror(errno));
     break;
   }
 
@@ -723,12 +723,12 @@ void *reader_main(void *arg) {
     comedi_stop_data_transfer();
   }
 
-  zh_put_multi(reader.rd_log, 1, "Reader thread terminating by return");
+  zh_put_multi(log, 1, "Reader thread terminating by return");
 
   /* Clean up ZeroMQ sockets */
   zmq_close(wr_queue_reader);
   zmq_close(command);
-  zmq_close(reader.rd_log);
+  zmq_close(log);
   reader_thread_running = false;
   return (void *) thread_msg;
 }

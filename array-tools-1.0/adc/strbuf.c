@@ -7,10 +7,11 @@
 #include "queue.h"
 
 #define N_STRBUF_ALLOC	8			/* Allocate this many buffers at one go */
-#define MAX_STRBUF_SIZE (256-sizeof(queue))	/* Strbuf will hold 240 characters maximum */
+#define MAX_STRBUF_SIZE (512-sizeof(queue))	/* Strbuf will hold 496 characters maximum */
 
 struct _strbuf {
   queue   s_Q;				/* Queue header to avoid malloc() calls */
+  int	  s_used;			/* Pointer to next free space in buffer */
   char    s_buffer[MAX_STRBUF_SIZE];	/* Buffer space when in use */
 };
 
@@ -27,37 +28,53 @@ int strbuf_space(strbuf s) {
  */
 
 static QUEUE_HEADER(sbufQ);
+static int N_in_Q = 0;
 
 strbuf alloc_strbuf(int nr) {
-  if( queue_singleton(&sbufQ) ) {	/* The queue is empty */
+  queue *ret;
+
+  if( N_in_Q < nr ) {	/* The queue doesn't have enough */
     int n;
 
     for(n=0; n<N_STRBUF_ALLOC; n++) {
       queue *q = (queue *)calloc(1, sizeof(struct _strbuf));
 
       if( !q ) {			/* Allocation failed */
-	if( !queue_singleton(&sbufQ) )
-	  break;			/* But we have some anyway */
+	if( N_in_Q >= nr )
+	  break;			/* But we have enough now anyway */
 	return NULL;
       }
       init_queue(q);
       queue_ins_after(&sbufQ, q);
+      N_in_Q++;
     }
   }
-  return (strbuf)de_queue(queue_next(&sbufQ));
+  ret = de_queue(queue_next(&sbufQ));
+  while(--nr > 0) {		/* Collect enough to satisfy request */
+    queue *p = de_queue(queue_next(&sbufQ));
+
+    init_queue(p);
+    ((strbuf)p)->s_used = 0;
+    ((strbuf)p)->s_buffer[0] = '\0';
+    queue_ins_before(ret, p);
+  }
+  return (strbuf)ret;
 }
 
 static void free_strbuf(strbuf s) {
   free( (void *)s );
 }
 
-void release_strbuf(strbuf s, int drop) {
-  if(drop) {
-    free_strbuf(s);
-    return;
+void release_strbuf(strbuf s) {
+  queue *p;
+
+  while( (p = de_queue(queue_next(&s->s_Q))) != NULL ) {
+    init_queue(p);
+    queue_ins_before(&sbufQ, p);
+    N_in_Q++;
   }
-  init_queue(&s->s_Q);
   queue_ins_before(&sbufQ, &s->s_Q);
+  N_in_Q++;
 }
 
 /*
@@ -69,18 +86,32 @@ char *strbuf_string(strbuf s) {
 }
 
 /*
+ * Return the number of characters printed into a strbuf so far
+ */
+
+int strbuf_used(strbuf s) {
+  return s->s_used;
+}
+
+/*
  * Do a formatted print into an strbuf, starting at pos.
  */
 
 static int strbuf_vprintf(strbuf s, int pos, const char *fmt, va_list ap) {
-  int   rest = MAX_STRBUF_SIZE - pos;
+  int   rest;
+  int   used;
   char *buf  = &s->s_buffer[pos];
 
+  if(pos < 0)			/* Position one character back from end (i.e. skip NULL) or at start */
+    pos = s->s_used ? s->s_used-1 : 0;
+  rest = MAX_STRBUF_SIZE - pos;	/* There should be this much space remaining */
   if(rest < 0) {
     errno = EINVAL;
     return -1;
   }
-  return vsnprintf(buf, rest, fmt, ap);
+  used = vsnprintf(buf, rest, fmt, ap);
+  s->s_used = used==rest? MAX_STRBUF_SIZE : s->s_used + used;
+  return used;
 }
 
 /*
@@ -123,7 +154,7 @@ static void do_extra_percents(char *buf, int size, const char *fmt) {
       continue;
 
     int used = snprintf(buf-2, size, "%s", (*p->pc_func)()); /* Interpolate at most 'size' chars */
-    if(used > size) {		    /* Output was truncated */
+    if(used >= size) {		    /* Output was truncated */
       buf += size-1;
       break;
     }
@@ -157,6 +188,18 @@ int strbuf_printf(strbuf s, const char *fmt, ...) {
   return used;
 }
 
+int strbuf_appendf(strbuf s, const char *fmt, ...) {
+  va_list ap;
+  int     used;
+  char    fmt_buf[MAX_STRBUF_SIZE];
+
+  do_extra_percents(&fmt_buf[0], MAX_STRBUF_SIZE, fmt);
+  va_start(ap, fmt);
+  used = strbuf_vprintf(s, -1, fmt_buf, ap);
+  va_end(ap);
+  return used;
+}
+
 /*
  * Register new percent interpreters.
  */
@@ -173,4 +216,18 @@ int register_error_percent_handler(char c, const char (*fn)()) {
   p->pc_func = fn;
   percent_list = p;
   return 0;
+}
+
+/*
+ * Debug a strbuf
+ */
+
+void debug_strbuf(FILE *fp, strbuf s) {
+  char *str = strbuf_string(s);
+  char  buf[MAX_STRBUF_SIZE+64];
+  int   used;
+
+  used = snprintf(&buf[0], 64, "s=%p, n=%p, q=%p: data='");
+  snprintf(&buf[used], sizeof(buf)-used, "%s'\n", str);
+  fprintf(fp, "%s", &buf[0]);
 }

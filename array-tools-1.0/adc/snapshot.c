@@ -29,6 +29,7 @@
 #include "util.h"
 #include "param.h"
 #include "queue.h"
+#include "strbuf.h"
 #include "snapshot.h"
 #include "reader.h"
 #include "writer.h"
@@ -351,24 +352,22 @@ int process_log_message(void *socket) {
 }
 
 /*
- * Handle replies from reader thread
+ * Handle replies from reader and writer threads.
+ * What is returned is the pointer to the error strbuf (the command buf is still attached).
  */
 
-#define COPYBUFSIZE	1024
+int process_reply(void *s) {
+  int     size;
+  strbuf  err;
+  char   *err_buf;
 
-int process_reply(void *socket) {
-  char buf[COPYBUFSIZE];
-  int size, more, ret;
-
-  do {
-    size = zh_get_msg(socket, 0, COPYBUFSIZE, buf);
-    if(size) {
-      more = zh_any_more(socket);
-      ret  = zh_put_msg(command, (more? ZMQ_SNDMORE : 0), size, buf);
-      if( ret < 0 )
-	return ret;
-    }
-  } while(more);
+  size = zh_get_msg(s, 0, sizeof(err), (void *)&err);
+  assertv(size==sizeof(err), "Reply message of wrong size %d\n", size);
+  err_buf = strbuf_string(err);
+  size = strbuf_used(err);
+  err_buf[size] = '\n';
+  zh_put_msg(command, 0, size, err_buf);
+  strbuf_release(err);
   return 0;
 }
 
@@ -380,23 +379,29 @@ int process_reply(void *socket) {
  */
 
 int process_snapshot_command() {
-  char buf[COPYBUFSIZE];
-  int size, ret;
+  strbuf c_n_e;			/* Command and Error buffers */
+  char  *buf;
+  int   size, ret;
+  int   fwd;
 
-  size = zh_get_msg(command, 0, COPYBUFSIZE, buf);
+  c_n_e = alloc_strbuf(2);
+  buf = strbuf_string(c_n_e);
+  size = zh_get_msg(command, 0, strbuf_space(c_n_e), buf);
   buf[size] = '\0';
   if( !size ) {
     ret = zh_put_msg(command, 0, 0, NULL); /* If empty message received, send empty reply at once */
+    release_strbuf(c_n_e);
     assertv(ret == 0, "Reply to command failed, %d\n", ret);
     return 0;
   }
   // fprintf(stderr, "Msg '%c' (%d)\n", buf[0], buf[0]);
+  fwd = 0;
   switch(buf[0]) {
   case 'q':
   case 'Q':			/* Deal specially with Quit command, to close down nicely... */
-    ret = zh_put_msg(reader, 0, size, buf); /* Forward this commands to the reader thread */
+    ret = zh_put_msg(reader, 0, 0, NULL); /* Forward zero length message to the reader thread */
     assertv(ret > 0, "Quit to reader failed, %d\n", ret);
-    ret = zh_put_msg(writer, 0, size, buf); /* Forward this commands to the writer thread */
+    ret = zh_put_msg(writer, 0, 0, NULL); /* Forward zero length message to the writer thread */
     assertv(ret > 0, "Quit to writer failed, %d\n", ret);
     ret = zh_put_msg(command, 0, 7, "OK Quit"); /* Reply to Quit here */
     assertv(ret > 0, "Quit reply failed, %d\n", ret);
@@ -410,16 +415,22 @@ int process_snapshot_command() {
   case 'I':
   case 'p':
   case 'P':
-    ret = zh_put_msg(reader, 0, size, buf); /* Forward these commands to the reader thread */
+    /* Forward these commands to the reader thread */
+    ret = zh_put_msg(reader, 0, sizeof(c_n_e), (void *)c_n_e);
     assertv(ret > 0, "Forward to reader failed, %d\n", ret);
+    fwd++;
     break;
 
   case 'd':
   case 'D':
   case 's':
   case 'S':
-    ret = zh_put_msg(writer, 0, size, buf); /* Forward snapshot and dir commands to writer */
+  case 'z':
+  case 'Z':
+    /* Forward snapshot and dir commands to writer */
+    ret = zh_put_msg(writer, 0, sizeof(c_n_e), (void *)c_n_e);
     assertv(ret > 0, "Forward to writer failed, %d\n", ret);
+    fwd++;
     break;
 
   case '?':
@@ -433,6 +444,8 @@ int process_snapshot_command() {
     assertv(ret == 0, "Reject unknown reply failed, %d\n", ret);
     break;
   }
+  if( !fwd )
+    release_strbuf(c_n_e);
   return 0;
 }
 
