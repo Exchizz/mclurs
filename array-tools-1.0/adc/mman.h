@@ -6,10 +6,9 @@
 /* Memory mapping and locking utilities */
 
 extern void  prefault_pages(void *, int, int);
-extern void *mmap_and_lock(int, off_t, size_t, int);
-extern void *mmap_and_lock_double(int, off_t, size_t, int);
 extern void *mmap_locate(size_t, int);
 extern void *mmap_and_lock_fixed(int, off_t, size_t, int, void *);
+extern void *mmap_and_lock(int, off_t, size_t, int);
 
 #define PREFAULT_RDONLY	1
 #define PREFAULT_WRONLY 2

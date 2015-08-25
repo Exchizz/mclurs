@@ -129,7 +129,7 @@ struct readbuf *create_ring_buffer(int size, const char *tmpdir) {
   prefault_pages(ret->rb_start, 2*size, PREFAULT_WRONLY);
   /* Pages touched, faults generated */
 #else
-  map = mmap_and_lock_double(fd, 0, sz, PROT_READ|PROT_WRITE|MAL_LOCKED);
+  map = mmap_and_lock(fd, 0, sz, PREFAULT_RDWR|MAL_DOUBLED|MAL_LOCKED);
   if(map == NULL) {
     close(fd);
     free(ret);

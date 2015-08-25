@@ -1016,28 +1016,80 @@ void *writer_main(void *arg) {
  * Verify the parameters for the writer and construct the writer state.
  */
 
-int verify_writer_params(wparams *wp) {
+int verify_writer_params(wparams *wp, strbuf e) {
   extern int tmpdir_dirfd;	/* Imported from snapshot.c */
 
-  if( wp->w_schedprio != 0 ) { /* Check for illegal value */
+  if( wp->w_schedprio != 0 ) {	/* Check for illegal value */
     int max, min;
 
     min = sched_get_priority_min(SCHED_FIFO);
     max = sched_get_priority_max(SCHED_FIFO);
     if(wp->w_schedprio < min || wp->w_schedprio > max) {
-      errno = ERANGE;
+      strbuf_appendf(e, "RT scheduling priority %d not in kernel's acceptable range [%d,%d]",
+		    wp->w_schedprio, min, max);
       return -1;
     }
+  }
+
+  /*
+   * Check that the requested mmap'd transfer RAM size and the
+   * transfer chunk size are reasonable.
+   */
+  if(wp->w_lockedram < MIN_RAM_MB || wp->w_lockedram > MAX_RAM_MB) {
+    strbuf_appendf(e, "Transfer Locked RAM parameter %d MiB outwith compiled-in range [%d, %d] MiB",
+		  wp->w_lockedram, MIN_RAM_MB, MAX_RAM_MB);
+    return -1;
+  }
+  if(wp->w_chunksize < MIN_CHUNK_SZ || wp->w_chunksize > MAX_CHUNK_SZ) {
+    strbuf_appendf(e, "Transfer chunk size %d KiB outwith compiled-in range [%d, %d] KiB",
+		  wp->w_lockedram, MIN_CHUNK_SZ, MAX_CHUNK_SZ);
+    return -1;
+  }
+
+  /* Compute the number of frames available */
+  const int pagesize = sysconf(_SC_PAGESIZE);
+  int sz = wp->w_chunksize*1024;
+  sz = pagesize * ((sz + pagesize - 1) / pagesize); /* Round up to multiple of PAGE SIZE */
+  wp->w_chunksize = sz / 1024;
+  wp->w_nframes = (wp->w_lockedram * 1024*1024) / sz;
+  if(wp->w_nframes < MIN_NFRAMES) {
+    strbuf_appendf(e, "Adjusted chunk size %d KiB and given RAM %d MiB yield too few (%d < %d) frames",
+		   wp->w_chunksize, wp->w_lockedram, wp->w_nframes, MIN_NFRAMES);
+    return -1;
   }
 
   /*
    * Check the snapdir directory exists and is correctly owned, and
    * get a path fd for it.
    */
-
   wp->w_snap_dirfd = new_directory(tmpdir_dirfd, wp->w_snapdir);
-  if( wp->w_snap_dirfd < 0 )	/* Give up on failure */
-    return -4;
+  if( wp->w_snap_dirfd < 0 ) {	/* Give up on failure */
+    strbuf_printf(e, "Snapdir %d inaccessible: %m", wp->w_snapdir);
+    return -1;
+  }
+
+  /*
+   * Now try to get the memory...
+   */
+  wp->w_framelist = (block *)calloc(wp->w_nframes, sizeof(block));
+  if( wp->w_framelist ) {
+    void *map = mmap_locate(wp->w_lockedram *1024*1024, 0);
+    int   n;
+
+    if(map == NULL) {
+      strbuf_appendf(e, "Cannot mmap %d MiB of locked transfer RAM: %m", wp->w_lockedram);
+      free((void *) wp->w_framelist );
+      return -1;
+    }
+    for(n=0; n<wp->w_nframes; n++) { /* Initialise the frame memory pointers, leave sizes as 0 */
+      wp->w_framelist[n].b_data = map;
+      map += sz;
+    }
+  }
+  else {
+    strbuf_appendf(e, "Cannot allocate frame list memory for %d frames: %m", wp->w_nframes);
+    return -1;
+  }
 
   return 0;
 }

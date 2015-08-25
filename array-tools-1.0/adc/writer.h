@@ -7,18 +7,28 @@
 #define	WRITER_CMD_ADDR	"inproc://Writer-CMD"
 #define N_SNAP_PARAMS  7
 
+#define MIN_RAM_MB	16
+#define MAX_RAM_MB	256
+#define MIN_CHUNK_SZ	128
+#define MAX_CHUNK_SZ	4096
+#define MIN_NFRAMES	4
+
 typedef struct {
   const char  *w_snapdir;
   int	       w_schedprio;
+  int	       w_lockedram;
+  int	       w_chunksize;
 
   /* The values below are computed and exported */
+  int	       w_nframes;	/* The number of simultaneous mmap frames */
+  block       *w_framelist;	/* The list of mmap frame descriptors */
   int	       w_snap_dirfd;	/* The snapdir path fd */
   int	       w_snap_curfd;	/* The path fd of the 'working' directory */
-  int	       w_running;	    /* Thread is running and ready */
+  int	       w_running;	/* Thread is running and ready */
 }
   wparams;
 
-extern int   verify_writer_params(wparams *);
+extern int   verify_writer_params(wparams *, strbuf);
 extern void *writer_main(void *);
 
 #define SNAP_NAME_SIZE	24		/* Big enough to hold a 64 bit integer/pointer as hex */

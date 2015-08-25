@@ -28,7 +28,7 @@ typedef struct {
   rparams;
 
 extern rparams reader_parameters;
-extern int     verify_reader_params(rparams *);
+extern int     verify_reader_params(rparams *, strbuf);
 extern void   *reader_main(void *);
 
 /*

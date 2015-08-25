@@ -431,9 +431,9 @@ static void process_reader_command(void *s) {
 	break;
       }
       /* Otherwise, succeeded in updating parameters */
-      ret = verify_reader_params(&reader_parameters);
+      strbuf_printf(err, "NO: Param -- verify error: ");
+      ret = verify_reader_params(&reader_parameters, err);
       if( ret < 0 ) { 
-	strbuf_printf(err, "NO: Param -- verify error at step %d: %m", -ret);
         break;
       }
     }
@@ -449,9 +449,9 @@ static void process_reader_command(void *s) {
       strbuf_printf(err, "NO: Init issued but not in PARAM state");
       break;
     }
-    ret = verify_reader_params(&reader_parameters);
+    strbuf_printf(err, "NO: Init -- param verify error: ");
+    ret = verify_reader_params(&reader_parameters, err);
     if( ret < 0 ) {
-      strbuf_printf(err, "NO: Init -- param verify error at step %d: %m", -ret);
       reader.state = READER_ERROR;
       break;
     }
@@ -737,7 +737,7 @@ void *reader_main(void *arg) {
  * Verify reader parameters and generate reader state description.
  */ 
 
-int verify_reader_params(rparams *rp) {
+int verify_reader_params(rparams *rp, strbuf e) {
 
   if( rp->r_schedprio != 0 ) { /* Check for illegal value */
     int max, min;
@@ -745,14 +745,16 @@ int verify_reader_params(rparams *rp) {
     min = sched_get_priority_min(SCHED_FIFO);
     max = sched_get_priority_max(SCHED_FIFO);
     if(rp->r_schedprio < min || rp->r_schedprio > max) {
-      errno = ERANGE;
+      strbuf_appendf(e, "RT scheduling priority %d not in kernel's acceptable range [%d,%d]",
+		    rp->r_schedprio, min, max);
       return -1;
     }
   }
 
   if(rp->r_frequency < 6e4 || rp->r_frequency > 3.75e5) {
-    errno = ERANGE;
-    return -2;
+    strbuf_appendf(e, "Sampling frequency %g not within compiled-in limits [%g,%g] Hz",
+		   rp->r_frequency, 6e4, 3.75e5);
+    return -1;
   }
   else {
     int ns = 1e9 / (rp->r_frequency*NCHAN); /* Inter-sample period */
@@ -769,16 +771,18 @@ int verify_reader_params(rparams *rp) {
   }
 
   if(rp->r_window < 1 || rp->r_window > 30) {
-    errno = ERANGE;
-    return -3;
+    strbuf_appendf(e, "Capture window %d seconds outwith compiled-in range [%d,%d] seconds",
+		   rp->r_window, 1, 30);
+    return -1;
   }
   /* Got a reasonable window, i.e. ring buffer size */
   long page = 1e-9 * reader.sample_ns * sysconf(_SC_PAGESIZE) / sizeof(sampl_t); /* Duration of a page [ns] */
   reader.ringsz = (rp->r_window + 2) / page;
 
   if(rp->r_bufsz < 8 || rp->r_bufsz > 256) {
-    errno = ERANGE;
-    return -3;
+    strbuf_appendf(e, "Comedi buffer size %d MiB outwith compiled-in range [%d,%d] MiB",
+		   rp->r_bufsz, 8, 256);
+    return -1;
   }
   reader.bufsz = rp->r_bufsz;
 

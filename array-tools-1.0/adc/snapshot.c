@@ -55,57 +55,75 @@ static const char *snapshot_group;
 static int	   schedprio;
 
 param_t globals[] ={
-  { "tmpdir",   "/tmp",  &tmpdir_path,
+  { "tmpdir",   "/tmp",
+    &tmpdir_path,
     PARAM_TYPE(string), PARAM_SRC_ENV|PARAM_SRC_ARG,
     "directory for creation of temporary files"
   },
-  { "freq",     "312.5e3", &reader_parameters.r_frequency,
+  { "freq",     "312.5e3",
+    &reader_parameters.r_frequency,
     PARAM_TYPE(double), PARAM_SRC_ENV|PARAM_SRC_ARG|PARAM_SRC_CMD,
     "sampling frequency (divided by 8) of the ADC [Hz]"
   },
-  { "snapshot", "ipc://snapshot-CMD", &snapshot_addr,
+  { "snapshot", "ipc://snapshot-CMD",
+    &snapshot_addr,
     PARAM_TYPE(string), PARAM_SRC_ENV|PARAM_SRC_ARG,
     "address of snapshot command socket"
   },
-  { "snapdir",  "snap", &writer_parameters.w_snapdir,
+  { "snapdir",  "snap",
+    &writer_parameters.w_snapdir,
     PARAM_TYPE(string), PARAM_SRC_ENV|PARAM_SRC_ARG/*|PARAM_SRC_CMD*/,
     "directory where samples are written"
   },
-  { "dev",	"/dev/comedi0", &reader_parameters.r_device,
+  { "dev",	"/dev/comedi0",
+    &reader_parameters.r_device,
     PARAM_TYPE(string), PARAM_SRC_ENV|PARAM_SRC_ARG,
     "the Comedi device to open"
   },
-  { "bufsz",	"32", &reader_parameters.r_bufsz,
+  { "bufsz",	"32",
+    &reader_parameters.r_bufsz,
     PARAM_TYPE(int32),  PARAM_SRC_ENV|PARAM_SRC_ARG|PARAM_SRC_CMD,
     "size of the Comedi buffer [MiB]"
   },
-  { "window",	"10", &reader_parameters.r_window,
+  { "window",	"10",
+    &reader_parameters.r_window,
     PARAM_TYPE(double),  PARAM_SRC_ENV|PARAM_SRC_ARG|PARAM_SRC_CMD,
     "size of the ring buffer [s]"
   },
-  { "rtprio",	NULL, &schedprio,
+  { "rtprio",	NULL,
+    &schedprio,
     PARAM_TYPE(int32),  PARAM_SRC_ENV|PARAM_SRC_ARG,
     "priority of real-time threads [0-99]"
   },
-  { "rdprio",	NULL, &reader_parameters.r_schedprio,
+  { "rdprio",	NULL,
+    &reader_parameters.r_schedprio,
     PARAM_TYPE(int32),  PARAM_SRC_ENV|PARAM_SRC_ARG,
     "priority of real-time reader thread [0-99]"
   },
-  { "wrprio",	NULL, &writer_parameters.w_schedprio,
+  { "wrprio",	NULL,
+    &writer_parameters.w_schedprio,
     PARAM_TYPE(int32),  PARAM_SRC_ENV|PARAM_SRC_ARG,
     "priority of real-time writer thread [0-99]"
   },
-  { "user",	NULL, &snapshot_user,
+  { "user",	NULL,
+    &snapshot_user,
     PARAM_TYPE(string), PARAM_SRC_ENV|PARAM_SRC_ARG,
     "the user/UID for file system access and creation"
   },
-  { "group",	NULL, &snapshot_group,
+  { "group",	NULL,
+    &snapshot_group,
     PARAM_TYPE(string), PARAM_SRC_ENV|PARAM_SRC_ARG,
     "the group/GID for file system access and creation"
   },
-  { "ram",	"192", 0,
+  { "ram",	"64",
+    &writer_parameters.w_lockedram,
     PARAM_TYPE(int32), PARAM_SRC_ENV|PARAM_SRC_ARG,
-    "the maximum amount of data RAM to lock [MiB]"
+    "the amount of data RAM to lock [MiB]"
+  },
+  { "chunk",	"1024",
+    &writer_parameters.w_chunksize,
+    PARAM_TYPE(int32), PARAM_SRC_ENV|PARAM_SRC_ARG,
+    "The size of a transfer chunk [KiB]"
   },
 };
 
@@ -367,7 +385,7 @@ int process_reply(void *s) {
   size = strbuf_used(err);
   err_buf[size] = '\n';
   zh_put_msg(command, 0, size, err_buf);
-  strbuf_release(err);
+  release_strbuf(err);
   return 0;
 }
 
@@ -599,23 +617,29 @@ int main(int argc, char *argv[], char *envp[]) {
     gid = getgid();		/* Use the real GID of this thread */
   }
 
+  strbuf e = alloc_strbuf(1);	/* Catch parameter error diagnostics */
+
    /* 5b. Verify and initialise parameters for the reader thread */
   if( !reader_parameters.r_schedprio )
     reader_parameters.r_schedprio = schedprio;
-  ret = verify_reader_params(&reader_parameters);
+  strbuf_printf(e, "Reader Params: ");
+  ret = verify_reader_params(&reader_parameters, e);
   if( ret < 0 ) {
-    fprintf(stderr, "Reader parameter checks failed at step %d: %s\n", -ret, strerror(errno));
+    fprintf(stderr, "%s\n", strbuf_string(e));
     exit(2);
   }
 
   /* 5c. Verify and initialise parameters for the writer thread */
   if( !writer_parameters.w_schedprio)
     writer_parameters.w_schedprio = schedprio;
-  ret = verify_writer_params(&writer_parameters);
+  strbuf_printf(e, "Writer Params: ");
+  ret = verify_writer_params(&writer_parameters, e);
   if( ret < 0 ) {
-    fprintf(stderr, "Writer parameter checks failed at step %d: %s\n", -ret, strerror(errno));
+    fprintf(stderr, "%s\n", strbuf_string(e));
     exit(2);
   }
+
+  release_strbuf(e);
 
   /* Create the tidy thread */
   pthread_attr_init(&tidy_thread_attr);
