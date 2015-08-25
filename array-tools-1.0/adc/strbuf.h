@@ -22,6 +22,7 @@ extern int  strbuf_printf(strbuf, const char *, ...);
 extern int  strbuf_appendf(strbuf, const char *, ...);
 extern int  strbuf_printf_pos(strbuf, int, const char *, ...);
 extern int  register_error_percent_handler(char, const char (*)());
+void strbuf_revert(strbuf);
 extern void debug_strbuf(FILE *, strbuf);
 
 #define strbuf_next(s)	((strbuf)queue_next((queue *)(s)))

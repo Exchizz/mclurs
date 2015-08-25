@@ -219,15 +219,38 @@ int register_error_percent_handler(char c, const char (*fn)()) {
 }
 
 /*
+ * Revert a strbuf -- remove extra NUL characters inserted by tokenising
+ */
+
+void strbuf_revert(strbuf s) {
+  char *p = &s->s_buffer[0];
+  int   n;
+
+  for(n=0; n<s->s_used; n++,p++)
+    if( !*p ) *p = ' ';
+  n = (n == MAX_STRBUF_SIZE)? n-1 : n;
+  s->s_buffer[n] = '\0';
+}
+
+/*
  * Debug a strbuf
  */
 
 void debug_strbuf(FILE *fp, strbuf s) {
   char *str = strbuf_string(s);
   char  buf[MAX_STRBUF_SIZE+64];
+  char *b;
   int   used;
+  int   n;
 
-  used = snprintf(&buf[0], 64, "s=%p, n=%p, q=%p: data='");
-  snprintf(&buf[used], sizeof(buf)-used, "%s'\n", str);
-  fprintf(fp, "%s", &buf[0]);
+  used = snprintf(&buf[0], 64, "s=%p, n=%p, q=%p: data[0..%d]='",
+		  s, s->s_Q.q_next, s->s_Q.q_prev, s->s_used);
+  b = &buf[used];
+  n = MAX_STRBUF_SIZE+64-used-1;
+  if( n > s->s_used )
+    n = s->s_used;
+  while(n-- > 0) if( (*b++ = *str++) == '\0' ) b[-1] = ' ';
+  *b++ ='\'';
+  *b = '\0';
+  fwrite(&buf[0], 1, b-&buf[0], fp);
 }

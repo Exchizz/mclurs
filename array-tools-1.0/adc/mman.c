@@ -24,13 +24,38 @@ void prefault_pages(void *p, int n, int w) {
 }
 
 /*
- * Map and lock a region of a file into memory, don't care where...
+ * Locate a region of memory where one could map a file of size size.
  */
 
-void *mmap_and_lock(int fd, off_t offset, size_t length, int flags) {
+void *mmap_locate(size_t length, int flags) {
   void *map;
 
-  map = mmap(NULL, length, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
+  if( flags & MAL_DOUBLED ) length *= 2;
+
+  map = mmap(NULL, length, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+  if(map == NULL || map == (void *)-1)
+    return NULL;
+
+  return map;
+}
+
+/*
+ * Map and lock a region of a file into memory at given fixed address.
+ */
+
+void *mmap_and_lock_fixed(int fd, off_t offset, size_t length, int flags, void *fixed) {
+  void *map;
+  int   mflags = 0;
+
+  if( flags&PREFAULT_RDONLY )
+    mflags |= PROT_READ;
+  if( flags&PREFAULT_WRONLY )
+    mflags |= PROT_WRITE;
+
+  if( !mflags )
+    mflags = PROT_READ|PROT_WRITE;
+
+  map = mmap(fixed, length, mflags, MAP_SHARED, fd, offset);
   if(map == NULL || map == (void *)-1)
     return NULL;
 
@@ -46,34 +71,30 @@ void *mmap_and_lock(int fd, off_t offset, size_t length, int flags) {
 }
 
 /*
- * Map and lock a region of a file into memory twice contiguously, don't care where...
+ * Map and lock a region of a file into memory, don't care where...
  */
 
-void *mmap_and_lock_double(int fd, off_t offset, size_t length, int flags) {
+void *mmap_and_lock(int fd, off_t offset, size_t length, int flags) {
   void *map;
   void *ms;
 
-  map = mmap(NULL, 2*length, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-  if(map == NULL || map == (void *)-1)
+  map = mmap_locate(length, flags);
+  if( !map )
     return NULL;
 
-  ms = mmap(map, length, PROT_READ|PROT_WRITE, MAP_SHARED|MAP_FIXED, fd, 0);
-  if(ms != map)
+  if( mmap_and_lock_fixed(fd, offset, length, flags, map) == NULL )
     return NULL;
 
-  ms = mmap(map+length, length, PROT_READ|PROT_WRITE, MAP_SHARED|MAP_FIXED, fd, 0);
-  if(ms != (map+length)) {
-    munmap(map, length);
-    return NULL;
-  }
-
-  if( (flags&MAL_LOCKED) && mlock(map, 2*length) < 0 ) {
-    munmap(map, 2*length);
-    return NULL;
+  if( flags & MAL_DOUBLED ) {
+    if( mmap_and_lock_fixed(fd, offset, length, flags, map+length) == NULL ) {
+      munmap(map, length);
+      return NULL;
+    }
+    length *= 2;
   }
 
   if( flags & PREFAULT_RDWR )
-    prefault_pages(map, 2*length / sysconf(_SC_PAGESIZE), (flags & PREFAULT_RDWR));
+    prefault_pages(map, length / sysconf(_SC_PAGESIZE), (flags & PREFAULT_RDWR));
 
   return map;
 }

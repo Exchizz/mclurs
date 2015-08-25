@@ -443,6 +443,13 @@ static snap_t *build_snapshot_descriptor(strbuf c) {
 }
 
 /*
+ * Set up snapshot -- create the necessary file descriptor structures etc.
+ */
+
+static void setup_snapshot(snap_t *s) {
+}
+
+/*
  * Called when a snapshot file has just been written.
  */
 
@@ -532,6 +539,27 @@ static int init_snapfile(snapfile_t *f, snap_t *s) {
 }
 
 /*
+ * Set up snapshot file descriptor, create chunks etc.
+ */
+
+static void setup_snapfile(snapfile_t *f) {
+}
+
+/*
+ * Completed file descriptor -- called when file acquisition ends successfully
+ */
+
+static void completed_snapfile(snapfile_t *f) {
+}
+
+/*
+ * Abort file descriptor -- called when file acquisition is aborted
+ */
+
+static void abort_snapfile(snapfile_t *f) {
+}
+
+/*
  * --------------------------------------------------------------------------------
  * FUNCTIONS ETC. FOR SNAPSHOT FILE CHUNK STRUCTURES:  MANY OF THESE PER FILE TO CAPTURE.
  *
@@ -561,6 +589,43 @@ typedef struct {
   wchunk_t    ch_writer;	/* The information needed by the writer */
 }
   chunk_t;
+
+/*
+ * Allocate a new chunk descriptor
+ */
+
+static chunk_t *alloc_chunk() {
+}
+
+/*
+ * Finished with chunk descriptors
+ */
+
+static void free_chunk(chunk_t *c) {
+}
+
+/*
+ * Initialise the data structures in a file's chunks
+ */
+
+static void setup_chunks(chunk_t *c, snapfile_t *f) {
+}
+
+/*
+ * Completed a chunk
+ */
+
+static void completed_chunk(chunk_t *c) {
+}
+
+/*
+ * Abort a chunk
+ */
+
+static void abort_chunk(chunk_t *c) {
+}
+
+#if 0
 
 /*
  * Manage the write queue:  build a snapshot descriptor (queue entry).
@@ -684,6 +749,8 @@ static void destroy_snapshot_descriptor(snapw *s) {
   free(s);
   return;
 }
+
+#endif
 
 /*
  * --------------------------------------------------------------------------------
