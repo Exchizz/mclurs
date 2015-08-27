@@ -14,6 +14,7 @@ extern void   release_strbuf(strbuf);
 extern char  *strbuf_string(strbuf);
 extern int    strbuf_space(strbuf);
 extern int    strbuf_used(strbuf);
+extern int    strbuf_setpos(strbuf,int);
 
 #include <stdio.h>
 #include <stdarg.h>

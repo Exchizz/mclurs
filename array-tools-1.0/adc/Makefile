@@ -1,7 +1,7 @@
 #
 
 TARGETS=grab trig snapchat snapshot
-OFILES=snapshot.o reader.o writer.o util.o lut.o ring.o mman.o param.o talloc.o queue.o rtprio.o strbuf.o
+OFILES=snapshot.o reader.o writer.o util.o lut.o ring.o mman.o param.o talloc.o queue.o rtprio.o strbuf.o chunk.o
 XTRAS=grab.o snapchat.o trig.o
 ARGTAB_SRCS=argtab-int16.c argtab-int64.c
 ARGTAB_XTRA=argtab-helper.h
@@ -30,9 +30,9 @@ grab.o:		grab.c mman.h lut.h argtab.h
 
 trig.o:		trig.c snapshot.h util.h param.h argtab.h
 
-reader.o:	reader.c reader.h snapshot.h util.h queue.h param.h ring.h mman.h lut.h tidy.h
+reader.o:	reader.c reader.h snapshot.h util.h queue.h param.h ring.h mman.h lut.h tidy.h chunk.h
 
-writer.o:	writer.c writer.h snapshot.h util.h queue.h param.h mman.h
+writer.o:	writer.c writer.h snapshot.h util.h queue.h param.h mman.h chunk.h
 
 rtprio.o:	rtprio.c rtprio.h
 
@@ -44,6 +44,8 @@ adc.o:		adc.c adc.h mman.h queue.h ring.h
 
 ring.o:		ring.c ring.h mman.h
 
+chunk.o:	chunk.c chunk.h mman.h queue.h
+
 mman.o:		mman.c mman.h
 
 strbuf.o:	strbuf.c queue.h strbuf.h
@@ -52,7 +54,7 @@ param.o:	param.c param.h argtab.h assert.h
 
 queue.o:	queue.c queue.h
 
-tidy.o:		tidy.c tidy.h
+tidy.o:		tidy.c tidy.h chunk.h
 
 talloc.o:	talloc.c talloc.h queue.h
 

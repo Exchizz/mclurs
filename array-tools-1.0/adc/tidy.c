@@ -13,6 +13,7 @@
 #include <zmq.h>
 
 #include "util.h"
+#include "chunk.h"
 #include "tidy.h"
 
 extern void *snapshot_zmq_ctx;

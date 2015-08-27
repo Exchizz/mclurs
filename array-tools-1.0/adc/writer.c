@@ -28,6 +28,7 @@
 #include "queue.h"
 #include "mman.h"
 #include "strbuf.h"
+#include "chunk.h"
 #include "snapshot.h"
 #include "reader.h"
 #include "writer.h"
@@ -559,72 +560,6 @@ static void completed_snapfile(snapfile_t *f) {
 static void abort_snapfile(snapfile_t *f) {
 }
 
-/*
- * --------------------------------------------------------------------------------
- * FUNCTIONS ETC. FOR SNAPSHOT FILE CHUNK STRUCTURES:  MANY OF THESE PER FILE TO CAPTURE.
- *
- * --------------------------------------------------------------------------------
- */
-
-typedef struct {
-  queue	      rc_Q;	   /* Q header for READER capture queue */
-  uint32_t    rc_samples;  /* The number of samples to copy */
-  sampl_t    *rc_ring;	   /* The ring buffer start for this chunk */
-  block	      rc_memblk;   /* The mmap'd file buffer for this chunk */
-  int	      rc_status;   /* The status of this capture chunk */
-  strbuf      rc_error;	   /* The error buffer, for error messages (copy from snapshot_t origin) */
-}
-  rchunk_t;
-
-typedef struct {
-  queue	      wc_Q;		/* Queue header for WRITER's file chunk list */
-  snapfile_t *wc_parent;	/* The chunk belongs to this file */
-  uint64_t    wc_first;		/* First and last samples of this chunk */
-  uint64_t    wc_last;
-}
-  wchunk_t;
-
-typedef struct {
-  rchunk_t    ch_reader;	/* The information needed by the reader */
-  wchunk_t    ch_writer;	/* The information needed by the writer */
-}
-  chunk_t;
-
-/*
- * Allocate a new chunk descriptor
- */
-
-static chunk_t *alloc_chunk() {
-}
-
-/*
- * Finished with chunk descriptors
- */
-
-static void free_chunk(chunk_t *c) {
-}
-
-/*
- * Initialise the data structures in a file's chunks
- */
-
-static void setup_chunks(chunk_t *c, snapfile_t *f) {
-}
-
-/*
- * Completed a chunk
- */
-
-static void completed_chunk(chunk_t *c) {
-}
-
-/*
- * Abort a chunk
- */
-
-static void abort_chunk(chunk_t *c) {
-}
-
 #if 0
 
 /*
@@ -656,7 +591,7 @@ static int build_snapshot_rd_descriptor(snapw *s, snapr *r) {
 static int initialise_snapshot_file(snapw *s, snapr *r) {
   int ret, fd;
 
-  r->mmap = mmap_and_lock(fd, 0, r->bytes, PREFAULT_RDWR|MAL_LOCKED);
+  r->mmap = mmap_and_lock(fd, 0, r->bytes, PROT_RDWR|PREFAULT_RDWR|MAL_LOCKED);
   if( r->mmap == NULL || errno )
     return -18;
   close(fd);
@@ -1018,6 +953,7 @@ void *writer_main(void *arg) {
 
 int verify_writer_params(wparams *wp, strbuf e) {
   extern int tmpdir_dirfd;	/* Imported from snapshot.c */
+  int ret;
 
   if( wp->w_schedprio != 0 ) {	/* Check for illegal value */
     int max, min;
@@ -1042,19 +978,20 @@ int verify_writer_params(wparams *wp, strbuf e) {
   }
   if(wp->w_chunksize < MIN_CHUNK_SZ || wp->w_chunksize > MAX_CHUNK_SZ) {
     strbuf_appendf(e, "Transfer chunk size %d KiB outwith compiled-in range [%d, %d] KiB",
-		  wp->w_lockedram, MIN_CHUNK_SZ, MAX_CHUNK_SZ);
+		  wp->w_chunksize, MIN_CHUNK_SZ, MAX_CHUNK_SZ);
     return -1;
   }
 
   /* Compute the number of frames available */
   const int pagesize = sysconf(_SC_PAGESIZE);
   int sz = wp->w_chunksize*1024;
+  int nfr;
   sz = pagesize * ((sz + pagesize - 1) / pagesize); /* Round up to multiple of PAGE SIZE */
   wp->w_chunksize = sz / 1024;
-  wp->w_nframes = (wp->w_lockedram * 1024*1024) / sz;
-  if(wp->w_nframes < MIN_NFRAMES) {
+  nfr = (wp->w_lockedram * 1024*1024) / sz;	    /* Number of frames that fit in locked RAM */
+  if(nfr < MIN_NFRAMES) {
     strbuf_appendf(e, "Adjusted chunk size %d KiB and given RAM %d MiB yield too few (%d < %d) frames",
-		   wp->w_chunksize, wp->w_lockedram, wp->w_nframes, MIN_NFRAMES);
+		   wp->w_chunksize, wp->w_lockedram, nfr, MIN_NFRAMES);
     return -1;
   }
 
@@ -1069,27 +1006,8 @@ int verify_writer_params(wparams *wp, strbuf e) {
   }
 
   /*
-   * Now try to get the memory...
+   * Now try to get the memory for the transfer RAM...
    */
-  wp->w_framelist = (block *)calloc(wp->w_nframes, sizeof(block));
-  if( wp->w_framelist ) {
-    void *map = mmap_locate(wp->w_lockedram *1024*1024, 0);
-    int   n;
-
-    if(map == NULL) {
-      strbuf_appendf(e, "Cannot mmap %d MiB of locked transfer RAM: %m", wp->w_lockedram);
-      free((void *) wp->w_framelist );
-      return -1;
-    }
-    for(n=0; n<wp->w_nframes; n++) { /* Initialise the frame memory pointers, leave sizes as 0 */
-      wp->w_framelist[n].b_data = map;
-      map += sz;
-    }
-  }
-  else {
-    strbuf_appendf(e, "Cannot allocate frame list memory for %d frames: %m", wp->w_nframes);
-    return -1;
-  }
-
-  return 0;
+  ret = init_frame_system(e, nfr, wp->w_lockedram, wp->w_chunksize);
+  return ret;
 }

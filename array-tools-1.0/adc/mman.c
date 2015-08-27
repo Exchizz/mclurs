@@ -47,13 +47,13 @@ void *mmap_and_lock_fixed(int fd, off_t offset, size_t length, int flags, void *
   void *map;
   int   mflags = 0;
 
-  if( flags&PREFAULT_RDONLY )
+  if( flags&PROT_RDONLY )
     mflags |= PROT_READ;
-  if( flags&PREFAULT_WRONLY )
+  if( flags&PROT_WRONLY )
     mflags |= PROT_WRITE;
 
   if( !mflags )
-    mflags = PROT_READ|PROT_WRITE;
+    mflags = PROT_NONE;
 
   map = mmap(fixed, length, mflags, MAP_SHARED, fd, offset);
   if(map == NULL || map == (void *)-1)

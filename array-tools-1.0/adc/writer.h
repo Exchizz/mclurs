@@ -20,8 +20,6 @@ typedef struct {
   int	       w_chunksize;
 
   /* The values below are computed and exported */
-  int	       w_nframes;	/* The number of simultaneous mmap frames */
-  block       *w_framelist;	/* The list of mmap frame descriptors */
   int	       w_snap_dirfd;	/* The snapdir path fd */
   int	       w_snap_curfd;	/* The path fd of the 'working' directory */
   int	       w_running;	/* Thread is running and ready */

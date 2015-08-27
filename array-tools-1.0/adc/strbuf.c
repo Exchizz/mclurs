@@ -94,6 +94,24 @@ int strbuf_used(strbuf s) {
 }
 
 /*
+ * Mark the current used position.
+ */
+
+int strbuf_setpos(strbuf s, int pos) {
+  if( !s  ) {
+    errno = EINVAL;
+    return -1;
+  }
+  if(pos < 0 || pos > MAX_STRBUF_SIZE) {
+    errno = ERANGE;
+    return -1;
+  }
+  int used = s->s_used;
+  s->s_used = pos;
+  return used;
+}
+
+/*
  * Do a formatted print into an strbuf, starting at pos.
  */
 

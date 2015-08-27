@@ -23,6 +23,7 @@
 #include "queue.h"
 #include "strbuf.h"
 #include "mman.h"
+#include "chunk.h"
 #include "ring.h"
 #include "lut.h"
 #include "snapshot.h"

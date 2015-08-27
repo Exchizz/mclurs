@@ -30,6 +30,7 @@
 #include "param.h"
 #include "queue.h"
 #include "strbuf.h"
+#include "chunk.h"
 #include "snapshot.h"
 #include "reader.h"
 #include "writer.h"
@@ -405,13 +406,14 @@ int process_snapshot_command() {
   c_n_e = alloc_strbuf(2);
   buf = strbuf_string(c_n_e);
   size = zh_get_msg(command, 0, strbuf_space(c_n_e), buf);
-  buf[size] = '\0';
   if( !size ) {
     ret = zh_put_msg(command, 0, 0, NULL); /* If empty message received, send empty reply at once */
     release_strbuf(c_n_e);
     assertv(ret == 0, "Reply to command failed, %d\n", ret);
     return 0;
   }
+  strbuf_setpos(c_n_e, size);
+  buf[size] = '\0';
   // fprintf(stderr, "Msg '%c' (%d)\n", buf[0], buf[0]);
   fwd = 0;
   switch(buf[0]) {

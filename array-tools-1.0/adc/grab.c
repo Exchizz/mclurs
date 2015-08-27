@@ -264,7 +264,7 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, " cmd->convert_arg = %d\n", cmd->convert_arg);
   }
 
-  map = mmap_and_lock(comedi_fileno(dev), 0, bufsz, PREFAULT_RDONLY|MAL_DOUBLED|MAL_LOCKED);
+  map = mmap_and_lock(comedi_fileno(dev), 0, bufsz, PROT_RDONLY|PREFAULT_RDONLY|MAL_DOUBLED|MAL_LOCKED);
   if(map == NULL) {
     fprintf(stderr, "%s: Error -- failed to map Comedi buffer to RAM: %s\n", program, strerror(errno));
     exit(3);
