@@ -71,32 +71,6 @@ int push_param_value(param_t *p, char *v) {
   return 0;
 }
 
-#if 0
-/*
- * Return the string value from a parameter as a dynamic string,
- * i.e. a buffer allocated using malloc().  Set the string value to
- * NULL.  If this is a string parameter, deal with the value too.
- */
-
-const char *pop_param_value(param_t *p) {
-  const char *v;
-
-  if( !p->p_str ) {
-    errno = EINVAL;
-    return NULL;
-  }
-  /* Make a dynamic copy of the value */
-  v = p->p_dyn? p->p_str : strdup(p->p_str);
-  if(p->p_type == PARAM_TYPE(string) && v == *(char **)p->p_val) {
-    if(p->p_dyn)
-      *p->p_val = NULL;
-  }
-  p->p_str = NULL;
-  p->p_dyn = 0;
-  return v;
-}
-#endif
-
 /*
  * Locate the parameter descriptor in the ps array for the named
  * parameter, if it exists.
@@ -148,13 +122,13 @@ int push_param_from_env(char *env[], param_t ps[], int nps) {
 
 /*
  * Read the presented string and look for Name=Value where Name is the
- * name of a parameter.  If found, push a copy of the Value.
+ * name of a parameter.  If found, push a pointer to the value.  The
+ * cmd string is assumed NUL-terminated after the value.
  */
 
 int push_param_from_cmd(char *cmd, param_t ps[], int nps) {
-  char *s, *v, *e;
+  char *s;
   param_t *p;
-  int ret;
 
   /*  fprintf(stderr, "Working on cmd %s\n", cmd); */
   if( !cmd )
@@ -167,53 +141,43 @@ int push_param_from_cmd(char *cmd, param_t ps[], int nps) {
     errno = EPERM;
     return -1;
   }
-  if( !*s ) {			/* Name=Value string has no '=Value' part */
-    s = "UNDEF";
+  if( !*s++ ) {		  /* If *s non-zero, step over the = */
+    errno = EINVAL;	  /* Name=Value string has no '=Value' part */
+    return -1;
   }
-  else {
-    if(*s == '=') s++;
-    for(e=s; *e && !isspace(*e) && *e != ','; e++);
-    v = malloc(e-s+1);
-    if( !v )
-      return -1;
-  }
-  bcopy(s, v, e-s);
-  v[e-s] = '\0';
-  ret = push_param_value(p, v);
-  if( ret < 0 )
-    return ret;
-  p->p_dyn = 1;		/* Top value is now a malloc'd copy */
-  return 0;
+  return push_param_value(p, s);
 }
 
 /*
- * Given a string comprising a set of space/comma separated Name=Value pairs,
- * instantiate parameters from them.
+ * Given a string comprising a set of space/comma/semicolon separated
+ * Name=Value pairs, instantiate parameters from them.  Use strtok_r
+ * to parse the string, which alters the input string by replacing
+ * separators with NUL characters.  Each string returned by strtok_r
+ * is a single NUL-terminated Name=Value element.  On error, return
+ * the negative of the position in the string of the current token
+ * start.
  */
 
 int push_params_from_string(char *str, param_t ps[], int nps) {
-  char *cur   = str;
-  char *first = str;
+  char *save;
+  char *cur;
   int   ret;
-  int   n=1;
 
-  /*  fprintf(stderr, "Push param from %s\n", str);*/
-  while(*cur) {
-      if( !isalpha(*first) ) {
-	errno = EBADMSG;
-	return -n;
-      }
-      /* Skip over the first parameter specifier */
-      for(first=cur; *cur && !isspace(*cur) && *cur != ','; cur++);
-      /*      fprintf(stderr, "Pushing from %s\n", first); */
-      ret = push_param_from_cmd(first, ps, nps);
-      if( ret < 0 )
-	return -n;
-      if(*cur == ',')
-	cur++;
-      for( ; *cur && isspace(*cur); cur++); /* Skip whitespace */
-      first = cur;
-      n++;
+  /* Initialise the strtok_r scan: skip to space */
+  cur = strtok_r(str, " \t", &save);
+  if( cur == NULL ) {
+    errno = EBADMSG;
+    return -1;
+  }
+  /* First parameter Name=Value should come next */
+  while( (cur == strtok_r(NULL, " \t,;", &save)) != NULL ) {
+    if( !isalpha(*cur) ) {
+      errno = EBADMSG;
+      return str-cur;
+    }
+    ret = push_param_from_cmd(first, ps, nps);
+    if( ret < 0 )
+      return str-cur;
   }
   return 0;
 }
