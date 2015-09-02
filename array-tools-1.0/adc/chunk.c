@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <errno.h>
 
+#include "assert.h"
 #include "queue.h"
 #include "mman.h"
 #include "strbuf.h"

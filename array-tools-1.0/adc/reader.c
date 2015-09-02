@@ -138,12 +138,13 @@ static void *log;
 static void *command;
 
 static int create_reader_comms() {
+  extern void *snapshot_zmq_ctx;
   /* Create necessary sockets */
-  command  = zh_bind_new_socket(zmq_main_ctx, ZMQ_REP, READER_CMD_ADDR);	/* Receive commands */
+  command  = zh_bind_new_socket(snapshot_zmq_ctx, ZMQ_REP, READER_CMD_ADDR);	/* Receive commands */
   assertv(command != NULL, "Failed to instantiate reader command socket\n");
-  log      = zh_connect_new_socket(zmq_main_ctx, ZMQ_PUSH, LOG_SOCKET);  /* Socket for log messages */
+  log      = zh_connect_new_socket(snapshot_zmq_ctx, ZMQ_PUSH, LOG_SOCKET);  /* Socket for log messages */
   assertv(log != NULL, "Failed to instantiate reader log socket\n");
-  wr_queue_reader = zh_bind_new_socket(zmq_main_ctx, ZMQ_PAIR, READER_QUEUE_ADDR);
+  wr_queue_reader = zh_bind_new_socket(snapshot_zmq_ctx, ZMQ_PAIR, READER_QUEUE_ADDR);
   assertv(wr_queue_reader != NULL, "Failed to instantiate reader queue socket\n");
 }
 

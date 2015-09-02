@@ -13,12 +13,13 @@
 #include <zmq.h>
 
 #include "util.h"
+#include "strbuf.h"
 #include "chunk.h"
 #include "tidy.h"
 
 extern void *snapshot_zmq_ctx;
 
-static socket *tidy;
+static void *tidy;
 
 /*
  * Establish tidy comms:  this routine gets called first of all threads, so it
@@ -26,12 +27,12 @@ static socket *tidy;
  */
 
 static int create_tidy_comms() {
-  if( !zmq_main_ctx )
-    zmq_main_ctx = zmq_ctx_new();
-  if( !zmq_main_ctx ) {
+  if( !snapshot_zmq_ctx )
+    snapshot_zmq_ctx = zmq_ctx_new();
+  if( !snapshot_zmq_ctx ) {
     return 1;
   }
-  tidy = zh_bind_new_socket(ctx, ZMQ_PAIR, TIDY_SOCKET);
+  tidy = zh_bind_new_socket(snapshot_zmq_ctx, ZMQ_PAIR, TIDY_SOCKET);
   return tidy != NULL;
 }
 

@@ -203,7 +203,7 @@ static int	   schedprio;		  /* Real-time priority for reader and writer */
  * Snapshot globals shared between threads
  */
 
-void       *zmq_main_ctx;	/* ZMQ context for messaging */
+void       *snapshot_zmq_ctx;	/* ZMQ context for messaging */
 
 int	    tmpdir_dirfd;	/* The file descriptor obtained for the TMPDIR directory */
 const char *tmpdir_path;		/* The path for the file descriptor above */
@@ -234,26 +234,26 @@ static int create_main_comms() {
   int ret;
 
   /* Create and initialise the sockets: LOG socket */
-  log_socket = zh_bind_new_socket(zmq_main_ctx, ZMQ_PULL, LOG_SOCKET);
+  log_socket = zh_bind_new_socket(snapshot_zmq_ctx, ZMQ_PULL, LOG_SOCKET);
   if( log_socket == NULL ) {
     fprintf(stderr, "%s: Error -- unable to create internal log socket: %s\n", program, strerror(errno));
     return -1;
   }
 
   /* Create and initialise the sockets: reader and writer command sockets */
-  reader = zh_connect_new_socket(zmq_main_ctx, ZMQ_REQ, READER_CMD_ADDR);
+  reader = zh_connect_new_socket(snapshot_zmq_ctx, ZMQ_REQ, READER_CMD_ADDR);
   if( reader == NULL ) {
     fprintf(stderr, "%s: Error -- unable to cconnect internal socket to reader: %s\n", program, strerror(errno));
     return -1;
   }
-  writer = zh_connect_new_socket(zmq_main_ctx, ZMQ_REQ, WRITER_CMD_ADDR);
+  writer = zh_connect_new_socket(snapshot_zmq_ctx, ZMQ_REQ, WRITER_CMD_ADDR);
   if( writer == NULL ) {
     fprintf(stderr, "%s: Error -- unable to connect internal socket to writer: %s\n", program, strerror(errno));
     return -1;
   }
 
   /* Create and initialise the external command socket */
-  command = zh_bind_new_socket(zmq_main_ctx, ZMQ_REP, snapshot_addr);
+  command = zh_bind_new_socket(snapshot_zmq_ctx, ZMQ_REP, snapshot_addr);
   if( command == NULL ) {
     fprintf(stderr, "%s: Error -- unable to bind external command socket %s: %s\n",
 	    program, snapshot_addr, strerror(errno));
@@ -710,6 +710,6 @@ int main(int argc, char *argv[], char *envp[]) {
   zmq_close(reader);
   zmq_close(writer);
   zmq_close(command);
-  zmq_ctx_term(zmq_main_ctx);
+  zmq_ctx_term(snapshot_zmq_ctx);
   exit(0);
 }

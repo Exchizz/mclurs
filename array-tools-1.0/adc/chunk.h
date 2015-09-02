@@ -12,6 +12,7 @@ typedef struct {
   block;
 
 typedef struct _frame frame;
+typedef struct _sfile snapfile_t;
 
 #include "queue.h"
 

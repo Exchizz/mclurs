@@ -170,12 +170,12 @@ int push_params_from_string(char *str, param_t ps[], int nps) {
     return -1;
   }
   /* First parameter Name=Value should come next */
-  while( (cur == strtok_r(NULL, " \t,;", &save)) != NULL ) {
+  while( (cur = strtok_r(NULL, " \t,;", &save)) != NULL ) {
     if( !isalpha(*cur) ) {
       errno = EBADMSG;
       return str-cur;
     }
-    ret = push_param_from_cmd(first, ps, nps);
+    ret = push_param_from_cmd(cur, ps, nps);
     if( ret < 0 )
       return str-cur;
   }
@@ -192,8 +192,10 @@ int assign_param(param_t *p) {
     errno = EINVAL;
     return -1;
   }
-  if( !p->p_val )		/* Nowhere to put value */
-    return 0;
+  if( !p->p_val ) {		/* Nowhere to put value */
+    errno = EFAULT;
+    return -1;
+  }
 
   param_type *pt = p->p_type;
   if(pt == PARAM_TYPE(bool)) {	/* Special cases for booleans */

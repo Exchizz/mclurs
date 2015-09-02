@@ -88,7 +88,7 @@ static const int n_snapshot_params = (sizeof(snapshot_params)/sizeof(param_t));
 
 static param_t snapwd_params[] ={
 #define SNAP_SETWD  0
-  { "dir",    NULL, NULL,
+  { "path",    NULL, NULL,
     PARAM_TYPE(string), PARAM_SRC_CMD,
     "working (sub-)directory for snapshots"
   },
@@ -125,12 +125,13 @@ static void *reader;
 static void *command;
 
 static int create_writer_comms() {
+  extern void *snapshot_zmq_ctx;
   /* Create necessary sockets */
-  command  = zh_bind_new_socket(zmq_main_ctx, ZMQ_REP, WRITER_CMD_ADDR);	/* Receive commands */
+  command  = zh_bind_new_socket(snapshot_zmq_ctx, ZMQ_REP, WRITER_CMD_ADDR);	/* Receive commands */
   assertv(command != NULL, "Failed to instantiate reader command socket\n");
-  log      = zh_connect_new_socket(zmq_main_ctx, ZMQ_PUSH, LOG_SOCKET);  /* Socket for log messages */
+  log      = zh_connect_new_socket(snapshot_zmq_ctx, ZMQ_PUSH, LOG_SOCKET);  /* Socket for log messages */
   assertv(log != NULL,     "Failed to instantiate reader log socket\n");
-  reader   = zh_connect_new_socket(zmq_main_ctx, ZMQ_PAIR, READER_QUEUE_ADDR);
+  reader   = zh_connect_new_socket(snapshot_zmq_ctx, ZMQ_PAIR, READER_QUEUE_ADDR);
   assertv(reader != NULL,  "Failed to instantiate reader queue socket\n");
 }
 
@@ -227,6 +228,37 @@ static int set_writer_new_wd(const char *dir) {
 }
 
 /*
+ * Process a D command to change the working directory.  The command
+ * comprises an introductory Dir verb followed by a  path=... parameter.
+ */
+
+static int process_dir_command(strbuf c) {
+  strbuf   e   = strbuf_next(c);
+  param_t *ps  = &snapwd_params[0]; 
+  int      nps = n_snapwd_params;
+  char    *path;
+  int      err;
+
+  /* Initialise the parameter value pointer */
+  setval_param(&ps[SNAP_SETWD], (void **)&path);
+  err = push_params_from_string(strbuf_string(c), ps, nps);
+  if(err < 0) {
+    strbuf_appendf(e, "parameter parsing error at position %d", -err);
+    return -1;
+  }
+  err = assign_param(&ps[SNAP_SETWD]);
+  /* If this string copy fails, it's a programming error! */
+  assertv(err==0, "Dir PATH parameter assignment failed: %m");
+
+  /* Path is now instantiated to the given parameter string */
+  if(set_writer_new_wd(path) < 0) {
+    strbuf_appendf(e, "cannot create path=%s: %m", path);
+    return -1;
+  }
+  return 0;
+}
+
+/*
  * --------------------------------------------------------------------------------
  * FUNCTIONS ETC. TO MANAGE SNAPSHOT DESCRIPTORS
  *
@@ -239,7 +271,9 @@ static int set_writer_new_wd(const char *dir) {
  */
 
 typedef struct {		/* Private snapshot descriptor structure used by writer */
-  queue	      s_Q;		/* Queue header -- must be first member */
+  queue	      s_xQ[2];		/* Queue headers -- must be first member */
+#define s_Q	     s_xQ[0]	/* Active snapshot queue header */
+#define s_fileQhdr   s_xQ[1]	/* Header for the queue of file descriptor structures */
   char        s_name[SNAP_NAME_SIZE];	/* Printable name for snapshot */
   int         s_dirfd;		/* Dirfd of the samples directory */
   uint64_t    s_first;		/* The first sample to collect */
@@ -251,14 +285,16 @@ typedef struct {		/* Private snapshot descriptor structure used by writer */
   int	      s_status;		/* Status of this snapshot */
   const char *s_path;		/* Directory path for this snapshot */
   strbuf      s_cmdetc;		/* Command and Error string buffers */
-  queue	      s_fileQhdr;	/* Header for the queue of file descriptor structures */
 }
   snap_t;
 
 static QUEUE_HEADER(snapQ);	/* The list of active snapshots */
 
-#define qp2snap(qp)  ((snap_t *)qp)
-#define snap2qp(s)   (&((s)->s_Q))
+#define qp2snap(qp)  ((snap_t *)&(qp)[0])
+#define snap2qp(s)   (&((s)->s_xQ[0]))
+
+#define fq2snap(fq)  ((snap_t *)&(fg)[-1])
+#define snap2fq(s)   (&((s)->s_xQ[1]))
 
 /*
  * Allocate and free snap_t structures
@@ -272,7 +308,7 @@ static snap_t *alloc_snapshot() {
     init_queue( snap2qp(ret) );
     ret->s_dirfd = -1;
     snprintf(&ret->s_name[0], SNAP_NAME_SIZE, "snap_%08x", snap_counter);
-    init_queue(&ret->s_fileQhdr);
+    init_queue( snap2fq(ret) );
   }
   return ret;
 }
@@ -280,7 +316,7 @@ static snap_t *alloc_snapshot() {
 static void free_snapshot(snap_t *s) {
   if( !queue_singleton(snap2qp(s)) )
     de_queue(snap2qp(s));
-  if( !queue_singleton(&s->s_fileQhdr) ) {
+  if( !queue_singleton(snap2fq(s)) ) {
     /* Panic! */
   }
   if(s->s_dirfd >= 0)
@@ -294,38 +330,104 @@ static void free_snapshot(snap_t *s) {
  * - Check the parameters in an S command
  */
 
-static int check_snapshot_params(param_t ps[]) {
+static int check_snapshot_params(param_t ps[], strbuf e) {
+  int ret;
 
   /* path= is MANDATORY */
-  if( ps[SNAP_PATH].p_str )
+  if( !ps[SNAP_PATH].p_str ) {
+    strbuf_appendf(e, "missing PATH parameter");
     return -1;
+  }
+  ret = assign_param(&ps[SNAP_PATH]);
+  /* If this string copy fails, it's a programming error! */
+  assertv(ret==0, "Snapshot PATH parameter assignment failed: %m");
 
   /* EITHER begin= OR start= is MANDATORY */
-  if( !ps[SNAP_BEGIN].p_str && !ps[SNAP_START].p_str )
-    return -2;
+  if( !ps[SNAP_BEGIN].p_str && !ps[SNAP_START].p_str ) {
+    strbuf_appendf(e, "neither BEGIN nor START present");
+    return -1;
+  }
 
   /* IF begin= THEN end= XOR length= AND NOT finish= is REQUIRED */
   if( ps[SNAP_BEGIN].p_str ) {
-    if( ps[SNAP_FINISH].p_str )
-      return -3;
-    if( !ps[SNAP_END].p_str && !ps[SNAP_LENGTH].p_str )
-      return -3;
-    if( ps[SNAP_END].p_str && ps[SNAP_LENGTH].p_str )
-      return -3;
+    if( ps[SNAP_FINISH].p_str ) {
+      strbuf_appendf(e, "BEGIN with FINISH present");
+      return -1;
+    }
+    if( !ps[SNAP_END].p_str && !ps[SNAP_LENGTH].p_str ) {
+      strbuf_appendf(e, "BEGIN but neither END nor LENGTH present");
+      return -1;
+    }
+    if( ps[SNAP_END].p_str && ps[SNAP_LENGTH].p_str ) {
+      strbuf_appendf(e, "BEGIN with both END and LENGTH present");
+      return -1;
+    }
+    ret = assign_param(&ps[SNAP_BEGIN]); /* Error implies bad number */
+    if(ret < 0) {
+      strbuf_appendf(e, "cannot assign BEGIN value %s: %m", ps[SNAP_BEGIN].p_str);
+      return -1;
+    }
+    if(ps[SNAP_END].p_str) {
+      ret = assign_param(&ps[SNAP_END]); /* Error implies bad number */
+      if(ret < 0) {
+	strbuf_appendf(e, "cannot assign END value %s: %m", ps[SNAP_END].p_str);
+	return -1;
+      }
+    }
+    if(ps[SNAP_LENGTH].p_str) {
+      ret = assign_param(&ps[SNAP_LENGTH]); /* Error implies bad number */
+      if(ret < 0) {
+	strbuf_appendf(e, "cannot assign LENGTH value %s: %m", ps[SNAP_LENGTH].p_str);
+	return -1;
+      }
+    }
   }
 
   /* IF start= THEN finish= XOR length= AND NOT end= is REQUIRED */
   if( ps[SNAP_START].p_str ) {
-    if( ps[SNAP_END].p_str )
-      return -4;
-    if( !ps[SNAP_FINISH].p_str && !ps[SNAP_LENGTH].p_str )
-      return -4;
-    if( ps[SNAP_FINISH].p_str && ps[SNAP_LENGTH].p_str )
-      return -4;
+    if( ps[SNAP_END].p_str ) {
+      strbuf_appendf(e, "START with END present");
+      return -1;
+    }
+    if( !ps[SNAP_FINISH].p_str && !ps[SNAP_LENGTH].p_str ) {
+      strbuf_appendf(e, "START but neither FINISH nor LENGTH present");
+      return -1;
+    }
+    if( ps[SNAP_FINISH].p_str && ps[SNAP_LENGTH].p_str ) {
+      strbuf_appendf(e, "START with both FINISH and LENGTH present");
+      return -1;
+    }
+    ret = assign_param(&ps[SNAP_START]); /* Error implies bad number */
+    if(ret < 0) {
+      strbuf_appendf(e, "cannot assign START value %s: %m", ps[SNAP_START].p_str);
+      return -1;
+    }
+    if(ps[SNAP_FINISH].p_str) {
+      ret = assign_param(&ps[SNAP_FINISH]); /* Error implies bad number */
+      if(ret < 0) {
+	strbuf_appendf(e, "cannot assign FINISH value %s: %m", ps[SNAP_FINISH].p_str);
+	return -1;
+      }
+    }
+    if(ps[SNAP_LENGTH].p_str) {
+      ret = assign_param(&ps[SNAP_LENGTH]); /* Error implies bad number */
+      if(ret < 0) {
+	strbuf_appendf(e, "cannot assign LENGTH value %s: %m", ps[SNAP_LENGTH].p_str);
+	return -1;
+      }
+    }
   }
 
   /* count= is OPTIONAL */
+  if(ps[SNAP_COUNT].p_str) {
+      ret = assign_param(&ps[SNAP_COUNT]); /* Error implies bad number */
+      if(ret < 0) {
+	strbuf_appendf(e, "cannot assign COUNT value %s: %m", ps[SNAP_COUNT].p_str);
+	return -1;
+      }
+    }
 
+  /* All required parameters present in legal combination and values parse */
   return 0;
 }
 
@@ -407,40 +509,58 @@ static snap_t *build_snapshot_descriptor(strbuf c) {
   int      nps = n_snapshot_params;
   snap_t  *ret;
   int	   err;
+  int	   i;
+    
 
-  if( !(ret = alloc_snapshot()) ) { /* Allocation failed: no memory? */
-
+  if( !(ret = alloc_snapshot()) ) { /* Allocation failed */
+    strbuf_appendf(e, "unable to allocate snapshot descriptor: %m");
     return ret;
   }
 
   /* Initialise the targets for the parameters */
-  ps[SNAP_BEGIN].p_val  = (void **) &ret->s_first;
-  ps[SNAP_END].p_val    = (void **) &ret->s_last;
-  ps[SNAP_START].p_val  = (void **) &ret->s_first;
-  ps[SNAP_FINISH].p_val = (void **) &ret->s_first;
-  ps[SNAP_LENGTH].p_val = (void **) &ret->s_samples;
-  ps[SNAP_COUNT].p_val  = (void **) &ret->s_count;
-  ps[SNAP_PATH].p_val   = (void **) &ret->s_path;
+  setval_param(&ps[SNAP_BEGIN],  (void **) &ret->s_first);
+  setval_param(&ps[SNAP_END],    (void **) &ret->s_last);
+  setval_param(&ps[SNAP_START],  (void **) &ret->s_first);
+  setval_param(&ps[SNAP_FINISH], (void **) &ret->s_first);
+  setval_param(&ps[SNAP_LENGTH], (void **) &ret->s_samples);
+  setval_param(&ps[SNAP_COUNT],  (void **) &ret->s_count);
+  setval_param(&ps[SNAP_PATH],   (void **) &ret->s_path);
 
-  /* Check the populated parameters */
-  err = check_snapshot_params(ps);
-  if(err < 0) {
-
+  /* Process the S command parameters */
+  err = push_params_from_string(strbuf_string(c), ps, nps);
+  if(err < 0) {			/* Error parsing command string */
+    strbuf_appendf(e, "parameter parsing error at position %d", -err);
+    goto FAIL;
   }
-
-  /* Assign parameters to values */
+  /* Check the populated parameters and assign to values */
+  err = check_snapshot_params(ps, e);
+  if(err < 0) {			/* Problems put into strbuf by check function */
+    goto FAIL;
+  }
 
   if(ret->s_last <= ret->s_first) { /* Parameter error:  end before start */
-
+    strbuf_appendf(e, "end %016llx before start %016llx", ret->s_last, ret->s_first);
+    goto FAIL;
   }
+  
   /* Do path */
-
-  /* Set up the sample-dependent values */
+  ret->s_dirfd = new_directory(writer_parameters.w_snap_curfd, ret->s_path);
+  if(ret->s_dirfd < 0) {
+    strbuf_appendf(e, "unable to create dir path=%s: %m", ret->s_path);
+    goto FAIL;
+  }
+  
+  /* Set up the sample-dependent values -- cannot fail */
   setup_snapshot_samples(ret, ps);
 
   /* All done, no errors */
   ret->s_status = SNAPSHOT_INIT;
   return ret;
+
+ FAIL:
+  for(i=0; i<nps; i++) reset_param(&ps[i]);
+  free_snapshot(ret);
+  return NULL;
 }
 
 /*
@@ -485,7 +605,7 @@ static void debug_snapshot_descriptor(snap_t *s) {
  * --------------------------------------------------------------------------------
  */
 
-typedef struct {
+typedef struct _sfile {
   queue	      f_Q;			/* Queue header for file descriptor structures */
   snap_t     *f_parent;			/* The snap_t structure that generated this file capture */
   int         f_fd;			/* System file descriptor -- only needed while pages left to map */
@@ -563,30 +683,8 @@ static void abort_snapfile(snapfile_t *f) {
 #if 0
 
 /*
- * Manage the write queue:  build a snapshot descriptor (queue entry).
- *
- * The command specifies:   begin=<time> or start=<sample>,
- *			    end=<time>   or finish=<sample> or len=<size>
- *			    count=<number> (optional)
- *			    path=<dir>
- *
- * These parameters should have been instantiated in the parameter
- * structures by the caller.  Here we check that the required
- * information is available and that the file system operations are
- * allowed.  The result is a snap structure that describes the capture
- * which can be passed to the Reader for checking data availability
- * and for queueing on the write-queue in the reader.
+ * Initialise a snapshot file -- this will change to use chunks and frames.
  */
-
-static int build_snapshot_rd_descriptor(snapw *s, snapr *r) {
-  int ret;
-
-  init_queue(&r->Q);
-  r->parent = s;
-
-
-    return 0;
-}
 
 static int initialise_snapshot_file(snapw *s, snapr *r) {
   int ret, fd;
@@ -598,91 +696,6 @@ static int initialise_snapshot_file(snapw *s, snapr *r) {
 
   r->rd_state = SNAPSHOT_INIT;
   return 0;
-}
-
-static int build_snapshot_descriptor(snapw **sp) {
-  snapw *s;
-  snapr *r;
-  int ret;
-
-  s = (snapw *)calloc(1, sizeof(snapw));
-  r = (snapr *)calloc(1, sizeof(snapr));
-  if( s == NULL || r == NULL )
-    return -1;
-
-  s->this_snap = r;
-  snprintf(&s->name[0], SNAP_NAME_SIZE, "%p", (void *)s);
-  *sp = s;
-
-  /* Fill out the parameters here */
-  ret = get_writer_params(s);
-  if( ret < 0 ) {
-    errno = EINVAL;
-    return ret;
-  }
-
-  /* Mandatory path: create/open a correctly-owned directory for this data */
-  s->path = s->params[SNAP_PATH];
-  s->dirfd = new_directory(writer_parameters.w_snap_dirfd, s->path);
-  if(s->dirfd < 0) {					     /* Give up on failure */
-    return -14;
-  }
-
-  s->preload = SNAP_WR_PRELOAD;
-
-  ret = build_snapshot_rd_descriptor(s, r);
-  if( ret < 0 ) {
-    return ret;
-  }
-
-  s->stride  = SNAP_WR_PRELOAD * r->samples;
-
-  ret = initialise_snapshot_buffer(s, r);
-  if( ret < 0 ) {
-    return ret;
-  }
-
-  s->wr_state = SNAPSHOT_INIT;
-  return 0;
-}
-
-static int refresh_snapshot_descriptor(snapw *s) {
-  snapr *r = s->this_snap;
-
-  assertv(r != NULL, "Got NULL pointer to work on\n");
-  assertv(r->count > 0, "Count %d not positive\n", r->count);
-  r->start = NULL;
-  munmap(r->mmap, r->bytes);	/* Data may actually be written out here... */
-  r->mmap = NULL;
-  r->first += s->stride;
-  r->last  += s->stride;
-
-  return initialise_snapshot_buffer(s, r);
-}
-
-static void destroy_snapshot_descriptor(snapw *s) {
-  int i;
-
-  if( s == NULL )
-    return;
-
-  if( s->dirfd > 0 )
-    close(s->dirfd);
-
-  for(i=0; i<N_SNAP_PARAMS; i++) {
-    if(s->params[i])
-      free(s->params[i]);
-  }
-
-  if( s->this_snap ) {
-    snapr *r = s->this_snap;
-    munmap(r->mmap, r->bytes);
-    free(r);
-    s->this_snap = NULL;
-  }
-
-  free(s);
-  return;
 }
 
 #endif
@@ -700,6 +713,10 @@ static void destroy_snapshot_descriptor(snapw *s) {
  */
 
 static int process_queue_message(void *socket) {
+  return true;
+}
+
+#if 0
   snapr *r = NULL;
   snapw *s;
   int ret;
@@ -803,6 +820,8 @@ static int process_queue_message(void *socket) {
   return false;
 }
 
+#endif
+
 /*
  * Handle command messages
  */
@@ -826,7 +845,11 @@ int process_writer_command(void *s) {
   switch(cmd_buf[0]) {
   case 'd':			/* Dir command */
   case 'D':
-    strbuf_printf(err, "OK Dir");
+    /* Call the command handler for Dir */
+    strbuf_printf(err, "NO: Dir -- ");
+    ret = process_dir_command(cmd);
+    if(ret == 0)
+      strbuf_printf(err, "OK Dir");
     break;
 
   case 'z':
@@ -836,46 +859,20 @@ int process_writer_command(void *s) {
 
   case 's':			/* Snap command */
   case 'S':
-    p=&cmd_buf[1];
-    while( *p && !isspace(*p) ) p++; /* Are there parameters to process? */
-    while( *p && isspace(*p) ) p++;
-    if( !*p ) {			     /* There should be more string here */
-      strbuf_printf(err, "NO: Snap -- parameters apparently missing");
-      break;
+    /* Try to build a snapshot descriptor */
+    strbuf_printf(err, "NO: Snap -- ");
+    snap_t *s = build_snapshot_descriptor(cmd);
+    if(s != NULL) {		    /* Snapshot building succeeded */
+      queue_ins_after(&snapQ, snap2qp(s));
+      strbuf_printf(err, "OK Snap %s", &s->s_name[0]);
     }
-
-    /* Process the snapshot parameters */
-    int ret = push_params_from_string(p, snapshot_params, n_snapshot_params);
-    if( ret < 0 ) { 
-      strbuf_printf(err, "NO: Snap -- param error at %d: %m", -ret);
-      break;
-    }
-
-    /* Otherwise, succeeded in parsing snapshot parameters */
-    snapw *s = NULL;
-    ret = build_snapshot_descriptor(&s);
-
-    if( ret == 0 ) {		    /* Send it to the reader for queueing */
-      s->wr_state = SNAPSHOT_CHECK; /* We shall reply when reader has finished with it */
-      ret = zh_put_msg(reader, 0, sizeof(snapr *), (void *)&s->this_snap);
-      assertv(ret == sizeof(snapr *), "Queue message size inconsistent, %d vs. %d\n", ret, sizeof(snapr *));
-      strbuf_printf(err, "OK Snap");
-    }
-    else {
-      int error = errno;
-      if(s != NULL) {
-        destroy_snapshot_descriptor(s);
-      }
-      errno = error;
-      strbuf_printf(err, "NO: Snap -- problem building snapshot descriptor at step %d: %m", -ret);
-    }
-    return true;
+    break;
 
   default:
     strbuf_printf(err, "NO: Writer -- unexpected writer command");
     break;
   }
-  zh_put_multi(log, 3, strbuf_string(err), "\n  ", &cmd_buf[0]); /* Error occurred, return message */
+  zh_put_multi(log, 3, strbuf_string(err), "\n  ", &cmd_buf[0]); /* Error occurred, log the problem */
   zh_put_msg(s, 0, sizeof(strbuf), (void *)&err);
   return true;
 }
@@ -926,7 +923,7 @@ static void writer_thread_msg_loop() {    /* Read and process messages */
  */
 
 void *writer_main(void *arg) {
-  int ret, n;
+  int ret;
 
   /* Verify parameter structure data */
   assertv(n_snapshot_params <= N_SNAP_PARAMS,
