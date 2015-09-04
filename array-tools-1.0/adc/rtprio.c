@@ -3,6 +3,7 @@
 #define __GNU_SOURCE
 
 #include <syscall.h>
+#include <sys/capability.h>
 #include <assert.h>
 #include <pthread.h>
 #include <errno.h>
@@ -77,3 +78,39 @@ int set_rt_scheduling(int p) {
 }
 
 #endif
+
+/*
+ * Routine to check we have the permitted capabilities needed for program operations
+ *
+ * The various threads need the following capabilities:
+ *
+ * CAP_IPC_LOCK  (READER and WRITER) -- ability to mmap and mlock pages.
+ * CAP_SYS_NICE  (READER and WRITER) -- ability to set RT scheduling priorities
+ * CAP_SYS_ADMIN (READER) -- ability to set (increase) the Comedi buffer maximum size
+ * CAP_SYS_ADMIN (WRITER) -- ability to set RT IO scheduling priorities (unused at present)
+ * CAP_SYS_ADMIN (TIDY)   -- ability to set RT IO scheduling priorities (unused at present)
+ *
+ * Otherwise the MAIN thread and the TIDY thread need no special powers.  The ZMQ IO thread
+ * is also unprivileged, and is currently spawned during context creation from TIDY.
+ */
+
+int check_permitted_capabilities_ok() {
+  cap_t c = cap_get_proc();
+  cap_flag_value_t v = CAP_CLEAR;
+  
+  if( !c )			/* No memory? */
+    return -1;
+
+  if( cap_get_flag(c, CAP_IPC_LOCK,  CAP_PERMITTED, &v) < 0 || v == CAP_CLEAR ||
+      cap_get_flag(c, CAP_SYS_NICE,  CAP_PERMITTED, &v) < 0 || v == CAP_CLEAR ||
+      cap_get_flag(c, CAP_SYS_ADMIN, CAP_PERMITTED, &v) < 0 || v == CAP_CLEAR
+      ) {
+    cap_free(c);
+    errno = EPERM;
+    return -1;
+  }
+
+  return 0;
+}
+
+

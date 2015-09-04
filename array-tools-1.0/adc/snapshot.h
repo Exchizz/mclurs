@@ -15,8 +15,7 @@ extern const int   n_global_params;
 
 extern int	   debug_level;
 
-extern int	   reader_thread_running,
-		   writer_thread_running;
+extern int	   die_die_die_now;
 
 extern int	   tmpdir_dirfd;
 extern const char *tmpdir_path;

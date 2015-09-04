@@ -63,20 +63,25 @@ queue *unsplice_queue(queue *start, queue *end) {
  * is called with arg as its first argument and the queue structure
  * pointer as its second.  The first function, map_queue_nxt,
  * traverses the segment "forward" while the second goes "backward".
+ *
+ * If start == end or end is not in the list (e.g. end is NULL) the
+ * functions traverse the whole list visiting each node exactly once.
  */
 
 void map_queue_nxt(queue *start, queue *end, void (*fn)(void *, queue *), void *arg) {
-  queue *p;
+  queue *p = start;
 
-  for(p=start; p != start && p != end; p=queue_next(p)) {
+  do {
     (*fn)(arg, p);
-  }
+    p=queue_next(p);
+  } while( p != start && p != end );
 }
 
 void map_queue_prv(queue *start, queue *end, void (*fn)(void *, queue *), void *arg) {
-  queue *p;
+  queue *p = start;
 
-  for(p=start; p != start && p != end; p=queue_prev(p)) {
+  do {
     (*fn)(arg, p);
-  }
+    p=queue_prev(p);
+  } while( p != start && p != end );
 }

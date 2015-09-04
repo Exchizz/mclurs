@@ -26,37 +26,51 @@ static void *tidy;
  * creates the context.
  */
 
-static int create_tidy_comms() {
+static char *create_tidy_comms(void **s) {
   if( !snapshot_zmq_ctx )
     snapshot_zmq_ctx = zmq_ctx_new();
   if( !snapshot_zmq_ctx ) {
-    return 1;
+    return "failed to create ZMQ context";
   }
+  /* Create and initialise the sockets: LOG socket */
+  *s = zh_bind_new_socket(snapshot_zmq_ctx, ZMQ_PULL, LOG_SOCKET);
+  if( *s == NULL ) {
+    return "unable to create MAIN thread log socket";
+  }
+
   tidy = zh_bind_new_socket(snapshot_zmq_ctx, ZMQ_PAIR, TIDY_SOCKET);
-  return tidy != NULL;
+  if(tidy == NULL)
+    return "unable to create TIDY thread listener";
+  return NULL;
 }
 
 /*
  * Unmap data blocks after writing.  Runs as a thread which continues
- * until a zero-length message is received signallings the end of the
- * unmap requests.
+ * until a zero-length message is received signalling the end of the
+ * unmap requests.  The argument passed is the address for the MAIN thread's
+ * log receiver socket, which is created here along with the context.
  */
 
+/* Add code to deal with the die_die_die_now flags! */
+
 void *tidy_main(void *arg) {
-  int ret;
+  char *err;
+  int   ret;
   block b;
 
-  ret = create_tidy_comms();
-  if(ret != 0)
-    return (void *) "Comms initialisation failure";
+  err = create_tidy_comms((void **)arg);
+  if(err) {
+    die_die_die_now++;
+    return (void *) err;
+  }
 
   while( ret = zh_get_msg(tidy, 0, sizeof(block), &b) ) {
-    assertv(ret > 0, "Tidy read message error, ret=%d\n", ret);
+    assertv(ret > 0, "TIDY read message error, ret=%d\n", ret);
     if(b.b_data == NULL)
       break;
     munmap(b.b_data, b.b_bytes);
   }
   zmq_close(tidy);
-  return (void *) "Tidy thread terminates normally";
+  return (void *) "TIDY thread terminates normally";
 }
 

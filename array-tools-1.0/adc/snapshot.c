@@ -31,6 +31,7 @@
 #include "queue.h"
 #include "strbuf.h"
 #include "chunk.h"
+#include "rtprio.h"
 #include "snapshot.h"
 #include "reader.h"
 #include "writer.h"
@@ -144,10 +145,10 @@ struct arg_lit *h1, *vn1, *v1, *q1;
 struct arg_end *e1;
 
 BEGIN_CMD_SYNTAX(help) {
-  v1  = arg_litn("v",	"verbose", 0, 3,	"Increase verbosity"),
-  q1  = arg_lit0("q",  "quiet",			"Decrease verbosity"),
-  h1  = arg_lit0("h",	"help",			"Print usage help message"),
-  vn1 = arg_lit0(NULL,	"version",		"Print program version string"),
+  v1  = arg_litn("v",  "verbose", 0, 3,	"Increase verbosity"),
+  q1  = arg_lit0("q",  "quiet",		"Decrease verbosity"),
+  h1  = arg_lit0("h",  "help",		"Print usage help message"),
+  vn1 = arg_lit0(NULL, "version",	"Print program version string"),
   e1  = arg_end(20)
 } APPLY_CMD_DEFAULTS(help) {
   /* No defaults to apply here */
@@ -158,9 +159,9 @@ struct arg_end *e2;
 struct arg_str *u2;
 
 BEGIN_CMD_SYNTAX(main) {
-  v2  = arg_litn("v",	"verbose", 0, 3,	"Increase verbosity"),
-  q2  = arg_lit0("q",  "quiet",			"Decrease verbosity"),
-  u2  = arg_str0("s",  "snapshot", "<url>",     "URL of snapshotter command socket"),
+  v2  = arg_litn("v", "verbose", 0, 3,	   "Increase verbosity"),
+  q2  = arg_lit0("q", "quiet",		   "Decrease verbosity"),
+  u2  = arg_str0("s", "snapshot", "<url>", "URL of snapshotter command socket"),
   e2  = arg_end(20)
 } APPLY_CMD_DEFAULTS(main) {
   INCLUDE_PARAM_DEFAULTS(globals, n_global_params);
@@ -203,10 +204,10 @@ static int	   schedprio;		  /* Real-time priority for reader and writer */
  * Snapshot globals shared between threads
  */
 
-void       *snapshot_zmq_ctx;	/* ZMQ context for messaging */
+void       *snapshot_zmq_ctx;	/* ZMQ context for messaging -- created by the TIDY thread */
 
 int	    tmpdir_dirfd;	/* The file descriptor obtained for the TMPDIR directory */
-const char *tmpdir_path;		/* The path for the file descriptor above */
+const char *tmpdir_path;	/* The path for the file descriptor above */
 
 /*
  * Thread handles for reader and writer
@@ -225,20 +226,13 @@ static pthread_attr_t reader_thread_attr,
  * It must run when the other three threads are already active.
  */
 
-static void *log_socket;
+static void *log_socket;	/* N.B.  This socket is opened by the TIDY thread, but not used there */
 static void *reader;
 static void *writer;
 static void *command;
 
 static int create_main_comms() {
   int ret;
-
-  /* Create and initialise the sockets: LOG socket */
-  log_socket = zh_bind_new_socket(snapshot_zmq_ctx, ZMQ_PULL, LOG_SOCKET);
-  if( log_socket == NULL ) {
-    fprintf(stderr, "%s: Error -- unable to create internal log socket: %s\n", program, strerror(errno));
-    return -1;
-  }
 
   /* Create and initialise the sockets: reader and writer command sockets */
   reader = zh_connect_new_socket(snapshot_zmq_ctx, ZMQ_REQ, READER_CMD_ADDR);
@@ -282,20 +276,14 @@ static int create_main_comms() {
 
 static int snap_adjust_capabilities() {
   cap_t c = cap_get_proc();
-  cap_flag_value_t v = CAP_CLEAR;
   uid_t u = geteuid();
   int ret = 0;
 
   if( !c )			/* No memory? */
     return -1;
 
-  if( cap_get_flag(c, CAP_IPC_LOCK,  CAP_PERMITTED, &v) < 0 || v == CAP_CLEAR ||
-      cap_get_flag(c, CAP_SYS_NICE,  CAP_PERMITTED, &v) < 0 || v == CAP_CLEAR ||
-      cap_get_flag(c, CAP_SYS_ADMIN, CAP_PERMITTED, &v) < 0 || v == CAP_CLEAR
-      ) {
-    cap_free(c);
-    fprintf(stderr, "%s: I do not have the necessary capbilities to operate\n", program);
-    errno = EPERM;
+  if( check_permitted_capabilities_ok() < 0 ) {
+    fprintf(stderr, "%s: Error -- I do not have the necessary capabilities to operate\n", program);
     return -1;
   }
 
@@ -307,7 +295,7 @@ static int snap_adjust_capabilities() {
     cap_set_flag(c, CAP_PERMITTED, sizeof(vs)/sizeof(cap_value_t), &vs[0], CAP_SET);
     if( prctl(PR_SET_KEEPCAPS, 1L) <0 ) {
       cap_free(c);
-      fprintf(stderr, "%s: unable to keep required capabilities on user change\n", program);
+      fprintf(stderr, "%s: Error -- unable to keep required capabilities on user change\n", program);
       return -1;
     }
 
@@ -323,27 +311,35 @@ static int snap_adjust_capabilities() {
  */
 
 static int main_adjust_capabilities(uid_t uid, gid_t gid) {
-  uid_t u = getuid();
-  gid_t g = getgid();
   cap_t c = cap_get_proc();
 
   if(c) {
     cap_clear(c);
     if( cap_set_proc(c) < 0 ) {
       cap_free(c);
-      fprintf(stderr, "%s: Error -- main thread fails to clear capabilities: %s\n", program, strerror(errno));
+      fprintf(stderr, "%s: Error -- MAIN thread fails to clear capabilities: %s\n", program, strerror(errno));
       return -1;
     }
   }
-  if(u == uid && g == gid)
-    return 0;
 
-  if( !u ) { /* Running as root */
-    if( setgid(gid) == 0 && setuid(uid) == 0 )
-      return 0;
+  /* Drop all user and group privileges:  set all uids to uid and all gids to gid */
+  /* Complain if that fails -- we were not root and uid/gid were not in our set */
+  if( setresgid(gid, gid, gid) < 0 ) {
+    fprintf(stderr, "%s: Error -- MAIN thread unable to change to gid %d: %s\n", program, gid, strerror(errno));
+    return -1;
+  }
+  if( setresuid(uid, uid, uid) < 0 ) {
+    fprintf(stderr, "%s: Error -- MAIN thread unable to change to uid %d: %s\n", program, uid, strerror(errno));
+    return -1;
   }
 
-  return -1;
+  /* Now check we still have the required permitted capabilities */
+  if( check_permitted_capabilities_ok() < 0 ) {
+    fprintf(stderr, "%s: Error -- MAIN thread lost capabilities on changing user!\n", program);
+    return -1;
+  }
+
+  return 0;
 }
 
 /*
@@ -371,22 +367,63 @@ int process_log_message(void *socket) {
 }
 
 /*
- * Handle replies from reader and writer threads.
- * What is returned is the pointer to the error strbuf (the command buf is still attached).
+ * Handle replies from READER and WRITER threads.  The reply message
+ * is a pointer to a set of error strbufs.  We collect all the
+ * strings, joining them with newline, in the reply buffer.  The
+ * collector maintains an invariant that reply_buffer[u-1] is not NUL.
  */
 
-int process_reply(void *s) {
+#define REPLY_BUFSIZE	4096
+static char reply_buffer[REPLY_BUFSIZE];
+
+/* Collect the reply: the block bytes count is the number of bytes */
+/* so far, its pointer is where we have got to in the reply_buffer */
+
+void collect_reply_strings(void *ctx, queue *q) {
+  strbuf  s = (strbuf)q;
+  int     n = strbuf_used(s);
+
+  if( !n ) return;		/* Empty buffer, nothing to do */
+
+  strbuf_revert(s);		/* Remove any internal NUL characters */
+
+  char *b = ((block *)ctx)->b_data;	/* Current data pointer */
+  int   u = ((block *)ctx)->b_bytes;	/* Current space used */
+  if(n > REPLY_BUFSIZE-u) {		/* There is too much data */
+    n = REPLY_BUFSIZE-u-2;		/* We can manage this much of it */
+  }
+
+  memcpy(b, strbuf_string(s), n);	/* Copy the data */
+
+  b += n;  u += n;			/* Now we have used this much space */
+  while( b[-1] == '\0' ) b--,u--;	/* Skip back over any NULs */
+
+  ((block *)ctx)->b_data  = b;
+  ((block *)ctx)->b_bytes = u;
+  return;
+}
+
+/* Send the collected reply;  ensure a terminating newline */
+
+static int process_reply(void *s) {
   int     size;
   strbuf  err;
-  char   *err_buf;
-
+  block   b = { &reply_buffer[0], 0 };
+  
   size = zh_get_msg(s, 0, sizeof(strbuf), (void *)&err);
   assertv(size==sizeof(err), "Reply message of wrong size %d\n", size);
-  err_buf = strbuf_string(err);
-  size = strbuf_used(err);
-  err_buf[size] = '\n';
-  zh_put_msg(command, 0, size, err_buf);
+
+  /* Traverse the strbuf chain once collecting data, then release */
+  map_queue_nxt((queue*)err, NULL, collect_reply_strings, &b);
   release_strbuf(err);
+
+  if( reply_buffer[b.bytes-1] == '\0' )		/* Replace trailing NUL with newline */
+    reply_buffer[b.b_bytes-1] = '\n';
+  if( reply_buffer[b.b_bytes-1] != '\n' )	/* If last character is not newline, add one */
+    reply_buffer[b.b_bytes++] = '\n';
+
+  /* Send the complete reply */
+  zh_put_msg(command, 0, b.b_bytes, &reply_buffer[0]);
   return 0;
 }
 
@@ -419,12 +456,13 @@ int process_snapshot_command() {
   switch(buf[0]) {
   case 'q':
   case 'Q':			/* Deal specially with Quit command, to close down nicely... */
-    ret = zh_put_msg(reader, 0, 0, NULL); /* Forward zero length message to the reader thread */
-    assertv(ret > 0, "Quit to reader failed, %d\n", ret);
-    ret = zh_put_msg(writer, 0, 0, NULL); /* Forward zero length message to the writer thread */
-    assertv(ret > 0, "Quit to writer failed, %d\n", ret);
+    ret = zh_put_msg(reader, 0, 0, NULL); /* Forward zero length message to the READER thread */
+    assertv(ret == 0, "Quit to READER failed, %d\n", ret);
+    ret = zh_put_msg(writer, 0, 0, NULL); /* Forward zero length message to the WRITER thread */
+    assertv(ret == 0, "Quit to WRITER failed, %d\n", ret);
+    /* PERHAPS MOVE THIS TO END */
     ret = zh_put_msg(command, 0, 7, "OK Quit"); /* Reply to Quit here */
-    assertv(ret > 0, "Quit reply failed, %d\n", ret);
+    assertv(ret == 7, "Quit reply failed, %d\n", ret);
     break;
 
   case 'g':
@@ -435,9 +473,9 @@ int process_snapshot_command() {
   case 'I':
   case 'p':
   case 'P':
-    /* Forward these commands to the reader thread */
-    ret = zh_put_msg(reader, 0, sizeof(strbuf), (void *)c_n_e);
-    assertv(ret > 0, "Forward to reader failed, %d\n", ret);
+    /* Forward these commands to the READER thread */
+    ret = zh_put_msg(reader, 0, sizeof(strbuf), (void *)&c_n_e);
+    assertv(ret == sizeof(c_n_e), "Forward to READER failed, %d\n", ret);
     fwd++;
     break;
 
@@ -447,9 +485,9 @@ int process_snapshot_command() {
   case 'S':
   case 'z':
   case 'Z':
-    /* Forward snapshot and dir commands to writer */
-    ret = zh_put_msg(writer, 0, sizeof(strbuf), (void *)c_n_e);
-    assertv(ret > 0, "Forward to writer failed, %d\n", ret);
+    /* Forward snapshot and dir commands to WRITER */
+    ret = zh_put_msg(writer, 0, sizeof(strbuf), (void *)&c_n_e);
+    assertv(ret == sizeof(c_n_e), "Forward to WRITER failed, %d\n", ret);
     fwd++;
     break;
 
@@ -495,7 +533,7 @@ static void main_thread_msg_loop() {    /* Read and process messages */
   fprintf(stderr, "%s: starting main thread polling loop with %d items\n", program, N_POLL_ITEMS);
   running = true;
   poll_delay = MAIN_LOOP_POLL_INTERVAL;
-  while(running) {
+  while(running && !die_die_die_now) {
     int n;
     int ret = zmq_poll(&poll_list[0], N_POLL_ITEMS, poll_delay);
 
@@ -568,13 +606,6 @@ int main(int argc, char *argv[], char *envp[]) {
 
   /* 5. Process parameters:  deal with non-parameter table arguments where necessary */
 
-  if(verbose > 2)		/* Dump global parameters for debugging purposes */
-    debug_params(stderr, globals, n_global_params);
-
-  /* 5. Process parameters:  deal with non-parameter table arguments where necessary */
-
-  exit(0);
-
   /* 5a. Verify parameters required by the main program/thread */
   tmpdir_dirfd = open(tmpdir_path, O_PATH|O_DIRECTORY); /* Verify the TMPDIR path */
   if( tmpdir_dirfd < 0 ) {
@@ -643,64 +674,81 @@ int main(int argc, char *argv[], char *envp[]) {
 
   release_strbuf(e);
 
-  /* Create the tidy thread */
+  if(snap_adjust_capabilities() < 0) {		/* Drop un-necessary capabilities */
+    exit(3);
+  }
+  if(main_adjust_capabilities(uid, gid) < 0) {	/* Change to target user */
+    exit(3);
+  }
+
+  /* Create the TIDY thread */
   pthread_attr_init(&tidy_thread_attr);
-  if( pthread_create(&tidy_thread, &tidy_thread_attr, tidy_main, NULL) < 0 ) {
-    fprintf(stderr, "%s: Error -- tidy thread creation failed: %s\n", program, strerror(errno));
-    exit(3);
+  if( pthread_create(&tidy_thread, &tidy_thread_attr, tidy_main, &log_socket) < 0 ) {
+    fprintf(stderr, "%s: Error -- TIDY thread creation failed: %s\n", program, strerror(errno));
+    exit(4);
   }
 
-  /* Create the reader thread */
-  pthread_attr_init(&reader_thread_attr);
-  if( pthread_create(&reader_thread, &reader_thread_attr, reader_main, NULL) < 0 ) {
-    fprintf(stderr, "%s: Error -- reader thread creation failed: %s\n", program, strerror(errno));
-    exit(3);
+  /* Wait here for log_socket */
+  while( !die_die_die_now && !log_socket ) {
+    usleep(10000);
   }
 
-  /* Create the writer thread */
-  pthread_attr_init(&writer_thread_attr);
-  if( pthread_create(&writer_thread, &writer_thread_attr, writer_main, NULL) < 0 ) {
-    fprintf(stderr, "%s: Error -- writer thread creation failed: %s\n", program, strerror(errno));
-    exit(3);
-  }
+  if( !die_die_die_now ) {
+    pthread_attr_init(&reader_thread_attr);    /* Create the READER thread */
+    if( pthread_create(&reader_thread, &reader_thread_attr, reader_main, NULL) < 0 ) {
+      fprintf(stderr, "%s: Error -- READER thread creation failed: %s\n", program, strerror(errno));
+      exit(4);
+    }
 
-  /* Wait for the threads to establish comms etc. */
-
-  /* Now ready to start main loop */
-  if(reader_parameters.r_running && writer_parameters.w_running) {
-    
-  }
-
-  /* Tidy up threads */
-  if( pthread_join(reader_thread, (void *)&thread_return) < 0 ) {
-    fprintf(stderr, "%s: Error -- reader thread join error: %s\n", program, strerror(errno));
-    thread_return = NULL;
-  }
-  else {
-    if( thread_return ) {
-      fprintf(stderr, "%s: reader thread rejoined -- %s\n", program, thread_return);
-      thread_return = NULL;
+    pthread_attr_init(&writer_thread_attr);    /* Create the WRITER thread */
+    if( pthread_create(&writer_thread, &writer_thread_attr, writer_main, NULL) < 0 ) {
+      fprintf(stderr, "%s: Error -- WRITER thread creation failed: %s\n", program, strerror(errno));
+      exit(4);
     }
   }
 
-  if( pthread_join(writer_thread, (void *)&thread_return) < 0 ) {
-    fprintf(stderr, "%s: Error -- writer thread join error: %s\n", program, strerror(errno));
-    thread_return = NULL;
+  /* Wait for the threads to establish comms etc. DON'T WAIT TOO LONG */
+  while( !die_die_die_now ) {
+    usleep(10000);		/* Wait for 10ms */
+    if(reader_parameters.r_running && writer_parameters.w_running)
+      break;			/* Now ready to start main loop */
   }
-  else {
-    if( thread_return ) {
-      fprintf(stderr, "%s: writer thread rejoined -- %s\n", program, thread_return);
+
+  /* Run the MAIN thread sevice loop here */
+
+  /* Tidy up threads */
+  if(reader_thread) {
+    if( pthread_join(reader_thread, (void *)&thread_return) < 0 ) {
+      fprintf(stderr, "%s: Error -- READER thread join error: %s\n", program, strerror(errno));
       thread_return = NULL;
+    }
+    else {
+      if( thread_return ) {
+	fprintf(stderr, "%s: READER thread rejoined -- %s\n", program, thread_return);
+	thread_return = NULL;
+      }
+    }
+  }
+  if(writer_thread) {
+    if( pthread_join(writer_thread, (void *)&thread_return) < 0 ) {
+      fprintf(stderr, "%s: Error -- WRITER thread join error: %s\n", program, strerror(errno));
+      thread_return = NULL;
+    }
+    else {
+      if( thread_return ) {
+	fprintf(stderr, "%s: WRITER thread rejoined -- %s\n", program, thread_return);
+	thread_return = NULL;
+      }
     }
   }
 
   if( pthread_join(tidy_thread, (void *)&thread_return) < 0 ) {
-    fprintf(stderr, "%s: Error -- tidy thread join error: %s\n", program, strerror(errno));
+    fprintf(stderr, "%s: Error -- TIDY thread join error: %s\n", program, strerror(errno));
     thread_return = NULL;
   }
   else {
     if( thread_return ) {
-      fprintf(stderr, "%s: tidy thread rejoined -- %s\n", program, thread_return);
+      fprintf(stderr, "%s: TIDY thread rejoined -- %s\n", program, thread_return);
       thread_return = NULL;
     }
   }
