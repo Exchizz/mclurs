@@ -97,6 +97,20 @@ static param_t snapwd_params[] ={
 static const int n_snapwd_params =  (sizeof(snapwd_params)/sizeof(param_t));
 
 /*
+ * Snapshot status request parameter(s), used by the Z command line.
+ */
+
+static param_t status_params[] ={
+#define SNAP_NAME  0
+  { "name",    NULL, NULL,
+    PARAM_TYPE(int16), PARAM_SRC_CMD,
+    "snapshot name"
+  },
+};
+
+static const int n_status_params =  (sizeof(status_params)/sizeof(param_t));
+
+/*
  * --------------------------------------------------------------------------------
  *
  * INITIALISATION ROUTINES FOR WRITER THREAD:
@@ -219,7 +233,6 @@ static void clear_writer_wd() {
 static int set_writer_new_wd(const char *dir) {
   int fd;
 
-  clear_writer_wd();
   fd = new_directory(writer_parameters.w_snap_dirfd, dir);
   if(fd < 0)
     return -1;
@@ -236,7 +249,7 @@ static int process_dir_command(strbuf c) {
   strbuf   e   = strbuf_next(c);
   param_t *ps  = &snapwd_params[0]; 
   int      nps = n_snapwd_params;
-  char    *path;
+  char    *path = NULL;
   int      err;
 
   /* Initialise the parameter value pointer */
@@ -244,11 +257,18 @@ static int process_dir_command(strbuf c) {
   err = push_params_from_string(strbuf_string(c), ps, nps);
   if(err < 0) {
     strbuf_appendf(e, "parameter parsing error at position %d", -err);
+    reset_param(&ps[SNAP_SETWD]);
     return -1;
   }
   err = assign_param(&ps[SNAP_SETWD]);
   /* If this string copy fails, it's a programming error! */
   assertv(err==0, "Dir PATH parameter assignment failed: %m");
+  reset_param(&ps[SNAP_SETWD]);
+
+  if( !path ) {			/* No path supplied, reset to snapdir */
+    clear_writer_wd();
+    return 0;
+  }
 
   /* Path is now instantiated to the given parameter string */
   if(set_writer_new_wd(path) < 0) {
@@ -274,7 +294,7 @@ typedef struct {		/* Private snapshot descriptor structure used by writer */
   queue	      s_xQ[2];		/* Queue headers -- must be first member */
 #define s_Q	     s_xQ[0]	/* Active snapshot queue header */
 #define s_fileQhdr   s_xQ[1]	/* Header for the queue of file descriptor structures */
-  char        s_name[SNAP_NAME_SIZE];	/* Printable name for snapshot */
+  uint16_t    s_name;		/* 'Name' for snapshot */
   int         s_dirfd;		/* Dirfd of the samples directory */
   uint64_t    s_first;		/* The first sample to collect */
   uint64_t    s_last;		/* Collect up to but not including this sample */
@@ -284,7 +304,7 @@ typedef struct {		/* Private snapshot descriptor structure used by writer */
   int	      s_pending;	/* Count of pending repetitions */
   int	      s_status;		/* Status of this snapshot */
   const char *s_path;		/* Directory path for this snapshot */
-  strbuf      s_cmdetc;		/* Command and Error string buffers */
+  strbuf      s_error;		/* Error strbuf for asynchronous operation */
 }
   snap_t;
 
@@ -301,13 +321,15 @@ static QUEUE_HEADER(snapQ);	/* The list of active snapshots */
  */
 
 static snap_t *alloc_snapshot() {
-  static int snap_counter = 0;
+  static uint16_t snap_counter = 0;
   snap_t *ret = calloc(1, sizeof(snap_t));
 
+  if( !snap_counter ) snap_counter++;
+  
   if(ret) {
     init_queue( snap2qp(ret) );
     ret->s_dirfd = -1;
-    snprintf(&ret->s_name[0], SNAP_NAME_SIZE, "snap_%08x", snap_counter);
+    ret->s_name = snap_counter++;
     init_queue( snap2fq(ret) );
   }
   return ret;
@@ -321,6 +343,8 @@ static void free_snapshot(snap_t *s) {
   }
   if(s->s_dirfd >= 0)
     close(s->s_dirfd);
+  if(s->s_path)
+    free((void *)s->s_path);
   free( (void *)s );
 }
 
@@ -504,12 +528,13 @@ static void setup_snapshot_samples(snap_t *s, param_t p[]) {
  */
 
 static snap_t *build_snapshot_descriptor(strbuf c) {
-  strbuf   e   = strbuf_next(c);
-  param_t *ps  = &snapshot_params[0]; 
-  int      nps = n_snapshot_params;
-  snap_t  *ret;
-  int	   err;
-  int	   i;
+  strbuf      e   = strbuf_next(c);
+  param_t    *ps  = &snapshot_params[0]; 
+  int         nps = n_snapshot_params;
+  const char *path = NULL;
+  snap_t     *ret;
+  int	      err;
+  int	      i;
     
 
   if( !(ret = alloc_snapshot()) ) { /* Allocation failed */
@@ -524,7 +549,7 @@ static snap_t *build_snapshot_descriptor(strbuf c) {
   setval_param(&ps[SNAP_FINISH], (void **) &ret->s_first);
   setval_param(&ps[SNAP_LENGTH], (void **) &ret->s_samples);
   setval_param(&ps[SNAP_COUNT],  (void **) &ret->s_count);
-  setval_param(&ps[SNAP_PATH],   (void **) &ret->s_path);
+  setval_param(&ps[SNAP_PATH],   (void **) &path);
 
   /* Process the S command parameters */
   err = push_params_from_string(strbuf_string(c), ps, nps);
@@ -544,17 +569,20 @@ static snap_t *build_snapshot_descriptor(strbuf c) {
   }
   
   /* Do path */
-  ret->s_dirfd = new_directory(writer_parameters.w_snap_curfd, ret->s_path);
+  ret->s_dirfd = new_directory(writer_parameters.w_snap_curfd, path);
   if(ret->s_dirfd < 0) {
-    strbuf_appendf(e, "unable to create dir path=%s: %m", ret->s_path);
+    strbuf_appendf(e, "unable to create dir path=%s: %m", path);
     goto FAIL;
   }
+  ret->s_path = strdup(path);
+
+  for(i=0; i<nps; i++) reset_param(&ps[i]);
   
   /* Set up the sample-dependent values -- cannot fail */
   setup_snapshot_samples(ret, ps);
 
   /* All done, no errors */
-  ret->s_status = SNAPSHOT_INIT;
+  ret->s_status = SNAPSHOT_INIT; /* FINALISE STATUS FLAGS... */
   return ret;
 
  FAIL:
@@ -592,8 +620,8 @@ static void debug_snapshot_descriptor(snap_t *s) {
   char buf[MSGBUFSIZE];
 
   snprintf(buf, MSGBUFSIZE,
-	   "Snap %s: path '%s' status %d  P:%s; S:%08lx B:%08lx C:%08lx F:%016llx L:%016llx\n",
-	   &s->s_name[0], s->s_path, s->s_status,
+	   "Snap %04hx: path '%s' status %d  P:%s; S:%08lx B:%08lx C:%08lx F:%016llx L:%016llx\n",
+	   s->s_name, s->s_path, s->s_status,
 	   s->s_samples, s->s_bytes, s->s_count, s->s_first, s->s_last);
   zh_put_multi(log, 1, buf);
 }
@@ -609,7 +637,7 @@ typedef struct _sfile {
   queue	      f_Q;			/* Queue header for file descriptor structures */
   snap_t     *f_parent;			/* The snap_t structure that generated this file capture */
   int         f_fd;			/* System file descriptor -- only needed while pages left to map */
-  char        f_name[SNAP_NAME_SIZE];	/* Name of this file:  the hexadecimal first sample number .s16 */
+  char        f_name[FILE_NAME_SIZE];	/* Name of this file:  the hexadecimal first sample number .s16 */
   int	      f_ixnr;			/* Index number of this file in the full set for the snapshot */
   queue	      f_chunkQhdr;		/* Header for this file's writer chunk queue */
 }
@@ -642,7 +670,7 @@ static int init_snapfile(snapfile_t *f, snap_t *s) {
   int fd;
   int ret;
 
-  snprintf(&f->f_name[0], SNAP_NAME_SIZE, "%016llx.s16", s->s_first);
+  snprintf(&f->f_name[0], FILE_NAME_SIZE, "%016llx.s16", s->s_first);
   fd = openat(s->s_dirfd, &f->f_name[0], O_RDWR|O_CREAT|O_EXCL, 0600);
   if(fd < 0) {
     return -1;
@@ -712,7 +740,7 @@ static int initialise_snapshot_file(snapw *s, snapr *r) {
  * Manage the write queue:  deal with queue message from reader.
  */
 
-static int process_queue_message(void *socket) {
+static int process_reader_message(void *socket) {
   return true;
 }
 
@@ -864,21 +892,32 @@ int process_writer_command(void *s) {
     snap_t *s = build_snapshot_descriptor(cmd);
     if(s != NULL) {		    /* Snapshot building succeeded */
       queue_ins_after(&snapQ, snap2qp(s));
-      strbuf_printf(err, "OK Snap %s", &s->s_name[0]);
+      strbuf_printf(err, "OK Snap %04hx", s->s_name);
+      s->s_error = (strbuf)de_queue((queue *)cmd);
+      strbuf_clear(cmd);
+    }
+    else {
+      ret = -1;
     }
     break;
 
   default:
-    strbuf_printf(err, "NO: Writer -- unexpected writer command");
+    strbuf_printf(err, "NO: WRITER -- unexpected writer command");
+    ret = -1;
     break;
   }
-  zh_put_multi(log, 3, strbuf_string(err), "\n  ", &cmd_buf[0]); /* Error occurred, log the problem */
+
+  if(ret < 0) {
+    strbuf_revert(cmd);
+    zh_put_multi(log, 3, strbuf_string(err), "\n  ", &cmd_buf[0]); /* Error occurred, log the problem */
+  }
+  strbuf_clear(cmd);
   zh_put_msg(s, 0, sizeof(strbuf), (void *)&err);
   return true;
 }
 
 /*
- * Writer thread message loop
+ * WRITER thread message loop
  */
 
 static void writer_thread_msg_loop() {    /* Read and process messages */
@@ -892,19 +931,20 @@ static void writer_thread_msg_loop() {    /* Read and process messages */
     };
 #define	N_POLL_ITEMS	(sizeof(poll_list)/sizeof(zmq_pollitem_t))
   int (*poll_responders[N_POLL_ITEMS])(void *) =
-    { process_queue_message,
+    { process_reader_message,
       process_writer_command,
     };
 
-  /* Writer initialisation is complete */
-  zh_put_multi(log, 1, "Writer thread is initialised");
+  /* WRITER initialisation is complete */
+  writer_parameters.w_running = !die_die_die_now;
+  zh_put_multi(log, 1, "WRITER thread is initialised");
 
-  running = true;
-  while( running ) {
+  running = writer_parameters.w_running;
+  while( running && !die_die_die_now ) {
     int ret = zmq_poll(&poll_list[0], N_POLL_ITEMS, -1);
 
     if( ret < 0 && errno == EINTR ) { /* Interrupted */
-      zh_put_multi(log, 1, "Writer loop interrupted");
+      zh_put_multi(log, 1, "WRITER loop interrupted");
       break;
     }
     if(ret < 0)
@@ -919,22 +959,20 @@ static void writer_thread_msg_loop() {    /* Read and process messages */
 }
 
 /*
- * Writer thread main routine
+ * WRITER thread main routine
  */
 
 void *writer_main(void *arg) {
   int ret;
 
-  /* Verify parameter structure data */
-  assertv(n_snapshot_params <= N_SNAP_PARAMS,
-	  "Inconsistent snapshot parameter list size (%d vs %d)\n",
-	  n_snapshot_params, N_SNAP_PARAMS);
-
-  if(debug_level > 1)
-    debug_writer_params();
-
+  /*
+  create_writer_comms();
+  set_writer_capability();
+  DO RT PRIORITY UPGRADE
+  */
+  
   writer_thread_msg_loop();
-  zh_put_multi(log, 1, "Writer thread is terminating by return");
+  zh_put_multi(log, 1, "WRITER thread is terminating by return");
 
   /* Clean up ZeroMQ sockets */
   zmq_close(log);
@@ -945,7 +983,9 @@ void *writer_main(void *arg) {
 }
 
 /*
- * Verify the parameters for the writer and construct the writer state.
+ * Verify the parameters for the WRITER and construct the WRITER state.
+ *
+ * Called by the MAIN thread during start up initialisation.
  */
 
 int verify_writer_params(wparams *wp, strbuf e) {
