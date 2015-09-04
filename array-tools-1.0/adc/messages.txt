@@ -4,15 +4,15 @@ Command Message flow inside Snapshot
 Command messages arrive from outside as single fragments.  Each
 command message is put immediately into a strbuf and a second strbuf
 is alocated to hold error messages.  The resulting buffers are
-dispatched to the reader and writer (except for quit, which is dealt
+dispatched to the READER and WRITER (except for quit, which is dealt
 with specially).
 
-The Reader receives a message comprising a strbuf pointer, processes
+The READER receives a message comprising a strbuf pointer, processes
 the command in the command strbuf and places its response in the error
 strbuf.  It then returns the error strbuf to the main thread with the
-command strbuf still linked.  The Reader clears the command strbuf.
+command strbuf still linked.  The READER clears the command strbuf.
 
-The Writer receives a message comprising a strbuf pointer and
+The WRITER receives a message comprising a strbuf pointer and
 processes the command.  If the command fails, it returns the error
 strbuf to the main thread immediately; it clears the command strbuf
 which is still linked.
@@ -31,7 +31,7 @@ snapshot generates an entry in the originally sent strbuf link; each
 completed snapshot is tidied and its error strbuf (which contains
 either an error or an OK message) is appended to the chain.
 
-When the main thread receives a reply from the Reader or Writer, it
+When the MAIN thread receives a reply from the READER or WRITER, it
 gets a variable length chain of strbufs.  It needs to construct a
 reply message comprising the sequence of data contained in the chain
 of strbufs (ignoring intermediate NUL characters).  Some of the
@@ -39,3 +39,8 @@ strbufs in the chain may be empty (former command strbufs cleared
 before return).
 
 The reply should be constructed as a single fragment message.
+
+We assume that originators of multiple message segments provide the
+newlines to join them as required.  The reply collector in MAIN just
+concatenates the strbuf contents, eliminating trailing NULs that got
+counted, and adds a final newline if none is present.

@@ -462,7 +462,6 @@ int process_snapshot_command() {
     assertv(ret == 0, "Quit to READER failed, %d\n", ret);
     ret = zh_put_msg(writer, 0, 0, NULL); /* Forward zero length message to the WRITER thread */
     assertv(ret == 0, "Quit to WRITER failed, %d\n", ret);
-    /* PERHAPS MOVE THIS TO END */
     ret = zh_put_msg(command, 0, 7, "OK Quit"); /* Reply to Quit here */
     assertv(ret == 7, "Quit reply failed, %d\n", ret);
     break;
@@ -504,7 +503,7 @@ int process_snapshot_command() {
     assertv(ret == 0, "Reject unknown reply failed, %d\n", ret);
     break;
   }
-  if( !fwd )
+  if( !fwd )			/* Didn't use the strbufs */
     release_strbuf(c_n_e);
   return 0;
 }
