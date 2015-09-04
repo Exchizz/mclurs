@@ -1,0 +1,41 @@
+Command Message flow inside Snapshot
+====================================
+
+Command messages arrive from outside as single fragments.  Each
+command message is put immediately into a strbuf and a second strbuf
+is alocated to hold error messages.  The resulting buffers are
+dispatched to the reader and writer (except for quit, which is dealt
+with specially).
+
+The Reader receives a message comprising a strbuf pointer, processes
+the command in the command strbuf and places its response in the error
+strbuf.  It then returns the error strbuf to the main thread with the
+command strbuf still linked.  The Reader clears the command strbuf.
+
+The Writer receives a message comprising a strbuf pointer and
+processes the command.  If the command fails, it returns the error
+strbuf to the main thread immediately; it clears the command strbuf
+which is still linked.
+
+If a Dir command succeeds returns its strbuf link as above, with an
+OK message.  It clears its command strbuf to be empty.
+
+If a Snap command succeeds, it returns the error strbuf only
+containing a success message, but keeps the command strbuf (which it
+clears) to handle errors in the asynchronous processing of the
+snapshot.
+
+A status command arrives with its two linked strbufs.  Status always
+succeeds.  It returns its response as a chain of strbufs: each pending
+snapshot generates an entry in the originally sent strbuf link; each
+completed snapshot is tidied and its error strbuf (which contains
+either an error or an OK message) is appended to the chain.
+
+When the main thread receives a reply from the Reader or Writer, it
+gets a variable length chain of strbufs.  It needs to construct a
+reply message comprising the sequence of data contained in the chain
+of strbufs (ignoring intermediate NUL characters).  Some of the
+strbufs in the chain may be empty (former command strbufs cleared
+before return).
+
+The reply should be constructed as a single fragment message.
