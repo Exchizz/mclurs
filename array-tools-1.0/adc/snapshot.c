@@ -48,6 +48,8 @@
  * Global parameters for the snapshot program
  */
 
+int die_die_die_now = 0;
+
 extern rparams     reader_parameters;
 extern wparams	   writer_parameters;
 extern const char *tmpdir_path;
@@ -417,7 +419,7 @@ static int process_reply(void *s) {
   map_queue_nxt((queue*)err, NULL, collect_reply_strings, &b);
   release_strbuf(err);
 
-  if( reply_buffer[b.bytes-1] == '\0' )		/* Replace trailing NUL with newline */
+  if( reply_buffer[b.b_bytes-1] == '\0' )		/* Replace trailing NUL with newline */
     reply_buffer[b.b_bytes-1] = '\n';
   if( reply_buffer[b.b_bytes-1] != '\n' )	/* If last character is not newline, add one */
     reply_buffer[b.b_bytes++] = '\n';

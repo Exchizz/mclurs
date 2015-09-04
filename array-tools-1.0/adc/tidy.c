@@ -15,7 +15,9 @@
 #include "util.h"
 #include "strbuf.h"
 #include "chunk.h"
+#include "param.h"
 #include "tidy.h"
+#include "snapshot.h"
 
 extern void *snapshot_zmq_ctx;
 

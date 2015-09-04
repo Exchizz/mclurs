@@ -86,7 +86,7 @@ install:	all
 	install -D grab.1a	 ${DESTDIR}/usr/share/man/man1
 
 clean:
-	rm -f ${TARGETS} ${XTRAS} ${OFILES} ${LIBRARY} argtab.a argtab.h ${ARGTAB_OBJS} *~
+	rm -f ${TARGETS} ${XTRAS} ${OFILES} ${LIBRARY} ${LIBOBJS} argtab.a argtab.h ${ARGTAB_OBJS} *~
 
 print.pdf:	*.c *.h
 	a2ps -1r -L99 -l198 -o print.ps *.[ch] 

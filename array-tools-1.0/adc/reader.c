@@ -731,7 +731,7 @@ void *reader_main(void *arg) {
   zmq_close(wr_queue_reader);
   zmq_close(command);
   zmq_close(log);
-  reader_thread_running = false;
+  reader_parameters.r_running = false;
   return (void *) thread_msg;
 }
 

@@ -940,7 +940,7 @@ void *writer_main(void *arg) {
   zmq_close(log);
   zmq_close(reader);
   zmq_close(command);
-  writer_thread_running = false;
+  writer_parameters.w_running = false;
   return (void *)"normal exit";
 }
 
