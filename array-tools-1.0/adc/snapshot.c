@@ -76,7 +76,7 @@ param_t globals[] ={
   },
   { "snapdir",  "snap",
     &writer_parameters.w_snapdir,
-    PARAM_TYPE(string), PARAM_SRC_ENV|PARAM_SRC_ARG/*|PARAM_SRC_CMD*/,
+    PARAM_TYPE(string), PARAM_SRC_ENV|PARAM_SRC_ARG,
     "directory where samples are written"
   },
   { "dev",	"/dev/comedi0",
@@ -158,12 +158,24 @@ BEGIN_CMD_SYNTAX(help) {
 
 struct arg_lit *v2, *q2;
 struct arg_end *e2;
-struct arg_str *u2;
 
 BEGIN_CMD_SYNTAX(main) {
-  v2  = arg_litn("v", "verbose", 0, 3,	   "Increase verbosity"),
-  q2  = arg_lit0("q", "quiet",		   "Decrease verbosity"),
-  u2  = arg_str0("s", "snapshot", "<url>", "URL of snapshotter command socket"),
+  v2  = arg_litn("v",  "verbose", 0, 3,	      "Increase verbosity"),
+  q2  = arg_lit0("q",  "quiet",		      "Decrease verbosity"),
+        arg_str0("s",  "snapshot", "<url>",   "URL of snapshotter command socket"),
+        arg_str0(NULL, "tmpdir", "<path>",    "Path to temporary directory"),
+        arg_str0("S",  "snapdir", "<path>",   "Path to samples directory"),
+        arg_dbl0("f",  "freq", "<real>",      "Per-channel sampling frequency [Hz]"),
+        arg_dbl0("w",  "window", "<real>",    "Capture window length [s]"),
+        arg_str0("d",  "dev", "<path>",       "Comedi device to use"),
+        arg_int0("P",  "rtprio", "<1-99>",    "Common thread RT priority"),
+        arg_int0("R",  "rdprio", "<1-99>",    "Reader thread RT priority"),
+        arg_int0("W",  "wrprio", "<1-99>",    "Writer thread RT priority"),
+        arg_str0("u",  "user", "<uid/name>",  "User to run as"),
+        arg_str0("g",  "group", "<gid/name>", "Group to run as"),
+        arg_int0("B",  "bufsz", "<int>",      "Comedi Buffer Size [MiB]"),
+        arg_int0("m",  "ram", "<int>",        "Data Transfer RAM Size [MiB]"),
+        arg_int0("c",  "chunk", "<int>",      "File transfer chunk size [kiB]"),
   e2  = arg_end(20)
 } APPLY_CMD_DEFAULTS(main) {
   INCLUDE_PARAM_DEFAULTS(globals, n_global_params);
@@ -239,7 +251,7 @@ static int create_main_comms() {
   /* Create and initialise the sockets: reader and writer command sockets */
   reader = zh_connect_new_socket(snapshot_zmq_ctx, ZMQ_REQ, READER_CMD_ADDR);
   if( reader == NULL ) {
-    fprintf(stderr, "%s: Error -- unable to cconnect internal socket to reader: %s\n", program, strerror(errno));
+    fprintf(stderr, "%s: Error -- unable to connect internal socket to reader: %s\n", program, strerror(errno));
     return -1;
   }
   writer = zh_connect_new_socket(snapshot_zmq_ctx, ZMQ_REQ, WRITER_CMD_ADDR);
@@ -272,6 +284,9 @@ static int create_main_comms() {
  * CAP_SYS_ADMIN (Writer) -- ability to set RT IO scheduling priorities (unused at present)
  * CAP_SYS_ADMIN (Tidy)   -- ability to set RT IO scheduling priorities (unused at present)
  *
+ * CAP_SETUID (Main)
+ * CAP_SETGID (Main)	  -- ability to change user ID
+ *
  * Otherwise the main thread and the tidy thread need no special powers.  The ZMQ IO thread
  * is also unprivileged, and is currently spawned during context creation from tidy.
  */
@@ -290,11 +305,13 @@ static int snap_adjust_capabilities() {
   }
 
   if( !u ) {
-    const cap_value_t vs[] = { CAP_IPC_LOCK, CAP_SYS_NICE, CAP_SYS_ADMIN, };
+    const cap_value_t vs[] = { CAP_IPC_LOCK, CAP_SYS_NICE, CAP_SYS_ADMIN, CAP_SETUID, CAP_SETGID, };
 
     /* So we are root and have the capabilities we need.  Prepare to drop the others... */
+    /* Keep the EFFECTIVE capabilities as long as we stay root */
     cap_clear(c);
     cap_set_flag(c, CAP_PERMITTED, sizeof(vs)/sizeof(cap_value_t), &vs[0], CAP_SET);
+    cap_set_flag(c, CAP_EFFECTIVE, sizeof(vs)/sizeof(cap_value_t), &vs[0], CAP_SET);
     if( prctl(PR_SET_KEEPCAPS, 1L) <0 ) {
       cap_free(c);
       fprintf(stderr, "%s: Error -- unable to keep required capabilities on user change\n", program);
@@ -314,16 +331,21 @@ static int snap_adjust_capabilities() {
 
 static int main_adjust_capabilities(uid_t uid, gid_t gid) {
   cap_t c = cap_get_proc();
+  const cap_value_t vs[] = { CAP_SETUID, CAP_SETGID, };
+  
+  /* Drop all capabilities except CAP_SETUID/GID from effective set */
 
   if(c) {
-    cap_clear(c);
+    cap_clear_flag(c, CAP_EFFECTIVE);
+    cap_set_flag(c, CAP_EFFECTIVE, sizeof(vs)/sizeof(cap_value_t), &vs[0], CAP_SET);
     if( cap_set_proc(c) < 0 ) {
       cap_free(c);
       fprintf(stderr, "%s: Error -- MAIN thread fails to clear capabilities: %s\n", program, strerror(errno));
       return -1;
     }
+    cap_free(c);
   }
-
+  
   /* Drop all user and group privileges:  set all uids to uid and all gids to gid */
   /* Complain if that fails -- we were not root and uid/gid were not in our set */
   if( setresgid(gid, gid, gid) < 0 ) {
@@ -335,6 +357,17 @@ static int main_adjust_capabilities(uid_t uid, gid_t gid) {
     return -1;
   }
 
+  c = cap_get_proc();
+  if(c) {
+    cap_set_flag(c, CAP_PERMITTED, sizeof(vs)/sizeof(cap_value_t), &vs[0], CAP_CLEAR);
+    if( cap_set_proc(c) < 0 ) {
+      cap_free(c);
+      fprintf(stderr, "%s: Error -- MAIN thread keeps setuid/gid capabilities: %s\n", program, strerror(errno));
+      return -1;
+    }
+    cap_free(c);    
+  }
+  
   /* Now check we still have the required permitted capabilities */
   if( check_permitted_capabilities_ok() < 0 ) {
     fprintf(stderr, "%s: Error -- MAIN thread lost capabilities on changing user!\n", program);
@@ -575,7 +608,12 @@ int main(int argc, char *argv[], char *envp[]) {
 
   /* 2. Process parameters:  push values out to program globals */
   ret = assign_all_params(globals, n_global_params);
-  assertv(ret == n_global_params, "Push parameters missing some %d/%d done\n", ret, n_global_params); /* If not, there is a coding problem */
+  assertv(ret == n_global_params, "Push parameters missing some %d/%d done\n", ret, n_global_params);
+
+  if(debug_level > 2) {
+    fprintf(stderr, "Params before cmdline...\n");
+    debug_params(stderr, globals, n_global_params);
+  }
 
   /* 3. Create and parse the command lines -- installs defaults from parameter table */
   void **cmd_help = arg_make_help();
@@ -602,10 +640,20 @@ int main(int argc, char *argv[], char *envp[]) {
     exit(1);
   }
 
+  if(debug_level > 2) {
+    fprintf(stderr, "Params before reverse pass...\n");
+    debug_params(stderr, globals, n_global_params);
+  }
+  
   /* 4. Process parameters:  copy argument values back through the parameter table */
   ret = arg_results_to_params(cmd_main, globals, n_global_params);
 
   /* 5. Process parameters:  deal with non-parameter table arguments where necessary */
+
+  if(debug_level > 2) {
+    fprintf(stderr, "Params before checking...\n");
+    debug_params(stderr, globals, n_global_params);
+  }
 
   /* 5a. Verify parameters required by the main program/thread */
   tmpdir_dirfd = open(tmpdir_path, O_PATH|O_DIRECTORY); /* Verify the TMPDIR path */
@@ -627,7 +675,7 @@ int main(int argc, char *argv[], char *envp[]) {
     struct group *grp = getgrnam(snapshot_group);
 
     if(grp == NULL) {		/* The group name was invalid  */
-      fprintf(stderr, "%s: Error -- given group %s is not recognised: %s\n", program, snapshot_group, strerror(errno));
+      fprintf(stderr, "%s: Error -- given group %s is not recognised\n", program, snapshot_group);
       exit(2);
     }
     gid = grp->gr_gid;
@@ -638,7 +686,7 @@ int main(int argc, char *argv[], char *envp[]) {
     struct passwd *pwd = getpwnam(snapshot_user);
 
     if(pwd == NULL) {		/* The user name was invalid */
-      fprintf(stderr, "%s: Error -- given user %s is not recognised: %s\n", program, snapshot_user, strerror(errno));
+      fprintf(stderr, "%s: Error -- given user %s is not recognised\n", program, snapshot_user);
       exit(2);
     }
 
@@ -656,7 +704,7 @@ int main(int argc, char *argv[], char *envp[]) {
    /* 5b. Verify and initialise parameters for the reader thread */
   if( !reader_parameters.r_schedprio )
     reader_parameters.r_schedprio = schedprio;
-  strbuf_printf(e, "Reader Params: ");
+  strbuf_printf(e, "READER Params: ");
   ret = verify_reader_params(&reader_parameters, e);
   if( ret < 0 ) {
     fprintf(stderr, "%s\n", strbuf_string(e));
@@ -666,7 +714,7 @@ int main(int argc, char *argv[], char *envp[]) {
   /* 5c. Verify and initialise parameters for the writer thread */
   if( !writer_parameters.w_schedprio)
     writer_parameters.w_schedprio = schedprio;
-  strbuf_printf(e, "Writer Params: ");
+  strbuf_printf(e, "WRITER Params: ");
   ret = verify_writer_params(&writer_parameters, e);
   if( ret < 0 ) {
     fprintf(stderr, "%s\n", strbuf_string(e));
@@ -675,7 +723,7 @@ int main(int argc, char *argv[], char *envp[]) {
 
   release_strbuf(e);
 
-  if(snap_adjust_capabilities() < 0) {		/* Drop un-necessary capabilities */
+  if(snap_adjust_capabilities() < 0) {		/* Check and drop capabilities */
     exit(3);
   }
   if(main_adjust_capabilities(uid, gid) < 0) {	/* Change to target user */
@@ -716,6 +764,10 @@ int main(int argc, char *argv[], char *envp[]) {
   }
 
   /* Run the MAIN thread sevice loop here */
+  if( create_main_comms() < 0 ) {
+    die_die_die_now++;
+  }
+  main_thread_msg_loop();
 
   /* Tidy up threads */
   if(reader_thread) {

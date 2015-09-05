@@ -118,17 +118,18 @@ int strbuf_setpos(strbuf s, int pos) {
 static int strbuf_vprintf(strbuf s, int pos, const char *fmt, va_list ap) {
   int   rest;
   int   used;
-  char *buf  = &s->s_buffer[pos];
+  char *buf;
 
   if(pos < 0)			/* Position one character back from end (i.e. skip NULL) or at start */
-    pos = s->s_used ? s->s_used-1 : 0;
+    pos = s->s_used ? s->s_used : 0;
+  buf  = &s->s_buffer[pos];
   rest = MAX_STRBUF_SIZE - pos;	/* There should be this much space remaining */
   if(rest < 0) {
     errno = EINVAL;
     return -1;
   }
   used = vsnprintf(buf, rest, fmt, ap);
-  s->s_used = used==rest? MAX_STRBUF_SIZE : s->s_used + used;
+  s->s_used = used>=rest? MAX_STRBUF_SIZE : s->s_used + used;
   return used;
 }
 
@@ -182,11 +183,15 @@ static void do_extra_percents(char *buf, int size, const char *fmt) {
   *buf = '\0';
 }
 
+/* Start printing into the buffer at position pos */
+
 int strbuf_printf_pos(strbuf s, int pos, const char *fmt, ...) {
   va_list ap;
   int     used;
   char    fmt_buf[MAX_STRBUF_SIZE];
 
+  if( strbuf_setpos(s, pos) < 0 )
+    return -1;
   do_extra_percents(&fmt_buf[0], MAX_STRBUF_SIZE, fmt);
   va_start(ap, fmt);
   used = strbuf_vprintf(s, pos, fmt_buf, ap);
@@ -194,17 +199,23 @@ int strbuf_printf_pos(strbuf s, int pos, const char *fmt, ...) {
   return used;
 }
 
+/* Start printing into the buffer at position 0 */
+
 int strbuf_printf(strbuf s, const char *fmt, ...) {
   va_list ap;
   int     used;
   char    fmt_buf[MAX_STRBUF_SIZE];
 
+  if( strbuf_setpos(s, 0) < 0 )
+    return -1;
   do_extra_percents(&fmt_buf[0], MAX_STRBUF_SIZE, fmt);
   va_start(ap, fmt);
   used = strbuf_vprintf(s, 0, fmt_buf, ap);
   va_end(ap);
   return used;
 }
+
+/* Start printing into the buffer at the current position */
 
 int strbuf_appendf(strbuf s, const char *fmt, ...) {
   va_list ap;

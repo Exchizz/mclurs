@@ -138,7 +138,7 @@ static void *log;
 static void *reader;
 static void *command;
 
-static int create_writer_comms() {
+static void create_writer_comms() {
   extern void *snapshot_zmq_ctx;
   /* Create necessary sockets */
   command  = zh_bind_new_socket(snapshot_zmq_ctx, ZMQ_REP, WRITER_CMD_ADDR);	/* Receive commands */
@@ -168,6 +168,24 @@ static int set_up_writer_capability() {
 
   cap_set_flag(c, CAP_EFFECTIVE, sizeof(vs)/sizeof(cap_value_t), &vs[0], CAP_SET);
   return cap_set_proc(c);
+}
+
+/*
+ * Set the WRITER thread to real-time priority, if RTPRIO is set...
+ */
+
+int set_writer_rt_scheduling() {
+
+  if( writer_parameters.w_schedprio > 0 ) {	/* Then there is RT priority scheduling to set up */
+    if( set_rt_scheduling(writer_parameters.w_schedprio) < 0 )
+      return -1;
+
+    /* Successfully applied RT scheduling */
+    return 1;
+  }
+
+  /* RT scheduling not applicable:  no RTPRIO set */
+  return 0;
 }
 
 /*
@@ -965,11 +983,24 @@ static void writer_thread_msg_loop() {    /* Read and process messages */
 void *writer_main(void *arg) {
   int ret;
 
-  /*
   create_writer_comms();
-  set_writer_capability();
-  DO RT PRIORITY UPGRADE
-  */
+
+  if( set_up_writer_capability < 0 ) {
+    zh_put_multi(log, 1, "WRITER thread capabilities are deficient");
+  }
+
+  ret = set_writer_rt_scheduling();
+  switch(ret) {
+  case 1:
+    zh_put_multi(log, 1, "WRITER RT scheduling succeeded");
+    break;
+  case 0:
+    zh_put_multi(log, 1, "WRITER using normal scheduling: RTPRIO unset");
+    break;
+  default:
+    zh_put_multi(log, 2, "WRITER RT scheduling setup failed: ", strerror(errno));
+    break;
+  }
   
   writer_thread_msg_loop();
   zh_put_multi(log, 1, "WRITER thread is terminating by return");
@@ -1038,7 +1069,7 @@ int verify_writer_params(wparams *wp, strbuf e) {
    */
   wp->w_snap_dirfd = new_directory(tmpdir_dirfd, wp->w_snapdir);
   if( wp->w_snap_dirfd < 0 ) {	/* Give up on failure */
-    strbuf_printf(e, "Snapdir %d inaccessible: %m", wp->w_snapdir);
+    strbuf_printf(e, "Snapdir %s inaccessible: %m", wp->w_snapdir);
     return -1;
   }
 

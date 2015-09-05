@@ -17,7 +17,7 @@ PARAM_TYPE_DECL(bool,   int,      "%d",   "%d");
 PARAM_TYPE_DECL(int16,  uint16_t, "%hi",  "%hu");
 PARAM_TYPE_DECL(int32,  uint32_t, "%li",  "%u");
 PARAM_TYPE_DECL(int64,  uint64_t, "%Li",  "%llu");
-PARAM_TYPE_DECL(double, double,   "%lg",  "%Lg");
+PARAM_TYPE_DECL(double, double,   "%lg",   "%g");
 PARAM_TYPE_DECL(string, char *,   NULL,   "%s");
 
 /*
@@ -219,6 +219,8 @@ int assign_param(param_t *p) {
     return 0;
   }
 
+  // fprintf(stderr, "Scan param %s with str %s to %p using %s\n",
+  //	  p->p_name, p->p_str, p->p_val, pt->t_scan);
   return sscanf(p->p_str, pt->t_scan, p->p_val) == 1? 0 : -1;
 }
 
@@ -333,6 +335,8 @@ int arg_defaults_from_params(void **argtable, int nargs, param_t ps[], int nps) 
     if( !p->p_str )		/* No string value, no default */
       continue;
 
+    //    fprintf(stderr, "Found parameter %s with addr %p, str %s\n", p->p_name, p->p_val, p->p_str);
+
     /* Copy the parameter's value to the arg structure -- fake an argument parse */
     (*a->resetfn)(a->parent);	/* Reset the counter;  init the structure */
     int ret = (*a->scanfn)(a->parent, p->p_str);
@@ -371,6 +375,7 @@ int arg_results_to_params(void **argtable, param_t ps[], int nps) {
   struct arg_hdr **atp;
   for(atp=(struct arg_hdr **)argtable; atp<ate; atp++) {
     struct arg_hdr *a = *atp;
+    void *av;
 
     if( ARG_COUNT(a) == 0 )	/* There is no command-line argument value */
       continue;
@@ -382,9 +387,9 @@ int arg_results_to_params(void **argtable, param_t ps[], int nps) {
     if( !p->p_val )		/* Nowhere to put the value */
       continue;
 
-    void *av = ARG_DATA(a) + (ARG_COUNT(a)-1)*p->p_type->t_size;
+    av = ARG_DATA(a) + (ARG_COUNT(a)-1)*p->p_type->t_size;
     memcpy(p->p_val, av, p->p_type->t_size);
-
+    
     /*
      * This one copy back is tricky...  If *p->p_val is not already the
      * same as p->p_str, it must have come from a static string from
@@ -501,8 +506,8 @@ void debug_params(FILE *fp, param_t ps[], int nps) {
     param_t *p = &ps[i];
     param_type *pt = p->p_type;
 
-    fprintf(fp, "Parameter '%s': type %s addr %p str '%s'",
-	    p->p_name, pt->t_name, p->p_val, p->p_str);
+    fprintf(fp, "Parameter '%s': type %s addr %p str %p='%s'",
+	    p->p_name, pt->t_name, p->p_val, p->p_str, p->p_str);
     if(p->p_val) {
       fprintf(fp, " val '");
       if(pt == PARAM_TYPE(bool)) {

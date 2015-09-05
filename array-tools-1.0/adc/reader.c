@@ -6,6 +6,7 @@
 #include <time.h>
 #include <sys/time.h>
 #include <sys/resource.h>
+#include <sys/capability.h>
 
 #include <zmq.h>
 #include <pthread.h>
@@ -137,7 +138,7 @@ static void *wr_queue_reader;
 static void *log;
 static void *command;
 
-static int create_reader_comms() {
+static void create_reader_comms() {
   extern void *snapshot_zmq_ctx;
   /* Create necessary sockets */
   command  = zh_bind_new_socket(snapshot_zmq_ctx, ZMQ_REP, READER_CMD_ADDR);	/* Receive commands */
@@ -146,6 +147,26 @@ static int create_reader_comms() {
   assertv(log != NULL, "Failed to instantiate reader log socket\n");
   wr_queue_reader = zh_bind_new_socket(snapshot_zmq_ctx, ZMQ_PAIR, READER_QUEUE_ADDR);
   assertv(wr_queue_reader != NULL, "Failed to instantiate reader queue socket\n");
+}
+
+/*
+ * Copy the necessary capabilities from permitted to effective set (failure is fatal).
+ *
+ * The writer needs:
+ *
+ * CAP_IPC_LOCK -- ability to mmap and mlock pages.
+ * CAP_SYS_NICE -- ability to set RT scheduling priorities
+ *
+ * These capabilities should be in the CAP_PERMITTED set, but not in CAP_EFFECTIVE which was cleared
+ * when the main thread dropped privileges by changing to the desired non-root uid/gid.
+ */
+
+static int set_up_reader_capability() {
+  cap_t c = cap_get_proc();
+  const cap_value_t vs[] = { CAP_IPC_LOCK, CAP_SYS_NICE, };
+
+  cap_set_flag(c, CAP_EFFECTIVE, sizeof(vs)/sizeof(cap_value_t), &vs[0], CAP_SET);
+  return cap_set_proc(c);
 }
 
 /*
@@ -490,13 +511,13 @@ static void process_reader_command(void *s) {
 }
 
 /*
- * Set the reader thread to real-time priority, if RTPRIO is set...
+ * Set the READER thread to real-time priority, if RTPRIO is set...
  */
 
 int set_reader_rt_scheduling() {
 
-  if( reader.rtprio > 0 ) {	/* Then there is RT priority scheduling to set up */
-    if( set_rt_scheduling(reader.rtprio) < 0 )
+  if( reader_parameters.r_schedprio > 0 ) {	/* Then there is RT priority scheduling to set up */
+    if( set_rt_scheduling(reader_parameters.r_schedprio) < 0 )
       return -1;
 
     /* Successfully applied RT scheduling */
@@ -507,6 +528,7 @@ int set_reader_rt_scheduling() {
   return 0;
 }
 
+#if 0
 /*
  * Manage the write queue:  check the requested snapshot for acceptability.
  * Returns 1 for success, 0 for failure.
@@ -563,7 +585,12 @@ static void process_ready_write_queue_item(snapr *r) {
  * reply with an error.
  */
 
+#endif
+
 static void process_queue_message(void *s) {
+}
+
+#if 0
   int   ret;
   snapr *r = NULL;
 
@@ -599,6 +626,8 @@ static void process_queue_message(void *s) {
   assertv(ret > 0, "Failed to send message to writer\n");
 }
 
+#endif
+
 /*
  * Reader thread message loop
  */
@@ -620,10 +649,9 @@ static void reader_thread_msg_loop() {    /* Read and process messages */
       process_reader_command,
     };
 
-  zh_put_multi(log, 1, "Reader thread is initialised");
+  zh_put_multi(log, 1, "READER thread is initialised");
   reader.state = READER_PARAM;
-
-  print_rusage();
+  reader_parameters.r_running = true;
 
   /* CURRENT CODE FOR SETTING THE DATA START TIME WILL BE LATE ... ? */
 
@@ -633,6 +661,7 @@ static void reader_thread_msg_loop() {    /* Read and process messages */
     int delay = reader.poll_delay;
     int n;
 
+#if 0
     if( reader.adc_run ) {		/* If ADC is running, process data  */
 
       /* Process any items in the write queue that are now ready -- do this before reading new data */
@@ -673,6 +702,8 @@ static void reader_thread_msg_loop() {    /* Read and process messages */
       }
     }
 
+#endif
+
     ret = zmq_poll(&poll_list[0], N_POLL_ITEMS, delay);	/* Look for commands here */
     if( ret < 0 && errno == EINTR ) { /* Interrupted */
       zh_put_multi(log, 1, "Reader loop interrupted");
@@ -702,30 +733,34 @@ void *reader_main(void *arg) {
   char *thread_msg = "thread exit";
 
   create_reader_comms();
+  
+  if( set_up_reader_capability() < 0 ) {
+    zh_put_multi(log, 1, "READER thread capabilities are deficient");
+  }
 
   ret = set_reader_rt_scheduling();
   switch(ret) {
   case 1:
-    zh_put_multi(log, 1, "Reader RT scheduling succeeded");
+    zh_put_multi(log, 1, "READER RT scheduling succeeded");
     break;
   case 0:
-    zh_put_multi(log, 1, "Reader using normal scheduling: RTPRIO unset");
+    zh_put_multi(log, 1, "READER using normal scheduling: RTPRIO unset");
     break;
   default:
-    zh_put_multi(log, 2, "Reader RT scheduling setup failed: ", strerror(errno));
+    zh_put_multi(log, 2, "READER RT scheduling setup failed: ", strerror(errno));
     break;
   }
 
   struct timespec test_stamp;
   ret = clock_gettime(CLOCK_MONOTONIC, &test_stamp);
-  assertv(ret == 0, "Failed to get monotonic clock time\n");  
+  assertv(ret == 0, "Test failed to get monotonic clock time\n");  
 
   reader_thread_msg_loop();
   if(reader.state == READER_ARMED || reader.state == READER_RUN || reader.state == READER_RESTING) {
     comedi_stop_data_transfer();
   }
 
-  zh_put_multi(log, 1, "Reader thread terminating by return");
+  zh_put_multi(log, 1, "READER thread terminating by return");
 
   /* Clean up ZeroMQ sockets */
   zmq_close(wr_queue_reader);
