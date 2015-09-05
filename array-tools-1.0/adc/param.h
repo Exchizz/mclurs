@@ -40,10 +40,11 @@ typedef struct
 #define	PARAM_SRC_ARG	0x2
 #define	PARAM_SRC_CMD	0x4
 
-extern int push_param_value(param_t *, char *);
+extern int set_param_value(param_t *, char *);
 extern param_t *find_param_by_name(const char *, int, param_t [], int);
-extern int push_param_from_env(char *[], param_t [], int);
-extern int push_params_from_string(char *, param_t [], int);
+extern int set_param_from_env(char *[], param_t [], int);
+extern int set_params_from_string(char *, param_t [], int);
+extern int set_opt_params_from_string(char *, param_t [], int);
 extern int get_param_str(param_t *, const char **);
 // extern void param_brief_usage(char *, int, param_t [], int);
 // extern void param_option_usage(FILE *, int, param_t [], int);

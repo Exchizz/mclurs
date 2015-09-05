@@ -154,7 +154,7 @@ int main(int argc, char *argv[], char *envp[]) {
 
   /* Set up the standard parameters */
   /* 1. Process parameters:  internal default, then environment. */
-  push_param_from_env(envp, globals, n_global_params);
+  set_param_from_env(envp, globals, n_global_params);
 
   /* 2. Process parameters:  push values out to program globals */
   ret = assign_all_params(globals, n_global_params);

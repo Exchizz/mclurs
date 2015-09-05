@@ -416,9 +416,6 @@ static void compute_data_start_timestamp(struct timespec *ts, int ns) {
  * Process a reader command from main thread.  Generate replies as necessary.
  */
 
-#define	COMMAND_BUFSIZE		1024
-char command_buffer[COMMAND_BUFSIZE];
-
 static void process_reader_command(void *s) {
   int     used;
   int     ret;
@@ -439,7 +436,7 @@ static void process_reader_command(void *s) {
   err = strbuf_next(cmd);
 
   if(debug_level > 2)
-    zh_put_multi(log, 3, "Reader cmd: '", &command_buffer[0], "'");
+    zh_put_multi(log, 3, "Reader cmd: '", &cmd_buf[0], "'");
   switch(cmd_buf[0]) {
   case 'h':
   case 'H':
@@ -461,7 +458,7 @@ static void process_reader_command(void *s) {
     while( *p && !isspace(*p) ) p++; /* Are there parameters to process? */
     while( *p && isspace(*p) ) p++;
     if( *p ) {			       /* Assume yes if there is more string */
-      int ret = push_params_from_string(p, globals, n_global_params);
+      int ret = set_params_from_string(p, globals, n_global_params);
       if( ret < 0 ) { 
 	strbuf_printf(err, "NO: Param -- error at step %d: %m", -ret);
 	break;
@@ -519,7 +516,9 @@ static void process_reader_command(void *s) {
     strbuf_printf(err, "NO: Reader -- Unexpected reader command");
     break;
   }
-  zh_put_multi(log, 3, strbuf_string(err), "\n   ", &cmd_buf[0]); /* Error occurred, log it */
+  strbuf_revert(cmd);
+  zh_put_multi(log, 4, strbuf_string(err), "\n > '", &cmd_buf[0], "'"); /* Error occurred, log it */
+  strbuf_clear(cmd);
   zh_put_msg(s, 0, sizeof(strbuf), (void *)&err); /* return message */
 }
 

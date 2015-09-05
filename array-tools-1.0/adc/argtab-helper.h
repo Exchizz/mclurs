@@ -4,6 +4,7 @@
 #define _ARGTAB_HELPER_H
 
 #include "assert.h"
+#include "param.h"
 
 /*
  * Simplify definition of command line parsing tables 

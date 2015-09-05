@@ -280,7 +280,7 @@ static int process_dir_command(strbuf c) {
 
   /* Initialise the parameter value pointer */
   setval_param(&ps[SNAP_SETWD], (void **)&path);
-  err = push_params_from_string(strbuf_string(c), ps, nps);
+  err = set_opt_params_from_string(strbuf_string(c), ps, nps);
   if(err < 0) {
     strbuf_appendf(e, "parameter parsing error at position %d", -err);
     reset_param(&ps[SNAP_SETWD]);
@@ -578,7 +578,7 @@ static snap_t *build_snapshot_descriptor(strbuf c) {
   setval_param(&ps[SNAP_PATH],   (void **) &path);
 
   /* Process the S command parameters */
-  err = push_params_from_string(strbuf_string(c), ps, nps);
+  err = set_params_from_string(strbuf_string(c), ps, nps);
   if(err < 0) {			/* Error parsing command string */
     strbuf_appendf(e, "parameter parsing error at position %d", -err);
     goto FAIL;
@@ -935,7 +935,7 @@ int process_writer_command(void *s) {
 
   if(ret < 0) {
     strbuf_revert(cmd);
-    zh_put_multi(log, 3, strbuf_string(err), "\n  ", &cmd_buf[0]); /* Error occurred, log the problem */
+    zh_put_multi(log, 4, strbuf_string(err), "\n > '", &cmd_buf[0], "'"); /* Error occurred, log the problem */
   }
   strbuf_clear(cmd);
   zh_put_msg(s, 0, sizeof(strbuf), (void *)&err);

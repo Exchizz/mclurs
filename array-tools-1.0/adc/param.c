@@ -55,7 +55,7 @@ void setval_param(param_t *p, void **val) {
  * value is a permanent buffer, so just push.
  */
 
-int push_param_value(param_t *p, char *v) {
+int set_param_value(param_t *p, char *v) {
   /*  fprintf(stderr, "Pushing value %s\n", v); */
   if( !p->p_source ) {
     errno = EPERM;
@@ -95,7 +95,7 @@ param_t *find_param_by_name(const char *name, int sz, param_t ps[], int nps) {
  * environment variable's value replaces the parameter's value, if any.
  */
 
-int push_param_from_env(char *env[], param_t ps[], int nps) {
+int set_param_from_env(char *env[], param_t ps[], int nps) {
   int i;
 
   if( !env )
@@ -112,7 +112,7 @@ int push_param_from_env(char *env[], param_t ps[], int nps) {
       if( !strncasecmp(ps[i].p_name, *e, sz) ) {	/* Unless true, it's not this one */
 	if( ps[i].p_name[sz] )			/* If true, there is more name left over:  not this one */
 	  continue;
-	if( push_param_value(&ps[i], (*p ? p+1 : p)) < 0 )
+	if( set_param_value(&ps[i], (*p ? p+1 : p)) < 0 )
 	  return -1;
       }
     }
@@ -126,7 +126,7 @@ int push_param_from_env(char *env[], param_t ps[], int nps) {
  * cmd string is assumed NUL-terminated after the value.
  */
 
-int push_param_from_cmd(char *cmd, param_t ps[], int nps) {
+int set_param_from_cmd(char *cmd, param_t ps[], int nps) {
   char *s;
   param_t *p;
 
@@ -145,7 +145,7 @@ int push_param_from_cmd(char *cmd, param_t ps[], int nps) {
     errno = EINVAL;	  /* Name=Value string has no '=Value' part */
     return -1;
   }
-  return push_param_value(p, s);
+  return set_param_value(p, s);
 }
 
 /*
@@ -158,7 +158,7 @@ int push_param_from_cmd(char *cmd, param_t ps[], int nps) {
  * start.
  */
 
-int push_params_from_string(char *str, param_t ps[], int nps) {
+static int do_set_params_from_string(char *str, int opt, param_t ps[], int nps) {  
   char *save;
   char *cur;
   int   ret;
@@ -167,7 +167,7 @@ int push_params_from_string(char *str, param_t ps[], int nps) {
   cur = strtok_r(str, " \t", &save);
   if( cur == NULL ) {
     errno = EBADMSG;
-    return -1;
+    return opt? 0 : -1;		/* If parameters are optional, will succeed here for empty */
   }
   /* First parameter Name=Value should come next */
   while( (cur = strtok_r(NULL, " \t,;", &save)) != NULL ) {
@@ -175,11 +175,23 @@ int push_params_from_string(char *str, param_t ps[], int nps) {
       errno = EBADMSG;
       return str-cur;
     }
-    ret = push_param_from_cmd(cur, ps, nps);
+    ret = set_param_from_cmd(cur, ps, nps);
     if( ret < 0 )
       return str-cur;
   }
   return 0;
+}
+
+/* Parameters are compulasory */
+
+int set_params_from_string(char *str, param_t ps[], int nps) {
+  return do_set_params_from_string(str, 0, ps, nps);
+}
+
+/* String may be empty of parameters */
+
+int set_opt_params_from_string(char *str, param_t ps[], int nps) {
+  return do_set_params_from_string(str, 1, ps, nps);
 }
 
 /*

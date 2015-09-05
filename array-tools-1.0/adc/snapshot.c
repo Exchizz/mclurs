@@ -415,11 +415,14 @@ static int set_intr_sig_handler() {
 
 #define LOGBUF_SIZE	1024
 
-int process_log_message(void *socket) {
+int process_log_message(void *s) {
   char log_buffer[LOGBUF_SIZE];
   int used;
-
-  used = zh_collect_multi(socket, &log_buffer[0], LOGBUF_SIZE-1, " ");
+  static char pfx[] = "Log: ";
+  
+  memcpy(&log_buffer[0], &pfx[0], sizeof(pfx));
+  used = sizeof(pfx)-1;
+  used += zh_collect_multi(s, &log_buffer[used], LOGBUF_SIZE-1, "");
   if( log_buffer[used-1] != '\n') {
     log_buffer[used] = '\n';
     fwrite(log_buffer, used+1, 1, stderr);
@@ -500,21 +503,23 @@ static int process_reply(void *s) {
  */
 
 int process_snapshot_command() {
-  strbuf c_n_e;			/* Command and Error buffers */
+  strbuf c,e;			/* Command and Error buffers */
   char  *buf;
   int   size, ret;
   int   fwd;
 
-  c_n_e = alloc_strbuf(2);
-  buf = strbuf_string(c_n_e);
-  size = zh_get_msg(command, 0, strbuf_space(c_n_e), buf);
+  c = alloc_strbuf(2);
+  e = strbuf_next(c);
+
+  buf = strbuf_string(c);
+  size = zh_get_msg(command, 0, strbuf_space(c), buf);
   if( !size ) {
     ret = zh_put_msg(command, 0, 0, NULL); /* If empty message received, send empty reply at once */
-    release_strbuf(c_n_e);
+    release_strbuf(c);
     assertv(ret == 0, "Reply to command failed, %d\n", ret);
     return 0;
   }
-  strbuf_setpos(c_n_e, size);
+  strbuf_setpos(c, size);
   buf[size] = '\0';
   // fprintf(stderr, "Msg '%c' (%d)\n", buf[0], buf[0]);
   fwd = 0;
@@ -538,8 +543,8 @@ int process_snapshot_command() {
   case 'p':
   case 'P':
     /* Forward these commands to the READER thread */
-    ret = zh_put_msg(reader, 0, sizeof(strbuf), (void *)&c_n_e);
-    assertv(ret == sizeof(c_n_e), "Forward to READER failed, %d\n", ret);
+    ret = zh_put_msg(reader, 0, sizeof(strbuf), (void *)&c);
+    assertv(ret == sizeof(c), "Forward to READER failed, %d\n", ret);
     fwd++;
     break;
 
@@ -550,8 +555,8 @@ int process_snapshot_command() {
   case 'z':
   case 'Z':
     /* Forward snapshot and dir commands to WRITER */
-    ret = zh_put_msg(writer, 0, sizeof(strbuf), (void *)&c_n_e);
-    assertv(ret == sizeof(c_n_e), "Forward to WRITER failed, %d\n", ret);
+    ret = zh_put_msg(writer, 0, sizeof(strbuf), (void *)&c);
+    assertv(ret == sizeof(c), "Forward to WRITER failed, %d\n", ret);
     fwd++;
     break;
 
@@ -562,12 +567,14 @@ int process_snapshot_command() {
     break;
 
   default:
-    ret = zh_put_multi(command, 2, "Unknown command: ", buf);
-    assertv(ret == 0, "Reject unknown reply failed, %d\n", ret);
+    strbuf_printf(e, "NO: Unknown command: '%s'\n", buf);
+    fprintf(stderr, "%s: %s", program, strbuf_string(e));
+    ret = zh_put_msg(command, 0, strbuf_used(e) , strbuf_string(e));
+    assertv(ret == strbuf_used(e), "Reject unknown reply failed, %d\n", ret);
     break;
   }
   if( !fwd )			/* Didn't use the strbufs */
-    release_strbuf(c_n_e);
+    release_strbuf(c);
   return 0;
 }
 
@@ -594,7 +601,7 @@ static void main_thread_msg_loop() {    /* Read and process messages */
       process_reply,
     };
 
-  fprintf(stderr, "%s: starting MAIN thread polling loop with %d items\n", program, N_POLL_ITEMS);
+  fprintf(stderr, "Log: starting MAIN thread polling loop with %d items\n", N_POLL_ITEMS);
   running = true;
   poll_delay = MAIN_LOOP_POLL_INTERVAL;
   while(running && !die_die_die_now) {
@@ -634,13 +641,13 @@ int main(int argc, char *argv[], char *envp[]) {
 
   /* Set up the standard parameters */
   /* 1. Process parameters:  internal default, environment, then command-line argument. */
-  push_param_from_env(envp, globals, n_global_params);
+  set_param_from_env(envp, globals, n_global_params);
 
   /* 2. Process parameters:  push values out to program globals */
   ret = assign_all_params(globals, n_global_params);
   assertv(ret == n_global_params, "Push parameters missing some %d/%d done\n", ret, n_global_params);
 
-  if(debug_level > 2) {
+  if(verbose > 2) {
     fprintf(stderr, "Params before cmdline...\n");
     debug_params(stderr, globals, n_global_params);
   }
@@ -670,7 +677,8 @@ int main(int argc, char *argv[], char *envp[]) {
     exit(1);
   }
 
-  if(debug_level > 2) {
+  verbose = v2->count - q2->count;
+  if(verbose > 2) {
     fprintf(stderr, "Params before reverse pass...\n");
     debug_params(stderr, globals, n_global_params);
   }
@@ -680,7 +688,7 @@ int main(int argc, char *argv[], char *envp[]) {
 
   /* 5. Process parameters:  deal with non-parameter table arguments where necessary */
 
-  if(debug_level > 2) {
+  if(verbose > 0) {
     fprintf(stderr, "Params before checking...\n");
     debug_params(stderr, globals, n_global_params);
   }
@@ -721,7 +729,7 @@ int main(int argc, char *argv[], char *envp[]) {
     }
 
     uid = pwd->pw_uid;	/* Use this user's UID */
-    if(gid < 0)
+    if(gid == -1)
       gid = pwd->pw_gid;	/* Use this user's principal GID */
   }
   else {
@@ -729,36 +737,37 @@ int main(int argc, char *argv[], char *envp[]) {
     gid = getgid();		/* Use the real GID of this thread */
   }
 
+  /* 5b. Check capabilities and drop privileges */
+  if( snap_adjust_capabilities() < 0 ) {
+    exit(2);
+  }
+  if( main_adjust_capabilities(uid, gid) < 0 ) {
+    exit(2);
+  }
+
   strbuf e = alloc_strbuf(1);	/* Catch parameter error diagnostics */
 
-   /* 5b. Verify and initialise parameters for the reader thread */
+   /* 5c. Verify and initialise parameters for the reader thread */
   if( !reader_parameters.r_schedprio )
     reader_parameters.r_schedprio = schedprio;
-  strbuf_printf(e, "READER Params: ");
+  strbuf_printf(e, "%s: Error -- READER Params: ", program);
   ret = verify_reader_params(&reader_parameters, e);
   if( ret < 0 ) {
     fprintf(stderr, "%s\n", strbuf_string(e));
-    exit(2);
+    exit(3);
   }
 
-  /* 5c. Verify and initialise parameters for the writer thread */
+  /* 5d. Verify and initialise parameters for the writer thread */
   if( !writer_parameters.w_schedprio)
     writer_parameters.w_schedprio = schedprio;
-  strbuf_printf(e, "WRITER Params: ");
+  strbuf_printf(e, "%s: Error -- WRITER Params: ", program);
   ret = verify_writer_params(&writer_parameters, e);
   if( ret < 0 ) {
     fprintf(stderr, "%s\n", strbuf_string(e));
-    exit(2);
+    exit(3);
   }
 
   release_strbuf(e);
-
-  if( snap_adjust_capabilities() < 0 ) {		/* Check and drop capabilities */
-    exit(3);
-  }
-  if( main_adjust_capabilities(uid, gid) < 0 ) {	/* Change to target user */
-    exit(3);
-  }
 
 #if 0
   /* Disabled for now */
@@ -814,7 +823,7 @@ int main(int argc, char *argv[], char *envp[]) {
     }
     else {
       if( thread_return ) {
-	fprintf(stderr, "%s: READER thread rejoined -- %s\n", program, thread_return);
+	fprintf(stderr, "Log: READER thread rejoined -- %s\n", thread_return);
 	thread_return = NULL;
       }
     }
@@ -826,7 +835,7 @@ int main(int argc, char *argv[], char *envp[]) {
     }
     else {
       if( thread_return ) {
-	fprintf(stderr, "%s: WRITER thread rejoined -- %s\n", program, thread_return);
+	fprintf(stderr, "Log: WRITER thread rejoined -- %s\n", thread_return);
 	thread_return = NULL;
       }
     }
@@ -838,7 +847,7 @@ int main(int argc, char *argv[], char *envp[]) {
   }
   else {
     if( thread_return ) {
-      fprintf(stderr, "%s: TIDY   thread rejoined -- %s\n", program, thread_return);
+      fprintf(stderr, "Log: TIDY   thread rejoined -- %s\n", thread_return);
       thread_return = NULL;
     }
   }
