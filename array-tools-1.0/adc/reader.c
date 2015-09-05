@@ -28,6 +28,7 @@
 #include "ring.h"
 #include "lut.h"
 #include "snapshot.h"
+#include "tidy.h"
 #include "reader.h"
 #include "writer.h"
 
@@ -135,6 +136,7 @@ static struct comedi_state	adc;	/* Comedi state + parameters */
  */
 
 static void *wr_queue_reader;
+static void *tidy;
 static void *log;
 static void *command;
 
@@ -147,6 +149,17 @@ static void create_reader_comms() {
   assertv(log != NULL, "Failed to instantiate reader log socket\n");
   wr_queue_reader = zh_bind_new_socket(snapshot_zmq_ctx, ZMQ_PAIR, READER_QUEUE_ADDR);
   assertv(wr_queue_reader != NULL, "Failed to instantiate reader queue socket\n");
+  tidy     = zh_connect_new_socket(snapshot_zmq_ctx, ZMQ_PAIR, TIDY_SOCKET);  /* Socket to TIDY thread */
+  assertv(tidy != NULL, "Failed to instantiate reader->tidy socket\n");
+}
+
+/* Close everything created above. */
+
+static void close_reader_comms() {
+  zmq_close(command);
+  zmq_close(log);
+  zmq_close(wr_queue_reader);
+  zmq_close(tidy);
 }
 
 /*
@@ -730,7 +743,7 @@ static void reader_thread_msg_loop() {    /* Read and process messages */
 
 void *reader_main(void *arg) {
   int ret;
-  char *thread_msg = "thread exit";
+  char *thread_msg = "normal exit";
 
   create_reader_comms();
   
@@ -760,12 +773,12 @@ void *reader_main(void *arg) {
     comedi_stop_data_transfer();
   }
 
-  zh_put_multi(log, 1, "READER thread terminating by return");
+  zh_put_msg(tidy, 0, 0, NULL);	/* Tell TIDY thread to finish */
 
-  /* Clean up ZeroMQ sockets */
-  zmq_close(wr_queue_reader);
-  zmq_close(command);
-  zmq_close(log);
+  zh_put_multi(log, 1, "READER thread terminates by return");
+
+  /* Clean up our ZeroMQ sockets */
+  close_reader_comms();
   reader_parameters.r_running = false;
   return (void *) thread_msg;
 }

@@ -11,6 +11,7 @@
 #include <fcntl.h>
 #include <pwd.h>
 #include <grp.h>
+#include <signal.h>
 #include <argtable2.h>
 #include "argtab.h"
 
@@ -271,6 +272,14 @@ static int create_main_comms() {
   return 0;
 }
 
+/* Close everything created above */
+
+static void close_main_comms() {
+  zmq_close(reader);
+  zmq_close(writer);
+  zmq_close(command);
+}
+
 /*
  * Sort out the capabilities required by the process.  (If not running
  * as root, check that we have the capabilities we require.)  Release
@@ -374,6 +383,27 @@ static int main_adjust_capabilities(uid_t uid, gid_t gid) {
     return -1;
   }
 
+  return 0;
+}
+
+/*
+ * Deal nicely with the interrupt signal.
+ * Basically, the signal sets the die_die_die_now flag which the various threads notice.
+ */
+
+static void intr_handler(int i) {
+  die_die_die_now++;
+}
+
+static int set_intr_sig_handler() {
+  struct sigaction a;
+
+  bzero(&a, sizeof(a));
+  a.sa_handler = intr_handler;
+  if( sigaction(SIGINT, &a, NULL) < 0 ) {
+    fprintf(stderr, "%s: Error -- unable to install INT signal handler: %s\n", program, strerror(errno));
+    return -1;
+  }
   return 0;
 }
 
@@ -542,7 +572,7 @@ int process_snapshot_command() {
 }
 
 /*
- * Main thread message loop
+ * MAIN thread message loop
  */
 
 #define	MAIN_LOOP_POLL_INTERVAL	20
@@ -564,7 +594,7 @@ static void main_thread_msg_loop() {    /* Read and process messages */
       process_reply,
     };
 
-  fprintf(stderr, "%s: starting main thread polling loop with %d items\n", program, N_POLL_ITEMS);
+  fprintf(stderr, "%s: starting MAIN thread polling loop with %d items\n", program, N_POLL_ITEMS);
   running = true;
   poll_delay = MAIN_LOOP_POLL_INTERVAL;
   while(running && !die_die_die_now) {
@@ -572,7 +602,7 @@ static void main_thread_msg_loop() {    /* Read and process messages */
     int ret = zmq_poll(&poll_list[0], N_POLL_ITEMS, poll_delay);
 
     if( ret < 0 && errno == EINTR ) { /* Interrupted */
-      fprintf(stderr, "%s: main thread loop interrupted\n", program);
+      fprintf(stderr, "%s: MAIN thread loop interrupted\n", program);
       break;
     }
     if(ret < 0)
@@ -583,7 +613,7 @@ static void main_thread_msg_loop() {    /* Read and process messages */
     for(n=0; n<N_POLL_ITEMS; n++) {
       if( poll_list[n].revents & ZMQ_POLLIN ) {
 	ret = (*poll_responders[n])(poll_list[n].socket);
-	assertv(ret >= 0, "Error in message processing in main poll loop, ret %d\n", ret);
+	assertv(ret >= 0, "Error in message processing in MAIN poll loop, ret %d\n", ret);
 	running = true;
       }
     }
@@ -723,17 +753,24 @@ int main(int argc, char *argv[], char *envp[]) {
 
   release_strbuf(e);
 
-  if(snap_adjust_capabilities() < 0) {		/* Check and drop capabilities */
+  if( snap_adjust_capabilities() < 0 ) {		/* Check and drop capabilities */
     exit(3);
   }
-  if(main_adjust_capabilities(uid, gid) < 0) {	/* Change to target user */
+  if( main_adjust_capabilities(uid, gid) < 0 ) {	/* Change to target user */
     exit(3);
   }
+
+#if 0
+  /* Disabled for now */
+  if( set_intr_sig_handler() < 0 ) {
+    exit(3);
+  }
+#endif
 
   /* Create the TIDY thread */
   pthread_attr_init(&tidy_thread_attr);
   if( pthread_create(&tidy_thread, &tidy_thread_attr, tidy_main, &log_socket) < 0 ) {
-    fprintf(stderr, "%s: Error -- TIDY thread creation failed: %s\n", program, strerror(errno));
+    fprintf(stderr, "%s: Error -- TIDY   thread creation failed: %s\n", program, strerror(errno));
     exit(4);
   }
 
@@ -769,7 +806,7 @@ int main(int argc, char *argv[], char *envp[]) {
   }
   main_thread_msg_loop();
 
-  /* Tidy up threads */
+  /* Clean up the various threads */
   if(reader_thread) {
     if( pthread_join(reader_thread, (void *)&thread_return) < 0 ) {
       fprintf(stderr, "%s: Error -- READER thread join error: %s\n", program, strerror(errno));
@@ -796,21 +833,21 @@ int main(int argc, char *argv[], char *envp[]) {
   }
 
   if( pthread_join(tidy_thread, (void *)&thread_return) < 0 ) {
-    fprintf(stderr, "%s: Error -- TIDY thread join error: %s\n", program, strerror(errno));
+    fprintf(stderr, "%s: Error -- TIDY   thread join error: %s\n", program, strerror(errno));
     thread_return = NULL;
   }
   else {
     if( thread_return ) {
-      fprintf(stderr, "%s: TIDY thread rejoined -- %s\n", program, thread_return);
+      fprintf(stderr, "%s: TIDY   thread rejoined -- %s\n", program, thread_return);
       thread_return = NULL;
     }
   }
 
-  /* Clean up ZeroMQ sockets and context */
+  /* Clean up our ZeroMQ sockets */
+  close_main_comms();
+  
+  /* These were created by the TIDY thread */
   zmq_close(log_socket);
-  zmq_close(reader);
-  zmq_close(writer);
-  zmq_close(command);
   zmq_ctx_term(snapshot_zmq_ctx);
   exit(0);
 }

@@ -149,6 +149,14 @@ static void create_writer_comms() {
   assertv(reader != NULL,  "Failed to instantiate reader queue socket\n");
 }
 
+/* CLose everything created above */
+
+static void close_writer_comms() {
+  zmq_close(log);
+  zmq_close(reader);
+  zmq_close(command);
+}
+
 /*
  * Copy the necessary capabilities from permitted to effective set (failure is fatal).
  *
@@ -1003,12 +1011,10 @@ void *writer_main(void *arg) {
   }
   
   writer_thread_msg_loop();
-  zh_put_multi(log, 1, "WRITER thread is terminating by return");
+  zh_put_multi(log, 1, "WRITER thread terminates by return");
 
-  /* Clean up ZeroMQ sockets */
-  zmq_close(log);
-  zmq_close(reader);
-  zmq_close(command);
+  /* Clean up our ZeroMQ sockets */
+  close_writer_comms();
   writer_parameters.w_running = false;
   return (void *)"normal exit";
 }
