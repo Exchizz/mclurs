@@ -205,7 +205,7 @@ int set_writer_rt_scheduling() {
 static void debug_writer_params() {
   char buf[MSGBUFSIZE];
 
-  if(debug_level<1)
+  if(verbose<1)
     return;
 
   snprintf(buf, MSGBUFSIZE,

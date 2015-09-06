@@ -645,7 +645,7 @@ int main(int argc, char *argv[], char *envp[]) {
 
   /* 2. Process parameters:  push values out to program globals */
   ret = assign_all_params(globals, n_global_params);
-  assertv(ret == n_global_params, "Push parameters missing some %d/%d done\n", ret, n_global_params);
+  assertv(ret == 0, "Push parameters failed on param %d out of %d\n", -ret, n_global_params);
 
   if(verbose > 2) {
     fprintf(stderr, "Params before cmdline...\n");

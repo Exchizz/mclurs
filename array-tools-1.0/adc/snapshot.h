@@ -13,7 +13,7 @@ extern void       *zmq_main_ctx;
 extern param_t	   globals[];
 extern const int   n_global_params;
 
-extern int	   debug_level;
+extern int	   verbose;
 
 extern int	   die_die_die_now;
 

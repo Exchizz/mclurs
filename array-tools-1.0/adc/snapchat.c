@@ -158,7 +158,7 @@ int main(int argc, char *argv[], char *envp[]) {
 
   /* 2. Process parameters:  push values out to program globals */
   ret = assign_all_params(globals, n_global_params);
-  assertv(ret == n_global_params, "Push parameters missing some %d/%d done\n", ret, n_global_params); /* If not, there is a coding problem */
+  assertv(ret == 0, "Push parameters failed on param %d out of %d\n", -ret, n_global_params);
 
   /* 3. Create and parse the command lines -- installs defaults from parameter table */
   void **cmd_help = arg_make_help();
@@ -237,11 +237,18 @@ int main(int argc, char *argv[], char *envp[]) {
 	int  len;
       
 	len = snprintf(&buf[used], left, "%s ", msg[n]);
+	if(len >= left) {
+	  len=left;
+	  fprintf(stderr, "%s: ran out of space composing message '%s'\n", program, &buf[0]);
+	  exit(2);
+	}
 	if(verbose > 1)
 	  fprintf(stderr, " [%s]", buf);
 	used += len;
 	left -= len;
       }
+      if(used)
+	used--;
     }
     else {
       used = snprintf(&buf[0], LOGBUF_SIZE-1, "%s", *msg++);
@@ -254,7 +261,7 @@ int main(int argc, char *argv[], char *envp[]) {
       fprintf(stderr, "\n");
 
     /* Send the message, omit the final null */
-    ret = zh_put_msg(snapshot, 0, used-1, buf);
+    ret = zh_put_msg(snapshot, 0, used, buf);
     if( ret < 0 ) {
       fprintf(stderr, "\n%s: Error -- sending message failed: %s\n", program, strerror(errno));
       zmq_close(snapshot);

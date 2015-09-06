@@ -161,15 +161,18 @@ int set_param_from_cmd(char *cmd, param_t ps[], int nps) {
 static int do_set_params_from_string(char *str, int opt, param_t ps[], int nps) {  
   char *save;
   char *cur;
+  int   done;
   int   ret;
 
   /* Initialise the strtok_r scan: skip to space */
   cur = strtok_r(str, " \t", &save);
   if( cur == NULL ) {
     errno = EBADMSG;
-    return opt? 0 : -1;		/* If parameters are optional, will succeed here for empty */
+    return opt? 0 : -1;		/* If parameters are optional, may succeed here for empty */
   }
+
   /* First parameter Name=Value should come next */
+  done = 0;
   while( (cur = strtok_r(NULL, " \t,;", &save)) != NULL ) {
     if( !isalpha(*cur) ) {
       errno = EBADMSG;
@@ -178,8 +181,9 @@ static int do_set_params_from_string(char *str, int opt, param_t ps[], int nps) 
     ret = set_param_from_cmd(cur, ps, nps);
     if( ret < 0 )
       return str-cur;
+    done++;
   }
-  return 0;
+  return (done || opt)? 0 : -1;
 }
 
 /* Parameters are compulasory */
@@ -242,16 +246,33 @@ int assign_param(param_t *p) {
  */
 
 int assign_all_params(param_t ps[], int nps) {
-  int n, done;
+  int n;
 
-  done = 0;
   for(n=0; n<nps; n++) {
     param_t *p = &ps[n];
 
-    if(assign_param(p) == 0)
-      done++;
+    if(assign_param(p) < 0)
+      return -1-n;
   }
-  return done;
+  return 0;
+}
+
+/*
+ * Same as above but only for parameters sourced from commands.
+ */
+
+int assign_cmd_params(param_t ps[], int nps) {
+  int n;
+
+  for(n=0; n<nps; n++) {
+    param_t *p = &ps[n];
+
+    if( p->p_source & PARAM_SRC_CMD ) {
+      if(assign_param(p) < 0)
+	return -n-1;
+    }
+  }
+  return 0;
 }
 
 /*

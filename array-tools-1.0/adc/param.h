@@ -53,6 +53,7 @@ extern void reset_param(param_t *);
 extern void setval_param(param_t *, void **);
 extern int assign_param(param_t *);
 extern int assign_all_params(param_t *, int);
+extern int assign_cmd_params(param_t *, int);
 extern int param_value_to_string(param_t *, const char **);
 extern int arg_defaults_from_params(void **, int, param_t [], int);
 extern int arg_results_to_params(void **, param_t [], int);

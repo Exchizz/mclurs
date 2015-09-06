@@ -14,16 +14,18 @@
  */
 
 typedef struct {
-  double      r_frequency;	/* Total sampling frequency */
+  double      r_frequency;	/* Per-channel sampling frequency */
   int         r_schedprio;	/* Reader real-time priority */
   int         r_bufsz;		/* Reader buffer size */
   double      r_window;		/* Snapshot window (must fit in buffer) */
   const char *r_device;		/* Comedi device to use */
 
   /* These below are computed by the reader and exported */
+  double      r_tot_frequency;	    /* [Hz] total sampling frequency */
   int	      r_inter_sample_ns;    /* [ns] for one sample */
   uint64_t    r_capture_start_time; /* [ns from epoch] */
   int	      r_running;	    /* Thread is running and ready */
+  int	      r_state;		    /* Internal READER FSM state */
 }
   rparams;
 

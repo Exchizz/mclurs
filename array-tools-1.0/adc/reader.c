@@ -337,7 +337,7 @@ static int comedi_transfer_initialise() {
   adc.poll_adc_interval = buf_window / 1000000; /* Convert to [ms] */
   //  fprintf(stderr, "Init step 7 complete:  buf window=%Lu poll interval=%d\n", buf_window, adc.poll_adc_interval);
 
-  reader.state = READER_RESTING;
+  reader_parameters.r_state = READER_RESTING;
   return 0;
 }
 
@@ -352,7 +352,7 @@ static int comedi_transfer_initialise() {
 static int comedi_start_data_transfer() {
   int   ret;
 
-  if( reader.state != READER_RESTING ) {
+  if( reader_parameters.r_state != READER_RESTING ) {
     errno = ENOTSUP;
     return -1;
   }
@@ -363,7 +363,7 @@ static int comedi_start_data_transfer() {
     return -2;
 
   /* Loop reading data into the ring buffer */
-  reader.state = READER_ARMED;
+  reader_parameters.r_state = READER_ARMED;
   reader.poll_delay = adc.poll_adc_interval; /* Calculated on data transfer rate */
   reader.adc_run = 1;
   return 0;
@@ -389,7 +389,7 @@ static int comedi_stop_data_transfer() {
   destroy_ring_buffer(adc.ring_buf);
   reader_parameters.r_inter_sample_ns = 0;
   reader_parameters.r_capture_start_time = 0;
-  reader.state = READER_PARAM;
+  reader_parameters.r_state = READER_PARAM;
   reader.adc_run = 0;
   reader.poll_delay = -1;	/* No data expected */
   return 0;
@@ -414,112 +414,130 @@ static void compute_data_start_timestamp(struct timespec *ts, int ns) {
 
 /*
  * Process a reader command from main thread.  Generate replies as necessary.
+ * Returns true if processing messages should continue.
  */
 
-static void process_reader_command(void *s) {
-  int     used;
-  int     ret;
-  char   *p;
-  strbuf  cmd;
-  char   *cmd_buf;
-  strbuf  err;
+static int process_reader_command(void *s) {
+  rparams *rp = &reader_parameters;
+  int      used;
+  int      ret;
+  strbuf   cmd;
+  char    *cmd_buf;
+  strbuf   err;
 
   used = zh_get_msg(s, 0, sizeof(strbuf), &cmd);
   if( !used ) {			/* It was a quit message */
-    if(reader.state == READER_ARMED || reader.state == READER_RUN || reader.state == READER_RESTING)
-      comedi_stop_data_transfer();
+    if(rp->r_state == READER_ARMED || rp->r_state == READER_RUN || rp->r_state == READER_RESTING)
+      ;// comedi_stop_data_transfer();
     reader.stoploop = true;	/* No more waiting in the main loop */
-    return;
+    return false;
   }
 
   cmd_buf = strbuf_string(cmd);
   err = strbuf_next(cmd);
 
-  if(debug_level > 2)
-    zh_put_multi(log, 3, "Reader cmd: '", &cmd_buf[0], "'");
-  switch(cmd_buf[0]) {
-  case 'h':
-  case 'H':
-    if( reader.state != READER_ARMED && reader.state != READER_RUN ) {
-      strbuf_printf(err, "NO: Halt issued but not in ARMED or RUN state");
-      break;
-    }
-    comedi_stop_data_transfer();
-    strbuf_printf(err, "OK Halt");
-    break;
+  if(verbose > 1)
+    zh_put_multi(log, 3, "READER cmd: '", &cmd_buf[0], "'");
 
+  ret = 0;
+  switch(cmd_buf[0]) {
   case 'p':
   case 'P':
-    if( reader.state != READER_PARAM && reader.state != READER_RESTING && reader.state != READER_ERROR ) {
+    if( rp->r_state != READER_PARAM && rp->r_state != READER_RESTING && rp->r_state != READER_ERROR ) {
       strbuf_printf(err, "NO: Param issued but not in PARAM, RESTING or ERROR state");
+      ret = -1;
       break;
     }
-    p=&cmd_buf[1];
-    while( *p && !isspace(*p) ) p++; /* Are there parameters to process? */
-    while( *p && isspace(*p) ) p++;
-    if( *p ) {			       /* Assume yes if there is more string */
-      int ret = set_params_from_string(p, globals, n_global_params);
-      if( ret < 0 ) { 
-	strbuf_printf(err, "NO: Param -- error at step %d: %m", -ret);
-	break;
-      }
-      /* Otherwise, succeeded in updating parameters */
-      strbuf_printf(err, "NO: Param -- verify error: ");
-      ret = verify_reader_params(&reader_parameters, err);
-      if( ret < 0 ) { 
-        break;
-      }
+    ret = set_params_from_string(&cmd_buf[0], globals, n_global_params);
+    if( ret < 0 ) { 
+      strbuf_printf(err, "NO: Param -- parse error at position %d", -ret);
+      break;
+    }
+    ret = assign_cmd_params(globals, n_global_params);
+    if( ret < 0 ) { 
+      strbuf_printf(err, "NO: Param -- assign error on param %d: %m", -ret);
+      break;
+    }
+
+    /* Otherwise, succeeded in updating parameters */
+    strbuf_printf(err, "NO: Param -- verify error: ");
+    ret = verify_reader_params(&reader_parameters, err);
+    if( ret < 0 ) { 
+      break;
     }
     strbuf_printf(err, "OK Param");
-    reader.state = READER_PARAM;
-    if(debug_level > 1)
-      debug_params(stderr, globals, n_global_params);
-    return;
+    rp->r_state = READER_PARAM;
+    break;
 
   case 'i':
   case 'I':
-    if( reader.state != READER_PARAM ) {
+    if( rp->r_state != READER_PARAM ) {
       strbuf_printf(err, "NO: Init issued but not in PARAM state");
+      ret = -1;
       break;
     }
     strbuf_printf(err, "NO: Init -- param verify error: ");
     ret = verify_reader_params(&reader_parameters, err);
     if( ret < 0 ) {
-      reader.state = READER_ERROR;
+      rp->r_state = READER_ERROR;
       break;
     }
-    ret = comedi_transfer_initialise();
+    ret = 0; // comedi_transfer_initialise();
     if( ret < 0 ) {
-      reader.state = READER_ERROR;
+      rp->r_state = READER_ERROR;
       strbuf_printf(err, "NO: Init -- error at step %d: %m", -ret);
       break;
     }
-    strbuf_printf(err, "OK Init");
+    if(verbose > 0) {		/* Borrow the err buffer */
+      strbuf_printf(err, "READER Init with dev %s, freq %g [Hz], isp %d [ns] and buf %d [MiB]",
+		    rp->r_device, rp->r_frequency, rp->r_inter_sample_ns, rp->r_bufsz);
+      zh_put_multi(log, 1, strbuf_string(err)); 
+    }
+    strbuf_printf(err, "OK Init -- isp %d [ns]", rp->r_inter_sample_ns);
+    rp->r_state = READER_RESTING;
     break;
 
   case 'g':
   case 'G':
-    if( reader.state != READER_RESTING ) {
+    if( rp->r_state != READER_RESTING ) {
       strbuf_printf(err, "NO: Go issued but not in RESTING state");
+      ret = -1;
       break;
     }
-    ret = comedi_start_data_transfer();
+    ret = 0; // comedi_start_data_transfer();
     if( ret < 0 ) {
-      reader.state = READER_ERROR;
+      rp->r_state = READER_ERROR;
       strbuf_printf(err, "NO: Go error at step %d: %m", -ret);
       break;
-    }      
+    }
     strbuf_printf(err, "OK Go");
+    rp->r_state = READER_ARMED;
+    break;
+
+  case 'h':
+  case 'H':
+    if( rp->r_state != READER_ARMED && rp->r_state != READER_RUN ) {
+      strbuf_printf(err, "NO: Halt issued but not in ARMED or RUN state");
+      ret = -1;
+      break;
+    }
+    // comedi_stop_data_transfer();
+    strbuf_printf(err, "OK Halt");
+    rp->r_state = READER_PARAM;
     break;
 
   default:
     strbuf_printf(err, "NO: Reader -- Unexpected reader command");
+    ret = -1;
     break;
   }
-  strbuf_revert(cmd);
-  zh_put_multi(log, 4, strbuf_string(err), "\n > '", &cmd_buf[0], "'"); /* Error occurred, log it */
+  if( ret < 0 ) {
+    strbuf_revert(cmd);
+    zh_put_multi(log, 4, strbuf_string(err), "\n > '", &cmd_buf[0], "'"); /* Error occurred, log it */
+  }
   strbuf_clear(cmd);
   zh_put_msg(s, 0, sizeof(strbuf), (void *)&err); /* return message */
+  return true;
 }
 
 /*
@@ -599,7 +617,8 @@ static void process_ready_write_queue_item(snapr *r) {
 
 #endif
 
-static void process_queue_message(void *s) {
+static int process_queue_message(void *s) {
+  return true;
 }
 
 #if 0
@@ -610,7 +629,7 @@ static void process_queue_message(void *s) {
   assertv(ret == sizeof(snapr *), "Reader receives wrongly sized message: %d got vs %d expected\n", ret, sizeof(snapr *));
   assertv(r != NULL, "Received NULL pointer from writer\n");
 
-  if(reader.state != READER_ARMED && reader.state != READER_RUN) {
+  if(reader_parameters.r_state != READER_ARMED && reader_parameters.r_state != READER_RUN) {
     r->rd_state = SNAPSHOT_STOPPED; /* Snapshot fine but cannot do it */
   }
   else {
@@ -646,8 +665,8 @@ static void process_queue_message(void *s) {
 
 static void reader_thread_msg_loop() {    /* Read and process messages */
   int ret;
+  int running;
 
-  reader.stoploop = false;
   reader.poll_delay = -1;
 
   /* Main loop:  read messages and process messages */
@@ -656,21 +675,22 @@ static void reader_thread_msg_loop() {    /* Read and process messages */
       { command, 0, ZMQ_POLLIN, 0 },
     };
 #define	N_POLL_ITEMS	(sizeof(poll_list)/sizeof(zmq_pollitem_t))
-  void (*poll_responders[N_POLL_ITEMS])(void *) =
+  int (*poll_responders[N_POLL_ITEMS])(void *) =
     { process_queue_message,
       process_reader_command,
     };
 
   zh_put_multi(log, 1, "READER thread is initialised");
-  reader.state = READER_PARAM;
+  reader_parameters.r_state = READER_PARAM;
   reader_parameters.r_running = true;
+  running = true;
 
   /* CURRENT CODE FOR SETTING THE DATA START TIME WILL BE LATE ... ? */
 
-  while( !reader.stoploop ) {
+  while( running && !die_die_die_now ) {
     int ret; 
     int nb;
-    int delay = reader.poll_delay;
+    int delay = 10;
     int n;
 
 #if 0
@@ -692,12 +712,12 @@ static void reader_thread_msg_loop() {    /* Read and process messages */
       if(nb) {
 	int ns = nb / sizeof(sampl_t);
 
-	if( reader.state != READER_RUN ) { /* First data has arrived */
+	if( reader_parameters.r_state != READER_RUN ) { /* First data has arrived */
 	  struct timespec start_stamp;
 
 	  clock_gettime(CLOCK_MONOTONIC, &start_stamp);
 	  compute_data_start_timestamp(&start_stamp, ns);
-	  reader.state = READER_RUN;
+	  reader_parameters.r_state = READER_RUN;
 	}
 
 	/* NEED TO WORRY HERE ABOUT DATA THAT IS BEING FLUSHED TO FILE */
@@ -726,7 +746,7 @@ static void reader_thread_msg_loop() {    /* Read and process messages */
 
     for(n=0; n<N_POLL_ITEMS; n++) {
       if( poll_list[n].revents & ZMQ_POLLIN ) {
-	(*poll_responders[n])(poll_list[n].socket);
+	running = running & (*poll_responders[n])(poll_list[n].socket); /* N.B. not && */
       }
     }
   }
@@ -768,7 +788,7 @@ void *reader_main(void *arg) {
   assertv(ret == 0, "Test failed to get monotonic clock time\n");  
 
   reader_thread_msg_loop();
-  if(reader.state == READER_ARMED || reader.state == READER_RUN || reader.state == READER_RESTING) {
+  if(reader_parameters.r_state == READER_ARMED || reader_parameters.r_state == READER_RUN || reader_parameters.r_state == READER_RESTING) {
     comedi_stop_data_transfer();
   }
 
@@ -806,17 +826,20 @@ int verify_reader_params(rparams *rp, strbuf e) {
     return -1;
   }
   else {
-    int ns = 1e9 / (rp->r_frequency*NCHAN); /* Inter-sample period */
-    /* Correct for 30[MHz] USBDUXfast clock rate */
-    reader.sample_ns = 100 * (ns / 100);
-    if( (ns % 100) > 17 && (ns % 100) < 50 )
-      reader.sample_ns += 33;
-    if( (ns % 100) >= 50 && (ns % 100) < 83 )
-      reader.sample_ns += 67;
-    if( (ns & 100) >= 84 )
-      reader.sample_ns += 100;
-    rp->r_inter_sample_ns = reader.sample_ns; /* Need a plausible value at all times for computing snapshot data */
-    rp->r_frequency = 1e9 / reader.sample_ns;
+    int ns   = 1e9 / (rp->r_frequency*NCHAN); /* Inter-sample period */
+    int xtra = ns % 100;
+
+    /* Adjust period for 30[MHz] USBDUXfast clock rate */
+    ns = 100 * (ns / 100);
+    if( xtra > 17 && xtra < 50 )
+      ns += 33;
+    if( xtra >= 50 && xtra < 83 )
+      ns += 67;
+    if( xtra >= 84 )
+      ns += 100;
+    rp->r_inter_sample_ns = ns; /* Need a plausible value at all times for computing snapshot data */
+    rp->r_tot_frequency = 1e9 / ns;
+    rp->r_frequency = rp->r_tot_frequency / NCHAN;
   }
 
   if(rp->r_window < 1 || rp->r_window > 30) {
@@ -837,37 +860,6 @@ int verify_reader_params(rparams *rp, strbuf e) {
 
   reader.comedi_device = rp->r_device;
 
-#if 0
-  p = find_param_by_name("permu", 5, ps, nps);
-  assert( p != NULL );		/* Fatal if parameter not found */
-
-  if( get_param_value(p, &v) == 0 ) { /* WINDOW value set */
-    double temp;
-    int permu;
-
-    if( assign_value(p->p_type, v, &permu) < 0 )
-      return -5;
-    if( permu < 1 || permu > 15000 ) {
-      errno = ERANGE;
-      return -5;
-    }
-
-    temp = permu*reader.bufsz;
-    temp *= 1024*1024;
-    temp /= sysconf(_SC_PAGESIZE);
-
-    if( temp < 1000000 ) {				/* Want at least one page */
-      temp = 1000000*sysconf(_SC_PAGESIZE);
-      temp /= reader.bufsz;
-      temp /= 1024*1024;
-      permu = (int)(temp + 0.5);			/* If PERMU is less than one page, increase it... */
-    }
-    reader.permu = permu;
-  }
-  else {
-    return -5;
-  }
-#endif
-  reader.state = READER_PARAM;
+  rp->r_state = READER_PARAM;
   return 0;
 }
