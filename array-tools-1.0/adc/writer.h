@@ -19,6 +19,7 @@ typedef struct {
   int	       w_chunksize;
 
   /* The values below are computed and exported */
+  int	       w_nframes;	/* The number of transfer frames prepared */
   int	       w_snap_dirfd;	/* The snapdir path fd */
   int	       w_snap_curfd;	/* The path fd of the 'working' directory */
   int	       w_running;	/* Thread is running and ready */

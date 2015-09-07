@@ -82,6 +82,8 @@ void *tidy_main(void *arg) {
     return (void *) err;
   }
 
+  zh_put_multi(log, 1, "TIDY   thread initialised");
+  
   while( ret = zh_get_msg(tidy, 0, sizeof(block), &b) && !die_die_die_now ) {
     assertv(ret > 0, "TIDY read message error, ret=%d\n", ret);
     if(b.b_data == NULL)

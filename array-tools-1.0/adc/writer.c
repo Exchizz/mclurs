@@ -204,12 +204,13 @@ int set_writer_rt_scheduling() {
 
 static void debug_writer_params() {
   char buf[MSGBUFSIZE];
+  wparams *wp = &writer_parameters;
 
   if(verbose<1)
     return;
 
-  snprintf(buf, MSGBUFSIZE,
-	   "Writer: TMPDIR=%s, SNAPDIR=%s\n", tmpdir_path, writer_parameters.w_snapdir);
+  snprintf(buf, MSGBUFSIZE, "WRITER: TMPDIR=%s, SNAPDIR=%s, RTprio=%d;  FrameRAM = %d[MiB], ChunkSize = %d[kiB], nFrames = %d\n",
+	   tmpdir_path, wp->w_snapdir, wp->w_schedprio, wp->w_lockedram, wp->w_chunksize, wp->w_nframes);
   zh_put_multi(log, 1, buf);
 }
 
@@ -240,6 +241,8 @@ static int new_directory(int dirfd, const char *name) {
       return -1;
   }
 }
+
+/* ================================ Handle the Dir Command ================================ */
 
 /*
  * Manage the writer's 'working directory':  clear the old, resetting to snapdir;
@@ -303,6 +306,8 @@ static int process_dir_command(strbuf c) {
   }
   return 0;
 }
+
+/* ================================ Handle the Snap command ================================ */
 
 /*
  * --------------------------------------------------------------------------------
@@ -652,6 +657,11 @@ static void debug_snapshot_descriptor(snap_t *s) {
   zh_put_multi(log, 1, buf);
 }
 
+/* ================================ Handle a Z(Status) Command ================================ */
+
+
+/* =========================== Deal with the Snapshot File Queue ============================== */
+
 /*
  * --------------------------------------------------------------------------------
  * FUNCTIONS ETC. FOR SNAPSHOT FILE DESCRIPTOR STRUCTURES:  ONE OF THESE PER FILE TO CAPTURE.
@@ -876,6 +886,8 @@ static int process_reader_message(void *socket) {
 
 #endif
 
+/* ================================ Process Command Messages ================================ */
+
 /*
  * Handle command messages
  */
@@ -984,6 +996,8 @@ static void writer_thread_msg_loop() {    /* Read and process messages */
   }
 }
 
+/* ================================ Thread Startup ================================ */
+
 /*
  * WRITER thread main routine
  */
@@ -1009,7 +1023,8 @@ void *writer_main(void *arg) {
     zh_put_multi(log, 2, "WRITER RT scheduling setup failed: ", strerror(errno));
     break;
   }
-  
+
+  debug_writer_params();
   writer_thread_msg_loop();
   zh_put_multi(log, 1, "WRITER thread terminates by return");
 
@@ -1068,10 +1083,11 @@ int verify_writer_params(wparams *wp, strbuf e) {
 		   wp->w_chunksize, wp->w_lockedram, nfr, MIN_NFRAMES);
     return -1;
   }
-
+  wp->w_nframes = nfr;
+  
   /*
-   * Check the snapdir directory exists and is correctly owned, and
-   * get a path fd for it.
+   * Check the snapdir directory exists and get a path fd for it.
+   * Assumes we are already running as the non-privileged user.
    */
   wp->w_snap_dirfd = new_directory(tmpdir_dirfd, wp->w_snapdir);
   if( wp->w_snap_dirfd < 0 ) {	/* Give up on failure */
@@ -1080,7 +1096,8 @@ int verify_writer_params(wparams *wp, strbuf e) {
   }
 
   /*
-   * Now try to get the memory for the transfer RAM...
+   * Now try to get the memory for the transfer RAM...  This maps in a set of
+   * anonymous pages so requires CAP_IPC_LOCK capability.
    */
   ret = init_frame_system(e, nfr, wp->w_lockedram, wp->w_chunksize);
   return ret;

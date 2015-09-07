@@ -438,60 +438,51 @@ int process_log_message(void *s) {
  * Handle replies from READER and WRITER threads.  The reply message
  * is a pointer to a set of error strbufs.  We collect all the
  * strings, joining them with newline, in the reply buffer.  The
- * collector maintains an invariant that reply_buffer[u-1] is not NUL.
+ * collector maintains an invariant that used==0 || reply_buffer[used-1]
+ * is not NUL and that b == reply_buffer[used].
  */
 
 #define REPLY_BUFSIZE	4096
 static char reply_buffer[REPLY_BUFSIZE];
 
-/* Collect the reply: the block bytes count is the number of bytes */
-/* so far, its pointer is where we have got to in the reply_buffer */
-
-void collect_reply_strings(void *ctx, queue *q) {
-  strbuf  s = (strbuf)q;
-  int     n = strbuf_used(s);
-
-  if( !n ) return;		/* Empty buffer, nothing to do */
-
-  strbuf_revert(s);		/* Remove any internal NUL characters */
-
-  char *b = ((block *)ctx)->b_data;	/* Current data pointer */
-  int   u = ((block *)ctx)->b_bytes;	/* Current space used */
-  if(n > REPLY_BUFSIZE-u) {		/* There is too much data */
-    n = REPLY_BUFSIZE-u-2;		/* We can manage this much of it */
-  }
-
-  memcpy(b, strbuf_string(s), n);	/* Copy the data */
-
-  b += n;  u += n;			/* Now we have used this much space */
-  while( b[-1] == '\0' ) b--,u--;	/* Skip back over any NULs */
-
-  ((block *)ctx)->b_data  = b;
-  ((block *)ctx)->b_bytes = u;
-  return;
-}
-
-/* Send the collected reply;  ensure a terminating newline */
-
 static int process_reply(void *s) {
   int     size;
   strbuf  err;
-  block   b = { &reply_buffer[0], 0 };
+  char   *b = &reply_buffer[0];
+  int     used;
   
   size = zh_get_msg(s, 0, sizeof(strbuf), (void *)&err);
   assertv(size==sizeof(err), "Reply message of wrong size %d\n", size);
 
+  /* Establish invariants */
+  *b = '\0';  used = 0;
+  
   /* Traverse the strbuf chain once collecting data, then release */
-  map_queue_nxt((queue*)err, NULL, collect_reply_strings, &b);
-  release_strbuf(err);
+  for_nxt_in_Q(queue *q, (queue *)err, (queue *)NULL)
+    strbuf  s = (strbuf)q;
+    int     n = strbuf_used(s);
+    if(n) {				/* Empty strbuf, nothing to do */
+      strbuf_revert(s);			/* Remove any internal NUL characters */
+      if(n > REPLY_BUFSIZE-used) {	/* There is too much data */
+	n = REPLY_BUFSIZE-used-1;	/* We can manage this much of it */
+      }
+      memcpy(b, strbuf_string(s), n);	/* Copy the data */
+      b += n;  used += n;		/* Now we have used this much space */
+      while( b[-1] == '\0' ) b--,used--;	/* Skip back over any NULs */
+    }
+  end_for_nxt;
+  
+  release_strbuf(err);	/* Free the entire link of strbufs */
 
-  if( reply_buffer[b.b_bytes-1] == '\0' )		/* Replace trailing NUL with newline */
-    reply_buffer[b.b_bytes-1] = '\n';
-  if( reply_buffer[b.b_bytes-1] != '\n' )	/* If last character is not newline, add one */
-    reply_buffer[b.b_bytes++] = '\n';
+  if( *b == '\0' )	/* Replace trailing NUL with newline */
+    *b = '\n';
+  if( *b != '\n' ) {	/* If last character is not newline, add one */
+    *++b = '\n';
+    used++;
+  }
 
   /* Send the complete reply */
-  zh_put_msg(command, 0, b.b_bytes, &reply_buffer[0]);
+  zh_put_msg(command, 0, used, &reply_buffer[0]);
   return 0;
 }
 
@@ -688,7 +679,7 @@ int main(int argc, char *argv[], char *envp[]) {
 
   /* 5. Process parameters:  deal with non-parameter table arguments where necessary */
 
-  if(verbose > 0) {
+  if(verbose > 1) {
     fprintf(stderr, "Params before checking...\n");
     debug_params(stderr, globals, n_global_params);
   }

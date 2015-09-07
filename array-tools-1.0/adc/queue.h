@@ -27,4 +27,51 @@ extern void   map_queue_prv(queue *, queue *, void (*)(void *, queue *), void *)
 
 #define QUEUE_HEADER(name)  queue name = { &name, &name }
 
+/*
+ * These macro definitions do essentially the same as the
+ * map_queue_nxt and map_queue_prv but they don't leave the current
+ * local scope -- so for instance one can break the loop early in this
+ * form whereas one cannot in the (default) map function.
+ *
+ * The var argument is a variable that will hold the current node
+ * pointer as the loop proceeds.  It can be declared locally to the
+ * for_nxt by including its declaration in the macro call:
+ *
+ * for_nxt_in_Q(queue *ptr,start,end) ...
+ *
+ * or it can be a variable declared outside the scope of the for_nxt
+ * in which case just its name is given as argument and it will
+ * persist after the map-loop ends.
+ *
+ * The macros evaluate start and end exactly once and execute the User
+ * Code once for each list element in the range [start,end) with var
+ * set to that element.  If start==end or end is not actually in the
+ * list, the loop traverses the whole list exactly once visiting each
+ * node exactly once.
+ */
+
+#define for_nxt_in_Q(var,start,end)			\
+do { queue *__s = (start), *__e = (end);		\
+     queue *__p = __s;					\
+     int    __done = 0;					\
+     while(!__done) { queue *__n = queue_next(__p);	\
+       __done = (__n == __s || __n == __e);		\
+       var = __p;  __p = __n;				\
+       /* USER CODE GOES HERE */
+
+#define end_for_nxt  \
+     } } while(0)
+
+#define for_prv_in_Q(var,start,end)			\
+do { queue *__s = (start), *__e = (end);		\
+     queue *__p = __s;					\
+     int    __done = 0;					\
+     while(!__done) { queue *__n = queue_prev(__p);	\
+       __done = (__n == __s || __n == __e);		\
+       var = __p;  __p = __n;
+       /* USER CODE GOES HERE */
+
+#define end_for_prv  \
+     } } while(0)
+
 #endif /* _QUEUE_H */

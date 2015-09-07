@@ -69,19 +69,15 @@ queue *unsplice_queue(queue *start, queue *end) {
  */
 
 void map_queue_nxt(queue *start, queue *end, void (*fn)(void *, queue *), void *arg) {
-  queue *p = start;
 
-  do {
+  for_nxt_in_Q(queue *p, start, end)
     (*fn)(arg, p);
-    p=queue_next(p);
-  } while( p != start && p != end );
+  end_for_nxt;
 }
 
 void map_queue_prv(queue *start, queue *end, void (*fn)(void *, queue *), void *arg) {
-  queue *p = start;
 
-  do {
+  for_prv_in_Q(queue *p, start, end)
     (*fn)(arg, p);
-    p=queue_prev(p);
-  } while( p != start && p != end );
+  end_for_prv;
 }
