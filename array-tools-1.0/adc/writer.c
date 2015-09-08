@@ -34,83 +34,6 @@
 #include "writer.h"
 
 /*
- * Snapshot parameters, used by the S command line.
- * Local to this thread.
- *
- * Note the #defines, which are used to extract the parameter values
- * when building snapshot descriptors -- there is no need to search
- * for the parameter when we know exactly where it is.
- */
-
-static param_t snapshot_params[] ={
-#define SNAP_BEGIN  0
-  { "begin",  NULL, NULL,
-    PARAM_TYPE(int64), PARAM_SRC_CMD,
-    "start time of snapshot [ns from epoch]"
-  },
-#define SNAP_END  1
-  { "end",    NULL, NULL,
-    PARAM_TYPE(int64), PARAM_SRC_CMD,
-    "finish time of snapshot [ns from epoch]"
-  },
-#define SNAP_START  2
-  { "start",  NULL, NULL,
-    PARAM_TYPE(int64), PARAM_SRC_CMD,
-    "start sample of snapshot"
-  },
-#define SNAP_FINISH 3
-  { "finish", NULL, NULL,
-    PARAM_TYPE(int64), PARAM_SRC_CMD,
-    "end sample of snapshot"
-  },
-#define SNAP_LENGTH 4
-  { "length", NULL, NULL,
-    PARAM_TYPE(int32), PARAM_SRC_CMD,
-    "length of snapshot [samples]"
-  },
-#define SNAP_COUNT  5
-  { "count",   NULL, NULL,
-    PARAM_TYPE(int32), PARAM_SRC_CMD,
-    "repeat count of snapshot"
-  },
-#define SNAP_PATH  6
-  { "path",    NULL, NULL,
-    PARAM_TYPE(string), PARAM_SRC_CMD,
-    "storage path of snapshot data"
-  },
-};
-
-static const int n_snapshot_params = (sizeof(snapshot_params)/sizeof(param_t));
-
-/*
- * Snapshot working directory parameter(s), used by the D command line.
- */
-
-static param_t snapwd_params[] ={
-#define SNAP_SETWD  0
-  { "path",    NULL, NULL,
-    PARAM_TYPE(string), PARAM_SRC_CMD,
-    "working (sub-)directory for snapshots"
-  },
-};
-
-static const int n_snapwd_params =  (sizeof(snapwd_params)/sizeof(param_t));
-
-/*
- * Snapshot status request parameter(s), used by the Z command line.
- */
-
-static param_t status_params[] ={
-#define SNAP_NAME  0
-  { "name",    NULL, NULL,
-    PARAM_TYPE(int16), PARAM_SRC_CMD,
-    "snapshot name"
-  },
-};
-
-static const int n_status_params =  (sizeof(status_params)/sizeof(param_t));
-
-/*
  * --------------------------------------------------------------------------------
  *
  * INITIALISATION ROUTINES FOR WRITER THREAD:
@@ -245,6 +168,20 @@ static int new_directory(int dirfd, const char *name) {
 /* ================================ Handle the Dir Command ================================ */
 
 /*
+ * Snapshot working directory parameter(s), used by the D command line.
+ */
+
+static param_t snapwd_params[] ={
+#define SNAP_SETWD  0
+  { "path",    NULL, NULL,
+    PARAM_TYPE(string), PARAM_SRC_CMD,
+    "working (sub-)directory for snapshots"
+  },
+};
+
+static const int n_snapwd_params =  (sizeof(snapwd_params)/sizeof(param_t));
+
+/*
  * Manage the writer's 'working directory':  clear the old, resetting to snapdir;
  * find/create and set a new one, clearing an old if necessary.
  */
@@ -310,6 +247,55 @@ static int process_dir_command(strbuf c) {
 /* ================================ Handle the Snap command ================================ */
 
 /*
+ * Snapshot parameters, used by the S command line.
+ * Local to this thread.
+ *
+ * Note the #defines, which are used to extract the parameter values
+ * when building snapshot descriptors -- there is no need to search
+ * for the parameter when we know exactly where it is.
+ */
+
+static param_t snapshot_params[] ={
+#define SNAP_BEGIN  0
+  { "begin",  NULL, NULL,
+    PARAM_TYPE(int64), PARAM_SRC_CMD,
+    "start time of snapshot [ns from epoch]"
+  },
+#define SNAP_END  1
+  { "end",    NULL, NULL,
+    PARAM_TYPE(int64), PARAM_SRC_CMD,
+    "finish time of snapshot [ns from epoch]"
+  },
+#define SNAP_START  2
+  { "start",  NULL, NULL,
+    PARAM_TYPE(int64), PARAM_SRC_CMD,
+    "start sample of snapshot"
+  },
+#define SNAP_FINISH 3
+  { "finish", NULL, NULL,
+    PARAM_TYPE(int64), PARAM_SRC_CMD,
+    "end sample of snapshot"
+  },
+#define SNAP_LENGTH 4
+  { "length", NULL, NULL,
+    PARAM_TYPE(int32), PARAM_SRC_CMD,
+    "length of snapshot [samples]"
+  },
+#define SNAP_COUNT  5
+  { "count",   NULL, NULL,
+    PARAM_TYPE(int32), PARAM_SRC_CMD,
+    "repeat count of snapshot"
+  },
+#define SNAP_PATH  6
+  { "path",    NULL, NULL,
+    PARAM_TYPE(string), PARAM_SRC_CMD,
+    "storage path of snapshot data"
+  },
+};
+
+static const int n_snapshot_params = (sizeof(snapshot_params)/sizeof(param_t));
+
+/*
  * --------------------------------------------------------------------------------
  * FUNCTIONS ETC. TO MANAGE SNAPSHOT DESCRIPTORS
  *
@@ -369,9 +355,8 @@ static snap_t *alloc_snapshot() {
 static void free_snapshot(snap_t *s) {
   if( !queue_singleton(snap2qp(s)) )
     de_queue(snap2qp(s));
-  if( !queue_singleton(snap2fq(s)) ) {
-    /* Panic! */
-  }
+  assertv(queue_singleton(snap2fq(s)),
+	  "Freeing snapshot %p with non-empty file queue %p", s, queue_next(snap2fq(s)));
   if(s->s_dirfd >= 0)
     close(s->s_dirfd);
   if(s->s_path)
@@ -659,6 +644,117 @@ static void debug_snapshot_descriptor(snap_t *s) {
 
 /* ================================ Handle a Z(Status) Command ================================ */
 
+/*
+ * Snapshot status request parameter(s), used by the Z command line.
+ */
+
+static param_t status_params[] ={
+#define SNAP_NAME  0
+  { "name",    NULL, NULL,
+    PARAM_TYPE(int16), PARAM_SRC_CMD,
+    "snapshot name"
+  },
+};
+
+static const int n_status_params =  (sizeof(status_params)/sizeof(param_t));
+
+/*
+ * The snapshot s should report its status as follows.  If it is a
+ * pending snapshot, it should append a status line to the given
+ * strbuf x.  If it is completed (with or without error) it should
+ * transfer its own error strbuf to the chain by inserting it
+ * immediately following x.  The idea is that on success the caller
+ * will ignore the c strbuf and the chain following will give status
+ * reports for completed snapshots..
+ */
+
+static void snapshot_report_status(strbuf x, snap_t *s) {
+
+  if(s->s_status == SNAPSHOT_DONE) {	 /* If completed, attach its error strbuf */
+    queue_ins_after(strbuf2qp(x), strbuf2qp(s->s_error));
+    s->s_error = (strbuf)NULL;
+    return;
+  }
+  /* Snapshot is in progress:  append a status line to x */
+  strbuf_appendf(x, "Snap %hd: in progress\n", s->s_name);
+}
+
+/*
+ * Process a Z command to collect and return snapshot status.  The command
+ * comprises an introductory Z verb followed by an optional name=... parameter.
+ *
+ * The caller has written an initial NO: prefix into the e strbuf, for
+ * the error case.  For success, it will rewrite an OK line.  The c
+ * strbuf is not cleared here or in the caller, since it is used by
+ * snapshot_report_status for snapshots in progress.
+ */
+
+static int process_status_command(strbuf c) {
+  strbuf   e     = strbuf_next(c);
+  param_t *ps    = &status_params[0]; 
+  int      nps   = n_status_params;
+  uint16_t name  = 0;
+  int      err;
+  snap_t  *s = NULL;
+
+  /* Initialise the parameter value pointer */
+  setval_param(&ps[SNAP_NAME], (void **)&name);
+  err = set_opt_params_from_string(strbuf_string(c), ps, nps);
+  if(err < 0) {
+    strbuf_appendf(e, "parameter parsing error at position %d", -err);
+    reset_param(&ps[SNAP_NAME]);
+    return -1;
+  }
+  err = assign_param(&ps[SNAP_NAME]);
+  /* If this string copy fails, it's a programming error! */
+  assertv(err==0, "Status NAME parameter assignment failed: %m");
+  reset_param(&ps[SNAP_NAME]);
+
+  if(queue_singleton(&snapQ)) {	/* There are no snapshots in the queue */
+    if(name) {
+      strbuf_appendf(e, "Snapshot %hd not found: queue empty", name);
+      return -1;
+    }
+    else {
+      strbuf_clear(c);
+      strbuf_printf(c, " (queue empty)");
+      return 0;
+    }
+  }
+  
+  if(name) {			/* A spcific snapshot is requested */
+    for_nxt_in_Q(queue *p, queue_next(&snapQ), &snapQ)
+      if(name == qp2snap(p)->s_name) {
+	s = qp2snap(p);
+	break;
+      }
+    end_for_nxt;
+    if(s == NULL) {
+      strbuf_appendf(e, "Snapshot %hd not found", name);
+      return -1;
+    }
+    /* ... we got one */
+    strbuf_clear(c);
+    snapshot_report_status(c, s);
+    if(s->s_status == SNAPSHOT_DONE)	 /* If completed, free it */
+      free_snapshot(s);
+  }
+  else {	/* Otherwise, look at all the snapshots in the queue */
+    /*
+     * Note that, the loop below, we alter the queue being traversed
+     * since free_snapshot unlinks the current snapshot.  This is OK,
+     * since the loop macros have already determined whether the node
+     * being worked is the last one or not.
+     */
+    for_nxt_in_Q(queue *p, queue_next(&snapQ), &snapQ)
+      s = qp2snap(p);
+      snapshot_report_status(c, s);	 /* Report the status of each one */
+      if(s->s_status == SNAPSHOT_DONE)	 /* If completed, free it */
+	free_snapshot(s);
+    end_for_nxt;
+  }
+  return 0;
+}
 
 /* =========================== Deal with the Snapshot File Queue ============================== */
 
@@ -914,13 +1010,19 @@ int process_writer_command(void *s) {
     /* Call the command handler for Dir */
     strbuf_printf(err, "NO: Dir -- ");
     ret = process_dir_command(cmd);
-    if(ret == 0)
+    if(ret == 0) {
       strbuf_printf(err, "OK Dir");
+      strbuf_clear(cmd);
+    }
     break;
 
   case 'z':
   case 'Z':
-    strbuf_printf(err, "OK Status");
+    strbuf_printf(err, "NO: Ztatus -- ");
+    ret = process_status_command(cmd);
+    if(ret == 0) {
+      strbuf_printf(err, "OK Ztatus:\n");
+    }
     break;
 
   case 's':			/* Snap command */
@@ -948,8 +1050,8 @@ int process_writer_command(void *s) {
   if(ret < 0) {
     strbuf_revert(cmd);
     zh_put_multi(log, 4, strbuf_string(err), "\n > '", &cmd_buf[0], "'"); /* Error occurred, log the problem */
+    strbuf_clear(cmd);
   }
-  strbuf_clear(cmd);
   zh_put_msg(s, 0, sizeof(strbuf), (void *)&err);
   return true;
 }

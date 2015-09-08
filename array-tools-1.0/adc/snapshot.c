@@ -436,10 +436,10 @@ int process_log_message(void *s) {
 
 /*
  * Handle replies from READER and WRITER threads.  The reply message
- * is a pointer to a set of error strbufs.  We collect all the
- * strings, joining them with newline, in the reply buffer.  The
- * collector maintains an invariant that used==0 || reply_buffer[used-1]
- * is not NUL and that b == reply_buffer[used].
+ * is a pointer to a set of error strbufs.  We collect and join all
+ * the strings in the reply buffer.  The collector maintains as
+ * invariant that "used==0 || reply_buffer[used-1] is not NUL" and that
+ * "b == &reply_buffer[used]".
  */
 
 #define REPLY_BUFSIZE	4096
@@ -458,8 +458,8 @@ static int process_reply(void *s) {
   *b = '\0';  used = 0;
   
   /* Traverse the strbuf chain once collecting data, then release */
-  for_nxt_in_Q(queue *q, (queue *)err, (queue *)NULL)
-    strbuf  s = (strbuf)q;
+  for_nxt_in_Q(queue *q, strbuf2qp(err), (queue *)NULL)
+    strbuf  s = qp2strbuf(q);
     int     n = strbuf_used(s);
     if(n) {				/* Empty strbuf, nothing to do */
       strbuf_revert(s);			/* Remove any internal NUL characters */

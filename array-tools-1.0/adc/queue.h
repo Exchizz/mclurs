@@ -48,6 +48,11 @@ extern void   map_queue_prv(queue *, queue *, void (*)(void *, queue *), void *)
  * set to that element.  If start==end or end is not actually in the
  * list, the loop traverses the whole list exactly once visiting each
  * node exactly once.
+ *
+ * Note that it is also possible to remove node __p during the USER
+ * CODE because it is neither the node we are about to work on nor the
+ * end point node.  It may be the start node, however: the user should
+ * deal with that case!
  */
 
 #define for_nxt_in_Q(var,start,end)			\

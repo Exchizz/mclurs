@@ -31,4 +31,7 @@ extern void debug_strbuf(FILE *, strbuf);
 #define strbuf_next(s)	((strbuf)queue_next((queue *)(s)))
 #define strbuf_prev(s)	((strbuf)queue_prev((queue *)(s)))
 
+#define strbuf2qp(s)    ((queue *)(s))
+#define qp2strbuf(q)    ((strbuf)(q))
+
 #endif /* _STRBUF_H */
