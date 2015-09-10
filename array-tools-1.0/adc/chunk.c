@@ -108,6 +108,8 @@ void release_frame(frame *f) {
  * Functions for dealing with transfer chunk descriptors.
  */
 
+static uint16_t chunk_counter;
+
 #define N_CHUNK_ALLOC	(4096/sizeof(chunk_t))
 
 static QUEUE_HEADER(chunkQ);
@@ -138,16 +140,19 @@ chunk_t *alloc_chunk(int nr) {
   }
 
   ret = de_queue(queue_next(&chunkQ));
+  chunk_t *c = qp2chunk(ret);
+  init_queue(&c->c_rQ);
+  c->c_name = ++chunk_counter;
+  
   while(--nr > 0) {		/* Collect enough to satisfy request */
     chunk_t *c = qp2chunk(de_queue(queue_next(&chunkQ)));
 
     init_queue(&c->c_wQ);	/* Redundant... */
     init_queue(&c->c_rQ);
+    c->c_name = ++chunk_counter;
     queue_ins_before(ret, chunk2qp(c));
   }
 
-  chunk_t *c = qp2chunk(ret);
-  init_queue(&c->c_rQ);
   return c;
 }
 
@@ -196,15 +201,24 @@ void abort_chunk(chunk_t *c) {
  * Return the actual size, no greater than the space available.
  */
 
+#define qp2cname(p)	(qp2chunk(p)->c_name)
+#define rq2cname(p)	(rq2chunk(p)->c_name)
+
 int debug_chunk(char buf[], int space, chunk_t *c) {
+  extern const char *snapshot_status(int);
+  extern uint16_t    snapfile_name(snapfile_t *);
   int used;
 
   used = snprintf(buf, space,
-		  "wQ[%p,%p] rQ[%p,%p] "
-		  "RG %p FR %p PF %p status %d "
+		  "chunk c:%04hx at %p"
+		  "wQ[c:%04hx,c:%04hx] "
+		  "rQ[c:%04hx,c:%04hx] "
+		  "RG %p FR %p PF f:%04hx status %s "
 		  "S:%08lx F:%016llx L:%016llx\n",
-		  queue_prev(&c->c_wQ), queue_next(&c->c_wQ), queue_prev(&c->c_rQ), queue_next(&c->c_rQ),
-		  c->c_ring, c->c_frame, c->c_parent, c->c_status,
+		  c->c_name, c,
+		  qp2cname(queue_prev(&c->c_wQ)), qp2cname(queue_next(&c->c_wQ)),
+		  rq2cname(queue_prev(&c->c_rQ)), rq2cname(queue_next(&c->c_rQ)),
+		  c->c_ring, c->c_frame, snapfile_name(c->c_parent), snapshot_status(c->c_status),
 		  c->c_samples, c->c_first, c->c_last
 		  );
   if(used >= space)

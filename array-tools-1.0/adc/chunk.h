@@ -28,14 +28,15 @@ typedef struct {
   uint64_t      c_first;    /* First and last samples of this chunk */
   uint64_t      c_last;
   snapfile_t   *c_parent;   /* The chunk belongs to this file */
+  uint16_t	c_name;	    /* Unique name for this chunk */
 }
   chunk_t;
 
 #define qp2chunk(q)	((chunk_t *)(q))
 #define chunk2qp(c)	(&(c)->c_Q[0])
 
-#define chunkp2rq(c)	(&(c)->c_rQ)
-#define rq2chunkp(q)	((chunk_t *)(q[-1]))
+#define chunk2rq(c)	(&(c)->c_rQ)
+#define rq2chunk(q)	((chunk_t *)&((q)[-1]))
 
 extern chunk_t *alloc_chunk(int);
 extern void release_chunk(chunk_t *);

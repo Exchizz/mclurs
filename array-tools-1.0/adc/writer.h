@@ -42,15 +42,11 @@ extern void *writer_main(void *);
 #define SNAPSHOT_PREPARE	2 /* Structure filled in, but files/chunks not done yet */
 #define SNAPSHOT_READY		3 /* Snapshot etc. is ready, but waiting for READER queue space */
 #define SNAPSHOT_WAITING	4 /* Snapshot etc. is ready, but waiting for data */
-#define SNAPSHOT_COMPLETE	5 /* Snapshot written correctly (off queue) */
-#define SNAPSHOT_DONE		6 /* Structure is finished with */
+#define SNAPSHOT_WRITING	5 /* Snapshot file's chunks are being written */
+#define SNAPSHOT_COMPLETE	6 /* Snapshot written correctly (off queue) */
+#define SNAPSHOT_DONE		7 /* Structure is finished with */
 
-static __inline__ char snapshot_status(int st) {
-  static const char status[] = "IEPRWCD";
-  if(st>=0 && st<sizeof(status))
-    return status[st];
-  return '?';
-}
+extern const char *snapshot_status(int);
 
 #if 0
 #define SNAPSHOT_FREE		0 /* Structure is not in use */

@@ -377,6 +377,19 @@ static void free_snapshot(snap_t *s) {
 }
 
 /*
+ * Display snapshot status codes
+ */
+
+const char *snapshot_status(int st) {
+  static const char *stab[] = {
+    "I-I", "ERR", "PRP", "RDY", "...", ">>>", "CPL", "FIN",
+  };
+  if(st>=0 && st<sizeof(stab)/sizeof(char *))
+    return stab[st];
+  return "??";
+}
+
+/*
  * Manage the writer snapshot queue:
  *
  * - Check the parameters in an S command
@@ -678,7 +691,7 @@ static void debug_snapshot_descriptor(snap_t *s) {
   char buf[MSGBUFSIZE];
 
   snprintf(buf, MSGBUFSIZE,
-	   "Snap %04hx at %p: path '%s' fd %d status %c "
+	   "Snap %04hx at %p: path '%s' fd %d status %s "
 	   "sQ[%p,%p] fQ[%p,%p] "
 	   "files %d/%d/%d "
 	   "S:%08lx B:%08lx F:%016llx L:%016llx\n",
@@ -723,7 +736,7 @@ static void snapshot_report_status(strbuf x, snap_t *s) {
     return;
   }
   /* Snapshot is in progress:  append a status line to x */
-  strbuf_appendf(x, "Snap %04hx: %c %d/%d/%d\n",
+  strbuf_appendf(x, "Snap %04hx: %s %d/%d/%d\n",
 		 s->s_name, snapshot_status(s->s_status),
 		 s->s_done, s->s_pending, s->s_count);
 }
@@ -824,7 +837,8 @@ typedef struct _sfile {
   chunk_t    *f_chunkQ;			/* Pointer to this file's writer chunk queue */
   int	      f_status;			/* Status flags for this file */
   strbuf      f_error;			/* The strbuf to write error text into */
-  char        f_name[FILE_NAME_SIZE];	/* Name of this file:  the hexadecimal first sample number .s16 */
+  uint16_t    f_name;			/* Unique number for debugging */
+  char        f_file[FILE_NAME_SIZE];	/* Name of this file:  the hexadecimal first sample number .s16 */
 }
   snapfile_t;
 
@@ -832,12 +846,15 @@ typedef struct _sfile {
  * Allocate and free snapfile_t structures
  */
 
+static uint16_t snapfile_counter;
+
 static snapfile_t *alloc_snapfile() {
   snapfile_t *ret = calloc(1, sizeof(snapfile_t));
 
   if(ret) {
     init_queue(&ret->f_Q);
     ret->f_fd = -1;
+    ret->f_name = ++snapfile_counter;
   }
   return ret;
 }
@@ -847,6 +864,11 @@ static void free_snapfile(snapfile_t *f) {
     close(f->f_fd);
   assertv(f->f_chunkQ == NULL, "Freeing snapfile %p with remaining chunks %p\n", f, f->f_chunkQ);
   free((void *)f);
+}
+
+/* Debugging routine to return unique name */
+uint16_t snapfile_name(snapfile_t *f) {
+  return f->f_name;
 }
 
 /*
@@ -860,17 +882,17 @@ static int setup_snapfile(snapfile_t *f, snap_t *s) {
 
   f->f_indexnr = s->s_done+s->s_pending;
 
-  snprintf(&f->f_name[0], FILE_NAME_SIZE, "%016llx.s16", s->s_first);
-  fd = openat(s->s_dirfd, &f->f_name[0], O_RDWR|O_CREAT|O_EXCL, 0600);
+  snprintf(&f->f_file[0], FILE_NAME_SIZE, "%016llx.s16", s->s_first);
+  fd = openat(s->s_dirfd, &f->f_file[0], O_RDWR|O_CREAT|O_EXCL, 0600);
   if(fd < 0) {
-    strbuf_appendf(s->s_error, "Unable to open sample file %s in path %s: %m\n", &f->f_name[0], s->s_path);
+    strbuf_appendf(s->s_error, "Unable to open sample file %s in path %s: %m\n", &f->f_file[0], s->s_path);
     return -1;
   }
 
   ret = ftruncate(fd, s->s_bytes); /* Pre-size the file */
   if(ret < 0) {			   /* Try to tidy up... */
-    strbuf_appendf(s->s_error, "Unable to truncate sample file %s to size %d [B]: %m\n", &f->f_name[0], s->s_bytes);
-    unlinkat(s->s_dirfd, &f->f_name[0], 0);
+    strbuf_appendf(s->s_error, "Unable to truncate sample file %s to size %d [B]: %m\n", &f->f_file[0], s->s_bytes);
+    unlinkat(s->s_dirfd, &f->f_file[0], 0);
     close(fd);
     return -1;
   }
@@ -880,8 +902,8 @@ static int setup_snapfile(snapfile_t *f, snap_t *s) {
   f->f_nchunks = (nc+1023) / 1024;
   f->f_chunkQ  = alloc_chunk(f->f_nchunks);
   if( f->f_chunkQ == NULL ) {
-    strbuf_appendf(s->s_error, "Cannot allocate %d chunks for file %s: %m\n", f->f_nchunks, &f->f_name[0]);
-    unlinkat(s->s_dirfd, &f->f_name[0], 0);
+    strbuf_appendf(s->s_error, "Cannot allocate %d chunks for file %s: %m\n", f->f_nchunks, &f->f_file[0]);
+    unlinkat(s->s_dirfd, &f->f_file[0], 0);
     close(fd);
     return -1;    
   }
@@ -938,7 +960,7 @@ static void completed_snapfile(snapfile_t *f) {
   snap_t  *s = f->f_parent;
   
   if(f->f_status == SNAPSHOT_ERROR) { /* If the file failed, remove it */
-    unlinkat(s->s_dirfd, &f->f_name[0], 0);
+    unlinkat(s->s_dirfd, &f->f_file[0], 0);
   }
 
   if(f->f_fd >= 0)
@@ -959,6 +981,8 @@ static void completed_snapfile(snapfile_t *f) {
  * Emit debugging data for a given file descriptor.
  */
 
+#define qp2fname(p)	snapfile_name((snapfile_t *)(p))
+
 static void debug_snapfile(snapfile_t *f) {
   snap_t *s = f->f_parent;
   int     left = MSGBUFSIZE-1,
@@ -967,17 +991,19 @@ static void debug_snapfile(snapfile_t *f) {
   char    buf[MSGBUFSIZE];
 
   used = snprintf(&buf[used], left,
-	  "File %s of snapshot %04hx at %p: "
-	  "Q [%p,%p] fd %d ix %d nc %d status %d\n",
-	  &f->f_name[0], s->s_name, f,
-	  queue_prev(&f->f_Q), queue_next(&f->f_Q), f->f_fd, f->f_indexnr, f->f_nchunks, f->f_status
-	  );
+		  "File %s (f:%04hx) of snapshot %04hx at %p: "
+		  "Q [f:%04hx,f:%04hx] "
+		  "fd %d ix %d nc %d st %s\n",
+		  &f->f_file[0], f->f_name, s->s_name, f,
+		  qp2fname(queue_prev(&f->f_Q)), qp2fname(queue_next(&f->f_Q)),
+		  f->f_fd, f->f_indexnr, f->f_nchunks, snapshot_status(f->f_status)
+		  );
   if(used >= left) used = left;
   left -= used;
   i = 0;
   for_nxt_in_Q(queue *p, chunk2qp(f->f_chunkQ), chunk2qp(f->f_chunkQ))
     int u = snprintf(&buf[used], left,
-		     " > Chunk %03d at %p: ", i++, p);
+		     " > %03d: ", i++);
     if(u >= left) u = left;
     used += u;
     left -= u;
@@ -986,6 +1012,22 @@ static void debug_snapfile(snapfile_t *f) {
     left -= u;
   end_for_nxt;
   zh_put_multi(log, 1, &buf[0]);
+}
+
+/*
+ * --------------------------------------------------------------------------------
+ *
+ * DEAL WITH COMMAND AND QUEUE MESSAGES AS THEY ARRIVE.
+ *
+ *  --------------------------------------------------------------------------------
+ */
+
+/*
+ * Manage the write queue:  deal with queue message from reader.
+ */
+
+static int process_reader_message(void *socket) {
+  return true;
 }
 
 #if 0
@@ -1007,22 +1049,6 @@ static int initialise_snapshot_file(snapw *s, snapr *r) {
 }
 
 #endif
-
-/*
- * --------------------------------------------------------------------------------
- *
- * DEAL WITH COMMAND AND QUEUE MESSAGES AS THEY ARRIVE.
- *
- *  --------------------------------------------------------------------------------
- */
-
-/*
- * Manage the write queue:  deal with queue message from reader.
- */
-
-static int process_reader_message(void *socket) {
-  return true;
-}
 
 #if 0
   snapr *r = NULL;
