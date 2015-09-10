@@ -13,16 +13,22 @@
 #define MIN_NFRAMES	4
 
 typedef struct {
+
+  /* These values come from environment and/or argument parameters */
   const char  *w_snapdir;
   int	       w_schedprio;
   int	       w_lockedram;
   int	       w_chunksize;
-
+  double       w_writeahead;
+  
   /* The values below are computed and exported */
-  int	       w_nframes;	/* The number of transfer frames prepared */
-  int	       w_snap_dirfd;	/* The snapdir path fd */
-  int	       w_snap_curfd;	/* The path fd of the 'working' directory */
+  int	       w_nframes;	/* Number of transfer frames prepared */
+  int	       w_chunksamples;	/* Number of samples in a chunk */
+  int	       w_snap_dirfd;	/* Snapdir path fd */
+  int	       w_snap_curfd;	/* Path fd of the 'working' directory */
   int	       w_running;	/* Thread is running and ready */
+  int	       w_totxfrbytes;	/* Total schedules transfer bytes remaining */
+  int	       w_nfiles;	/* Number of files in progress */
 }
   wparams;
 
@@ -31,18 +37,27 @@ extern void *writer_main(void *);
 
 #define FILE_NAME_SIZE		32
 
-#define SNAP_WR_PRELOAD	1		/* Queue this many snapr structures in advance in the Reader */
-
 #define	SNAPSHOT_INIT		0 /* Structure just created */
-#define SNAPSHOT_ERROR		1 /* Error found during checking (off queue) */
-#define SNAPSHOT_WAITING	2 /* Waiting in Reader ready queue */
-#define SNAPSHOT_WRITTEN	4 /* Snapshot written correctly (off queue) */
-#define SNAPSHOT_STOPPED	6 /* Snapshot structure OK but reader not running */
+#define SNAPSHOT_ERROR		1 /* Error found during checking or execution */
+#define SNAPSHOT_PREPARE	2 /* Structure filled in, but files/chunks not done yet */
+#define SNAPSHOT_READY		3 /* Snapshot etc. is ready, but waiting for READER queue space */
+#define SNAPSHOT_WAITING	4 /* Snapshot etc. is ready, but waiting for data */
+#define SNAPSHOT_COMPLETE	5 /* Snapshot written correctly (off queue) */
+#define SNAPSHOT_DONE		6 /* Structure is finished with */
 
+static __inline__ char snapshot_status(int st) {
+  static const char status[] = "IEPRWCD";
+  if(st>=0 && st<sizeof(status))
+    return status[st];
+  return '?';
+}
+
+#if 0
 #define SNAPSHOT_FREE		0 /* Structure is not in use */
 #define SNAPSHOT_ALLOC		1 /* Structure is allocated and being filled */
 #define SNAPSHOT_CHECK		2 /* Structure initialised, reader asked to check */
 #define SNAPSHOT_REPLIED	3 /* Reader confirmation received, reply sent to command source */
 #define SNAPSHOT_PUBLISHED	4 /* Reader completed or aborted snapshot */
-#define SNAPSHOT_DONE		5 /* Structure is finished with */
 #define SNAPSHOT_REPEAT		6 /* Snapshot is repeating with count > 0 */
+#define SNAPSHOT_STOPPED	6 /* Snapshot structure OK but reader not running */
+#endif

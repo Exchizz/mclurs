@@ -123,8 +123,6 @@ int set_writer_rt_scheduling() {
  * Debug writer parameters
  */
 
-#define MSGBUFSIZE 1024
-
 static void debug_writer_params() {
   char buf[MSGBUFSIZE];
   wparams *wp = &writer_parameters;
@@ -132,8 +130,9 @@ static void debug_writer_params() {
   if(verbose<1)
     return;
 
-  snprintf(buf, MSGBUFSIZE, "WRITER: TMPDIR=%s, SNAPDIR=%s, RTprio=%d;  FrameRAM = %d[MiB], ChunkSize = %d[kiB], nFrames = %d\n",
-	   tmpdir_path, wp->w_snapdir, wp->w_schedprio, wp->w_lockedram, wp->w_chunksize, wp->w_nframes);
+  snprintf(buf, MSGBUFSIZE, "WRITER: TMPDIR=%s, SNAPDIR=%s, RTprio=%d;  WOF=%g;  FrameRAM = %d[MiB], ChunkSize = %d[kiB], nFrames = %d xfrByteQ = %d[kiB]\n",
+	   tmpdir_path, wp->w_snapdir, wp->w_schedprio, wp->w_writeahead,
+	   wp->w_lockedram, wp->w_chunksize, wp->w_nframes, wp->w_totxfrbytes/1024);
   zh_put_multi(log, 1, buf);
 }
 
@@ -146,17 +145,29 @@ static void debug_writer_params() {
  */
 
 /*
+ * Test for the presence of a directory by getting a path fd for it.
+ */
+
+static int test_directory(int dirfd, const char *name) {
+  int ret;
+
+  ret = openat(dirfd, name, O_PATH|O_DIRECTORY); /* Try to open the directory */
+  return ret;
+}
+
+
+/*
  * Get a path handle to a directory, creating it if necessary.
  */
 
 static int new_directory(int dirfd, const char *name) {
   int ret;
 
-  ret = openat(dirfd, name, O_PATH|O_DIRECTORY); /* Try to open the directory */
+  ret = test_directory(dirfd, name);	/* Try to open the directory */
   if(ret < 0 ) {
-    if( errno != ENOENT )			 /* OK if it doesn't exist, otherwise fail */
+    if( errno != ENOENT )		/* OK if it doesn't exist, otherwise fail */
       return -1;
-    ret = mkdirat(dirfd, name, 0750);		 /* Didn't exist, try to create it */
+    ret = mkdirat(dirfd, name, 0750);	/* Didn't exist, try to create it */
     if( ret < 0 )
       return -1;
     ret = openat(dirfd, name, O_PATH|O_DIRECTORY); /* Try again */
@@ -313,12 +324,13 @@ typedef struct {		/* Private snapshot descriptor structure used by writer */
 #define s_fileQhdr   s_xQ[1]	/* Header for the queue of file descriptor structures */
   uint16_t    s_name;		/* 'Name' for snapshot */
   int         s_dirfd;		/* Dirfd of the samples directory */
-  uint64_t    s_first;		/* The first sample to collect */
-  uint64_t    s_last;		/* Collect up to but not including this sample */
-  uint32_t    s_samples;	/* The number of samples to save */
-  int	      s_bytes;		/* The total size of one sample file */
-  uint32_t    s_count;		/* The remaining repetition count for this snapshot */
+  uint64_t    s_first;		/* First sample to collect for the next repetition */
+  uint64_t    s_last;		/* Collect up to but not including this sample in the next repetition */
+  uint32_t    s_samples;	/* Number of samples to save */
+  int	      s_bytes;		/* Total size of one sample file */
+  uint32_t    s_count;		/* Repetition count for this snapshot */
   int	      s_pending;	/* Count of pending repetitions */
+  int	      s_done;		/* Count of completed repetitions */
   int	      s_status;		/* Status of this snapshot */
   const char *s_path;		/* Directory path for this snapshot */
   strbuf      s_error;		/* Error strbuf for asynchronous operation */
@@ -485,7 +497,7 @@ static void setup_snapshot_samples(snap_t *s, param_t p[]) {
   /* Start with length= -- if present, no finish= or end= spec. needed */
   if( p[SNAP_LENGTH].p_str ) {	/* Length was stored in s_samples, round up to integral number of pages */
     s->s_bytes = s->s_samples * sizeof(sampl_t);
-    s->s_bytes += (sysconf(_SC_PAGE_SIZE) - s->s_bytes % sysconf(_SC_PAGE_SIZE)) % sysconf(_SC_PAGE_SIZE);
+    s->s_bytes += (sysconf(_SC_PAGE_SIZE) - (s->s_bytes % sysconf(_SC_PAGE_SIZE))) % sysconf(_SC_PAGE_SIZE);
     s->s_samples = s->s_bytes / sizeof(sampl_t);
   }
 
@@ -500,7 +512,7 @@ static void setup_snapshot_samples(snap_t *s, param_t p[]) {
       s->s_last = s->s_last + ((NCHAN - (s->s_last % NCHAN)) % NCHAN); /* Round up to integral number of channel sweeps */
       s->s_samples = s->s_last - s->s_first;
       s->s_bytes = s->s_samples * sizeof(sampl_t);
-      s->s_bytes += (sysconf(_SC_PAGE_SIZE) - s->s_bytes % sysconf(_SC_PAGE_SIZE)) % sysconf(_SC_PAGE_SIZE);
+      s->s_bytes += (sysconf(_SC_PAGE_SIZE) - (s->s_bytes % sysconf(_SC_PAGE_SIZE))) % sysconf(_SC_PAGE_SIZE);
       s->s_samples = s->s_bytes / sizeof(sampl_t);	    /* Round up to integral number of system pages */
     }
     s->s_last = s->s_first + s->s_samples;		    /* Calculate end point using rounded-up sample count */
@@ -512,7 +524,7 @@ static void setup_snapshot_samples(snap_t *s, param_t p[]) {
       s->s_last += ((NCHAN - (s->s_last % NCHAN)) % NCHAN); /* Round up to integral number of channel sweeps */
       s->s_samples = s->s_last - s->s_first;		    /* Compute requested length */
       s->s_bytes = s->s_samples * sizeof(sampl_t);
-      s->s_bytes += (sysconf(_SC_PAGE_SIZE) - s->s_bytes % sysconf(_SC_PAGE_SIZE)) % sysconf(_SC_PAGE_SIZE);
+      s->s_bytes += (sysconf(_SC_PAGE_SIZE) - (s->s_bytes % sysconf(_SC_PAGE_SIZE))) % sysconf(_SC_PAGE_SIZE);
       s->s_samples = s->s_bytes / sizeof(sampl_t);	    /* Round up to integral number of system pages */
     }
     s->s_last = s->s_first + s->s_samples;		    /* Calculate end point using rounded-up sample count */
@@ -552,7 +564,6 @@ static snap_t *build_snapshot_descriptor(strbuf c) {
   int	      err;
   int	      i;
     
-
   if( !(ret = alloc_snapshot()) ) { /* Allocation failed */
     strbuf_appendf(e, "unable to allocate snapshot descriptor: %m");
     return ret;
@@ -584,7 +595,13 @@ static snap_t *build_snapshot_descriptor(strbuf c) {
     goto FAIL;
   }
   
-  /* Do path */
+  /* Do path -- may not already exist */
+  ret->s_dirfd = test_directory(writer_parameters.w_snap_curfd, path);
+  if(ret->s_dirfd >= 0) {	/* Then directory already exists */
+    strbuf_appendf(e, "requested dir path=%s already exists", path);
+    goto FAIL;
+  }
+  
   ret->s_dirfd = new_directory(writer_parameters.w_snap_curfd, path);
   if(ret->s_dirfd < 0) {
     strbuf_appendf(e, "unable to create dir path=%s: %m", path);
@@ -592,13 +609,14 @@ static snap_t *build_snapshot_descriptor(strbuf c) {
   }
   ret->s_path = strdup(path);
 
-  for(i=0; i<nps; i++) reset_param(&ps[i]);
-  
   /* Set up the sample-dependent values -- cannot fail */
   setup_snapshot_samples(ret, ps);
 
+  /* Finished with the parameters, their values etc. now */
+  for(i=0; i<nps; i++) reset_param(&ps[i]);
+  
   /* All done, no errors */
-  ret->s_status = SNAPSHOT_INIT; /* FINALISE STATUS FLAGS... */
+  ret->s_status = SNAPSHOT_PREPARE; /* Structure complete but no files/chunks yet... */
   return ret;
 
  FAIL:
@@ -618,13 +636,37 @@ static void setup_snapshot(snap_t *s) {
  * Called when a snapshot file has just been written.
  */
 
+static snapfile_t *alloc_snapfile();
+static int setup_snapfile(snapfile_t *, snap_t *);
+static void debug_snapfile(snapfile_t *);
+
 static void refresh_snapshot(snap_t *s) {
+  wparams *wp = &writer_parameters;
 
-  if( !s->s_count ) {	/* No files left to request. */
-
+  if(s->s_done == s->s_count) {	/* No files left to request */
+    s->s_status = SNAPSHOT_COMPLETE;
+    return;
   }
-  else {			/* A file request has just completed */
-    s->s_pending--;
+  else if(s->s_done + s->s_pending == s->s_count) {  /* All required files are in progress */
+    return;
+  }
+  else {	/* See if this snapshot should have another file */
+    if(wp->w_nfiles < 2 || s->s_pending == 0) {
+      snapfile_t *f = alloc_snapfile();
+
+      if(f == NULL) {
+	strbuf_appendf(s->s_error, "Failed to allocate file %d/%d", s->s_pending+s->s_done+1, s->s_count);
+	s->s_status = SNAPSHOT_ERROR;
+	return;
+      }
+      if( setup_snapfile(f, s) < 0 ) {
+	s->s_status = SNAPSHOT_ERROR;
+	return;
+      }
+      s->s_first += s->s_samples; /* Move current sample indices to next file */
+      s->s_last  += s->s_samples;
+      debug_snapfile(f);
+    }
   }
 }
 
@@ -636,10 +678,15 @@ static void debug_snapshot_descriptor(snap_t *s) {
   char buf[MSGBUFSIZE];
 
   snprintf(buf, MSGBUFSIZE,
-	   "Snap %04hx: path '%s' status %d  P:%s; S:%08lx B:%08lx C:%08lx F:%016llx L:%016llx\n",
-	   s->s_name, s->s_path, s->s_status,
-	   s->s_samples, s->s_bytes, s->s_count, s->s_first, s->s_last);
-  zh_put_multi(log, 1, buf);
+	   "Snap %04hx at %p: path '%s' fd %d status %c "
+	   "sQ[%p,%p] fQ[%p,%p] "
+	   "files %d/%d/%d "
+	   "S:%08lx B:%08lx F:%016llx L:%016llx\n",
+	   s->s_name, s, s->s_path, s->s_dirfd, snapshot_status(s->s_status),
+	   queue_prev(&s->s_Q), queue_next(&s->s_Q), queue_prev(&s->s_fileQhdr), queue_next(&s->s_fileQhdr),
+	   s->s_done, s->s_pending, s->s_count, 
+	   s->s_samples, s->s_bytes, s->s_first, s->s_last);
+  zh_put_multi(log, 1, &buf[0]);
 }
 
 /* ================================ Handle a Z(Status) Command ================================ */
@@ -676,7 +723,9 @@ static void snapshot_report_status(strbuf x, snap_t *s) {
     return;
   }
   /* Snapshot is in progress:  append a status line to x */
-  strbuf_appendf(x, "Snap %hd: in progress\n", s->s_name);
+  strbuf_appendf(x, "Snap %04hx: %c %d/%d/%d\n",
+		 s->s_name, snapshot_status(s->s_status),
+		 s->s_done, s->s_pending, s->s_count);
 }
 
 /*
@@ -690,12 +739,13 @@ static void snapshot_report_status(strbuf x, snap_t *s) {
  */
 
 static int process_status_command(strbuf c) {
+  wparams *wp    = &writer_parameters;
   strbuf   e     = strbuf_next(c);
   param_t *ps    = &status_params[0]; 
   int      nps   = n_status_params;
   uint16_t name  = 0;
   int      err;
-  snap_t  *s = NULL;
+  snap_t  *s     = NULL;
 
   /* Initialise the parameter value pointer */
   setval_param(&ps[SNAP_NAME], (void **)&name);
@@ -716,8 +766,7 @@ static int process_status_command(strbuf c) {
       return -1;
     }
     else {
-      strbuf_clear(c);
-      strbuf_printf(c, " (queue empty)");
+      strbuf_printf(c, " Files: %d, Xfr space %d [MiB]\n", wp->w_nfiles, wp->w_totxfrbytes/(1024*1024));
       return 0;
     }
   }
@@ -734,7 +783,7 @@ static int process_status_command(strbuf c) {
       return -1;
     }
     /* ... we got one */
-    strbuf_clear(c);
+    strbuf_printf(c, "\n");
     snapshot_report_status(c, s);
     if(s->s_status == SNAPSHOT_DONE)	 /* If completed, free it */
       free_snapshot(s);
@@ -746,6 +795,7 @@ static int process_status_command(strbuf c) {
      * since the loop macros have already determined whether the node
      * being worked is the last one or not.
      */
+    strbuf_printf(c, " Files: %d, Xfr space %d [MiB]\n", wp->w_nfiles, wp->w_totxfrbytes/(1024*1024));
     for_nxt_in_Q(queue *p, queue_next(&snapQ), &snapQ)
       s = qp2snap(p);
       snapshot_report_status(c, s);	 /* Report the status of each one */
@@ -769,9 +819,12 @@ typedef struct _sfile {
   queue	      f_Q;			/* Queue header for file descriptor structures */
   snap_t     *f_parent;			/* The snap_t structure that generated this file capture */
   int         f_fd;			/* System file descriptor -- only needed while pages left to map */
+  int	      f_indexnr;		/* Index number of this file in the full set for the snapshot */
+  int	      f_nchunks;		/* Number of chunks allocated for this file transfer */
+  chunk_t    *f_chunkQ;			/* Pointer to this file's writer chunk queue */
+  int	      f_status;			/* Status flags for this file */
+  strbuf      f_error;			/* The strbuf to write error text into */
   char        f_name[FILE_NAME_SIZE];	/* Name of this file:  the hexadecimal first sample number .s16 */
-  int	      f_ixnr;			/* Index number of this file in the full set for the snapshot */
-  queue	      f_chunkQhdr;		/* Header for this file's writer chunk queue */
 }
   snapfile_t;
 
@@ -783,6 +836,7 @@ static snapfile_t *alloc_snapfile() {
   snapfile_t *ret = calloc(1, sizeof(snapfile_t));
 
   if(ret) {
+    init_queue(&ret->f_Q);
     ret->f_fd = -1;
   }
   return ret;
@@ -791,6 +845,7 @@ static snapfile_t *alloc_snapfile() {
 static void free_snapfile(snapfile_t *f) {
   if(f->f_fd >= 0)
     close(f->f_fd);
+  assertv(f->f_chunkQ == NULL, "Freeing snapfile %p with remaining chunks %p\n", f, f->f_chunkQ);
   free((void *)f);
 }
 
@@ -798,46 +853,139 @@ static void free_snapfile(snapfile_t *f) {
  * Initialise a snapfile_t structure from a snap_t structure.
  */
 
-static int init_snapfile(snapfile_t *f, snap_t *s) {
+static int setup_snapfile(snapfile_t *f, snap_t *s) {
+  wparams *wp = &writer_parameters;
   int fd;
   int ret;
+
+  f->f_indexnr = s->s_done+s->s_pending;
 
   snprintf(&f->f_name[0], FILE_NAME_SIZE, "%016llx.s16", s->s_first);
   fd = openat(s->s_dirfd, &f->f_name[0], O_RDWR|O_CREAT|O_EXCL, 0600);
   if(fd < 0) {
+    strbuf_appendf(s->s_error, "Unable to open sample file %s in path %s: %m\n", &f->f_name[0], s->s_path);
     return -1;
   }
+
   ret = ftruncate(fd, s->s_bytes); /* Pre-size the file */
   if(ret < 0) {			   /* Try to tidy up... */
-    int e = errno;		   /* Save the original errno */
+    strbuf_appendf(s->s_error, "Unable to truncate sample file %s to size %d [B]: %m\n", &f->f_name[0], s->s_bytes);
     unlinkat(s->s_dirfd, &f->f_name[0], 0);
     close(fd);
-    errno = e;
-    return -2;
+    return -1;
   }
-  f->f_fd = fd;
+
+  /* Allocate and initialise the chunks */
+  int nc = s->s_bytes / wp->w_chunksize; /* Number of milli-chunks to use (because chunksize is in [kiB] */
+  f->f_nchunks = (nc+1023) / 1024;
+  f->f_chunkQ  = alloc_chunk(f->f_nchunks);
+  if( f->f_chunkQ == NULL ) {
+    strbuf_appendf(s->s_error, "Cannot allocate %d chunks for file %s: %m\n", f->f_nchunks, &f->f_name[0]);
+    unlinkat(s->s_dirfd, &f->f_name[0], 0);
+    close(fd);
+    return -1;    
+  }
+
+  /* Basic book-keeping entries from here:  no options for failure */
+  f->f_fd      = fd;
+  f->f_parent  = s;
+  f->f_error   = s->s_error;
+
+  wp->w_totxfrbytes -= s->s_bytes; /* We are committing to writing this many more bytes */
+  wp->w_nfiles++;		   /* One more file in progress */
+
+  /* Go through the chunk queue writing in data */
+  uint64_t first = s->s_first;
+  uint64_t rest  = s->s_samples;
+  uint32_t chunk = wp->w_chunksamples;
+  for_nxt_in_Q(queue *p, chunk2qp(f->f_chunkQ), chunk2qp(f->f_chunkQ))
+    chunk_t *c = qp2chunk(p);
+    /* Determine chunk  parameters */
+    c->c_status  = SNAPSHOT_READY;
+    c->c_parent  = f;
+    c->c_error   = f->f_error;
+    c->c_ring    = NULL;	/* The ADC object computes this pointer */
+    c->c_frame   = NULL;	/* The transfer frames are allocated elsewhere */
+    c->c_first   = first;
+    if(rest > chunk && rest < 2*chunk) /* Deal with final partial chunk(s) */
+      chunk = rest / 2;
+    c->c_samples = chunk;
+    c->c_last = first + chunk;
+    first += chunk;
+  end_for_nxt;
+
+  f->f_status = SNAPSHOT_READY;
+  s->s_pending++;
   return 0;
 }
 
 /*
- * Set up snapshot file descriptor, create chunks etc.
- */
-
-static void setup_snapfile(snapfile_t *f) {
-}
-
-/*
- * Completed file descriptor -- called when file acquisition ends successfully
+ * Completed file descriptor -- called when file acquisition ends,
+ * both normally and exeptionally.
+ *
+ *  We assume that the READER has cleared up any assigned frames when
+ * deleting the file chunks in the READER queue.  Therefore, at this
+ * point, only the file on disk remains -- remove it if there was an
+ * error.  Adjust the book-keeping in the snap_t structure to show
+ * this file as done.  Release the chunk descriptors.
+ *
+ * The file is finally written/gone when the TIDY thread has unmapped
+ * the frames released by the READER.
  */
 
 static void completed_snapfile(snapfile_t *f) {
+  wparams *wp = &writer_parameters;
+  snap_t  *s = f->f_parent;
+  
+  if(f->f_status == SNAPSHOT_ERROR) { /* If the file failed, remove it */
+    unlinkat(s->s_dirfd, &f->f_name[0], 0);
+  }
+
+  if(f->f_fd >= 0)
+    close(f->f_fd);
+
+  s->s_done++;			/* This file is done, it was pending before */
+  s->s_pending--;
+  wp->w_totxfrbytes += s->s_bytes;
+  wp->w_nfiles--;		/* One less file in progress */
+  
+  release_chunk(f->f_chunkQ);	/* Finished with these now */
+
+  if(f->f_status == SNAPSHOT_ERROR)
+    s->s_status = SNAPSHOT_ERROR;
 }
 
 /*
- * Abort file descriptor -- called when file acquisition is aborted
+ * Emit debugging data for a given file descriptor.
  */
 
-static void abort_snapfile(snapfile_t *f) {
+static void debug_snapfile(snapfile_t *f) {
+  snap_t *s = f->f_parent;
+  int     left = MSGBUFSIZE-1,
+	  used = 0;
+  int     i;
+  char    buf[MSGBUFSIZE];
+
+  used = snprintf(&buf[used], left,
+	  "File %s of snapshot %04hx at %p: "
+	  "Q [%p,%p] fd %d ix %d nc %d status %d\n",
+	  &f->f_name[0], s->s_name, f,
+	  queue_prev(&f->f_Q), queue_next(&f->f_Q), f->f_fd, f->f_indexnr, f->f_nchunks, f->f_status
+	  );
+  if(used >= left) used = left;
+  left -= used;
+  i = 0;
+  for_nxt_in_Q(queue *p, chunk2qp(f->f_chunkQ), chunk2qp(f->f_chunkQ))
+    int u = snprintf(&buf[used], left,
+		     " > Chunk %03d at %p: ", i++, p);
+    if(u >= left) u = left;
+    used += u;
+    left -= u;
+    u = debug_chunk(&buf[used], left, qp2chunk(p));
+    used += u;
+    left -= u;
+  end_for_nxt;
+  zh_put_multi(log, 1, &buf[0]);
 }
 
 #if 0
@@ -1021,7 +1169,7 @@ int process_writer_command(void *s) {
     strbuf_printf(err, "NO: Ztatus -- ");
     ret = process_status_command(cmd);
     if(ret == 0) {
-      strbuf_printf(err, "OK Ztatus:\n");
+      strbuf_printf(err, "OK Ztatus:");
     }
     break;
 
@@ -1032,9 +1180,12 @@ int process_writer_command(void *s) {
     snap_t *s = build_snapshot_descriptor(cmd);
     if(s != NULL) {		    /* Snapshot building succeeded */
       queue_ins_after(&snapQ, snap2qp(s));
-      strbuf_printf(err, "OK Snap %04hx", s->s_name);
+      strbuf_printf(err, "OK Snap %04hx ", s->s_name);
       s->s_error = (strbuf)de_queue((queue *)cmd);
       strbuf_clear(cmd);
+      if(verbose > 0)
+	debug_snapshot_descriptor(s);
+      refresh_snapshot(s);
     }
     else {
       ret = -1;
@@ -1186,16 +1337,33 @@ int verify_writer_params(wparams *wp, strbuf e) {
     return -1;
   }
   wp->w_nframes = nfr;
+  wp->w_chunksamples = wp->w_chunksize * 1024 / sizeof(sampl_t);
   
+  /*
+   * Check the writeahead fraction -- this is the proportion by which
+   * the locked transfer RAM may be "overbooked".  Should be positive
+   * and not too big :-)).
+   */
+
+  if(wp->w_writeahead < 0 || wp->w_writeahead > 1) {
+    strbuf_appendf(e, "Transfer writeahead fraction %g out of compiled-in range [0,1]", wp->w_writeahead);
+    return -1;
+  }
+  wp->w_totxfrbytes = nfr*wp->w_chunksize*1024*(1 + wp->w_writeahead) + pagesize-1;
+  wp->w_totxfrbytes = pagesize * (wp->w_totxfrbytes / pagesize);
+
+  wp->w_nfiles = 0;		/* Currently no files in progress */
+
   /*
    * Check the snapdir directory exists and get a path fd for it.
    * Assumes we are already running as the non-privileged user.
    */
   wp->w_snap_dirfd = new_directory(tmpdir_dirfd, wp->w_snapdir);
   if( wp->w_snap_dirfd < 0 ) {	/* Give up on failure */
-    strbuf_printf(e, "Snapdir %s inaccessible: %m", wp->w_snapdir);
+    strbuf_appendf(e, "Snapdir %s inaccessible: %m", wp->w_snapdir);
     return -1;
   }
+  wp->w_snap_curfd = wp->w_snap_dirfd; /* Initial default */
 
   /*
    * Now try to get the memory for the transfer RAM...  This maps in a set of

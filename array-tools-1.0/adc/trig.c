@@ -350,7 +350,6 @@ int main(int argc, char *argv[], char *envp[]) {
   char    *v;
   int      ret, n;
   int      used, left;
-  uint64_t time_start, time_stop;
   uint64_t trigger;
   struct timespec now;
   uint64_t now_as_ns;
@@ -369,6 +368,9 @@ int main(int argc, char *argv[], char *envp[]) {
   /* 2. Process parameters:  push values out to program globals */
   ret = assign_all_params(globals, n_global_params);
   assertv(ret == 0, "Push parameters failed on param %d out of %d\n", -ret, n_global_params);
+
+  //  fprintf(stderr, "Before command line processing, after environment\n");
+  //  debug_params(stderr, globals, n_global_params);
 
   /* 3. Create and parse the command lines -- installs defaults from parameter table */
   void **cmd_help     = arg_make_help();
@@ -455,9 +457,15 @@ int main(int argc, char *argv[], char *envp[]) {
     exit(1);
   }
 
+  //  fprintf(stderr, "After commandline choice, before reverse push\n");
+  //  debug_params(stderr, globals, n_global_params);
+
   /* 4. Process parameters:  copy argument values back through the parameter table */
   ret = arg_results_to_params(table, globals, n_global_params);
 
+  //  fprintf(stderr, "After reverse push\n");
+  //  debug_params(stderr, globals, n_global_params);
+  
   /* Check the auto argument and compute the path generation mode */
   auto_mode = determine_auto_mode(auto_name);
 
@@ -494,8 +502,9 @@ int main(int argc, char *argv[], char *envp[]) {
 
   trigger = now_as_ns;
   do {
-    const char *path;
+    uint64_t time_start, time_stop;
     char  path_buf[PATHBUF_SIZE];
+    const char *path;
     int   ret = 0;
 
     if( wait_for_it )
@@ -507,12 +516,16 @@ int main(int argc, char *argv[], char *envp[]) {
 
     path = make_path_value(&path_buf[0], PATHBUF_SIZE-1, snap_name, trigger, auto_mode);
 
+    // fprintf(stderr, "Window parameters pre %d post %d\n", window_pre, window_pst);
+
     time_start = trigger - 1000000 * (uint64_t) window_pre;
     time_stop  = trigger + 1000000 * (uint64_t) window_pst;
 
+    // fprintf(stderr, "Window parameters start %lld stop %lld\n", time_start, time_stop);
+    
     /* Send the message, wait for the reply */
     left = LOGBUF_SIZE-1;
-    used = snprintf(&buf[0], left, "snap begin=%lld,end=%lld,path=%s", time_start, time_stop, path);
+    used = snprintf(&buf[0], left, "snap begin=%lld, end=%lld, path=%s", time_start, time_stop, path);
     buf[used] = '\0';
     if(verbose > 1)
       fprintf(stderr, "Sending: %s\n", &buf[0]);

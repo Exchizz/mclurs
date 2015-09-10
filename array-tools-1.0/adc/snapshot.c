@@ -113,22 +113,27 @@ param_t globals[] ={
   { "user",	NULL,
     &snapshot_user,
     PARAM_TYPE(string), PARAM_SRC_ENV|PARAM_SRC_ARG,
-    "the user/UID for file system access and creation"
+    "user/UID for file system access and creation"
   },
   { "group",	NULL,
     &snapshot_group,
     PARAM_TYPE(string), PARAM_SRC_ENV|PARAM_SRC_ARG,
-    "the group/GID for file system access and creation"
+    "group/GID for file system access and creation"
   },
   { "ram",	"64",
     &writer_parameters.w_lockedram,
     PARAM_TYPE(int32), PARAM_SRC_ENV|PARAM_SRC_ARG,
-    "the amount of data RAM to lock [MiB]"
+    "amount of data RAM to lock [MiB]"
+  },
+  { "wof",	"0.5",
+    &writer_parameters.w_writeahead,
+    PARAM_TYPE(double), PARAM_SRC_ENV|PARAM_SRC_ARG,
+    "write overbooking fraction"
   },
   { "chunk",	"1024",
     &writer_parameters.w_chunksize,
     PARAM_TYPE(int32), PARAM_SRC_ENV|PARAM_SRC_ARG,
-    "The size of a transfer chunk [KiB]"
+    "size of a transfer chunk [KiB]"
   },
 };
 
@@ -177,6 +182,7 @@ BEGIN_CMD_SYNTAX(main) {
         arg_int0("B",  "bufsz", "<int>",      "Comedi Buffer Size [MiB]"),
         arg_int0("m",  "ram", "<int>",        "Data Transfer RAM Size [MiB]"),
         arg_int0("c",  "chunk", "<int>",      "File transfer chunk size [kiB]"),
+        arg_dbl0("W",  "wof", "<real>",       "Write Overbooking Fraction"),
   e2  = arg_end(20)
 } APPLY_CMD_DEFAULTS(main) {
   INCLUDE_PARAM_DEFAULTS(globals, n_global_params);
@@ -410,13 +416,12 @@ static int set_intr_sig_handler() {
 /*
  * Process a (possibly multipart) log message.
  * Collect the various pieces and write to stderr
- * Use a 1024 byte logging buffer
  */
 
-#define LOGBUF_SIZE	1024
+#define LOGBUF_SIZE	MSGBUFSIZE
 
 int process_log_message(void *s) {
-  char log_buffer[LOGBUF_SIZE];
+  char log_buffer[MSGBUFSIZE];
   int used;
   static char pfx[] = "Log: ";
   
@@ -442,7 +447,7 @@ int process_log_message(void *s) {
  * "b == &reply_buffer[used]".
  */
 
-#define REPLY_BUFSIZE	4096
+#define REPLY_BUFSIZE	MSGBUFSIZE
 static char reply_buffer[REPLY_BUFSIZE];
 
 static int process_reply(void *s) {
@@ -466,9 +471,12 @@ static int process_reply(void *s) {
       if(n > REPLY_BUFSIZE-used) {	/* There is too much data */
 	n = REPLY_BUFSIZE-used-1;	/* We can manage this much of it */
       }
+      //      fprintf(stderr, "strbuf %p, used %d, ptr %p, string '%s'\n",
+      //	      s, n, b, strbuf_string(s));
       memcpy(b, strbuf_string(s), n);	/* Copy the data */
       b += n;  used += n;		/* Now we have used this much space */
       while( b[-1] == '\0' ) b--,used--;	/* Skip back over any NULs */
+      //      fprintf(stderr, "strbuf %p, ptr now %p, total used now %d\n", s, b, used);
     }
   end_for_nxt;
   
@@ -476,12 +484,11 @@ static int process_reply(void *s) {
 
   if( *b == '\0' )	/* Replace trailing NUL with newline */
     *b = '\n';
-  if( *b != '\n' ) {	/* If last character is not newline, add one */
+  if( *b != '\n' )	/* If last character is not newline, add one */
     *++b = '\n';
-    used++;
-  }
 
   /* Send the complete reply */
+  used = b - &reply_buffer[0] - 1;
   zh_put_msg(command, 0, used, &reply_buffer[0]);
   return 0;
 }

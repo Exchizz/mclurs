@@ -23,3 +23,5 @@ extern const char *tmpdir_path;
 /* Common definitions */
 
 #define LOG_SOCKET	"inproc://Main-LOG"
+
+#define MSGBUFSIZE	8192

@@ -136,16 +136,18 @@ chunk_t *alloc_chunk(int nr) {
       N_in_chunkQ++;
     }
   }
+
   ret = de_queue(queue_next(&chunkQ));
   while(--nr > 0) {		/* Collect enough to satisfy request */
-    queue *p = de_queue(queue_next(&chunkQ));
+    chunk_t *c = qp2chunk(de_queue(queue_next(&chunkQ)));
 
-    init_queue(p);
-    queue_ins_before(ret, p);
+    init_queue(&c->c_wQ);	/* Redundant... */
+    init_queue(&c->c_rQ);
+    queue_ins_before(ret, chunk2qp(c));
   }
 
-  chunk_t *c = q2chunk(ret);
-  init_queue(&c->c_rQ);		/* Make sure the reader queue dscriptor is initialised */
+  chunk_t *c = qp2chunk(ret);
+  init_queue(&c->c_rQ);
   return c;
 }
 
@@ -155,7 +157,7 @@ chunk_t *alloc_chunk(int nr) {
  */
 
 void release_chunk(chunk_t *c) {
-  queue *q = chunk2q(c);
+  queue *q = chunk2qp(c);
   queue *p;
 
   while( (p = de_queue(queue_next(q))) != NULL ) {
@@ -189,3 +191,23 @@ void completed_chunk(chunk_t *c) {
 void abort_chunk(chunk_t *c) {
 }
 
+/*
+ * Generate a debugging line for a chunk desdcriptor.  Put it in the buffer buf.
+ * Return the actual size, no greater than the space available.
+ */
+
+int debug_chunk(char buf[], int space, chunk_t *c) {
+  int used;
+
+  used = snprintf(buf, space,
+		  "wQ[%p,%p] rQ[%p,%p] "
+		  "RG %p FR %p PF %p status %d "
+		  "S:%08lx F:%016llx L:%016llx\n",
+		  queue_prev(&c->c_wQ), queue_next(&c->c_wQ), queue_prev(&c->c_rQ), queue_next(&c->c_rQ),
+		  c->c_ring, c->c_frame, c->c_parent, c->c_status,
+		  c->c_samples, c->c_first, c->c_last
+		  );
+  if(used >= space)
+    used = space;
+  return used;
+}
