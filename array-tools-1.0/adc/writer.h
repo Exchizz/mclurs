@@ -27,7 +27,7 @@ typedef struct {
   int	       w_snap_dirfd;	/* Snapdir path fd */
   int	       w_snap_curfd;	/* Path fd of the 'working' directory */
   int	       w_running;	/* Thread is running and ready */
-  int	       w_totxfrbytes;	/* Total schedules transfer bytes remaining */
+  int	       w_totxfrsamples;	/* Total scheduled transfer samples remaining */
   int	       w_nfiles;	/* Number of files in progress */
 }
   wparams;
@@ -48,12 +48,3 @@ extern void *writer_main(void *);
 
 extern const char *snapshot_status(int);
 
-#if 0
-#define SNAPSHOT_FREE		0 /* Structure is not in use */
-#define SNAPSHOT_ALLOC		1 /* Structure is allocated and being filled */
-#define SNAPSHOT_CHECK		2 /* Structure initialised, reader asked to check */
-#define SNAPSHOT_REPLIED	3 /* Reader confirmation received, reply sent to command source */
-#define SNAPSHOT_PUBLISHED	4 /* Reader completed or aborted snapshot */
-#define SNAPSHOT_REPEAT		6 /* Snapshot is repeating with count > 0 */
-#define SNAPSHOT_STOPPED	6 /* Snapshot structure OK but reader not running */
-#endif

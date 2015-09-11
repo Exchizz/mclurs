@@ -475,20 +475,18 @@ static int process_reply(void *s) {
       //	      s, n, b, strbuf_string(s));
       memcpy(b, strbuf_string(s), n);	/* Copy the data */
       b += n;  used += n;		/* Now we have used this much space */
-      while( b[-1] == '\0' ) b--,used--;	/* Skip back over any NULs */
+      //      while( b[-1] == '\0' ) b--,used--;	/* Skip back over any NULs */
       //      fprintf(stderr, "strbuf %p, ptr now %p, total used now %d\n", s, b, used);
     }
   end_for_nxt;
   
   release_strbuf(err);	/* Free the entire link of strbufs */
 
-  if( *b == '\0' )	/* Replace trailing NUL with newline */
+  if( b[-1] != '\n' )	/* Ensure final newline */
     *b = '\n';
-  if( *b != '\n' )	/* If last character is not newline, add one */
-    *++b = '\n';
 
   /* Send the complete reply */
-  used = b - &reply_buffer[0] - 1;
+  used = b - &reply_buffer[0];
   zh_put_msg(command, 0, used, &reply_buffer[0]);
   return 0;
 }
