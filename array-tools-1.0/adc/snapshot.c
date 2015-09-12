@@ -1,5 +1,7 @@
 #
 
+#include "general.h"
+
 #define _GNU_SOURCE	/* Linux-specific code below (O_PATH) */
 
 #include <stdio.h>
@@ -49,17 +51,17 @@
  * Global parameters for the snapshot program
  */
 
-int die_die_die_now = 0;
+public int die_die_die_now = 0;
 
-extern rparams     reader_parameters;
-extern wparams	   writer_parameters;
-extern const char *tmpdir_path;
-static const char *snapshot_addr;
-static const char *snapshot_user;
-static const char *snapshot_group;
-static int	   schedprio;
+import  rparams     reader_parameters;
+import  wparams	   writer_parameters;
+import  const char *tmpdir_path;
+private const char *snapshot_addr;
+private const char *snapshot_user;
+private const char *snapshot_group;
+private int	   schedprio;
 
-param_t globals[] ={
+public param_t globals[] ={
   { "tmpdir",   "/tmp",
     &tmpdir_path,
     PARAM_TYPE(string), PARAM_SRC_ENV|PARAM_SRC_ARG,
@@ -84,6 +86,11 @@ param_t globals[] ={
     &reader_parameters.r_device,
     PARAM_TYPE(string), PARAM_SRC_ENV|PARAM_SRC_ARG,
     "the Comedi device to open"
+  },
+  { "range",	"500",
+    &reader_parameters.r_range,
+    PARAM_TYPE(int32), PARAM_SRC_ENV|PARAM_SRC_ARG|PARAM_SRC_CMD,
+    "the ADC converter full-scale range [mV]"
   },
   { "bufsz",	"32",
     &reader_parameters.r_bufsz,
@@ -137,20 +144,19 @@ param_t globals[] ={
   },
 };
 
-const int n_global_params =	(sizeof(globals)/sizeof(param_t));
+public const int n_global_params =	(sizeof(globals)/sizeof(param_t));
 
 /*
  * Debugging print out control
  */
 
-int   debug_level = 0;
-int   verbose;
-char *program   = NULL;
+public int   verbose;
+public char *program   = NULL;
 
 /* Command line syntax options -- there are no mandatory arguments on the main command line! */
 
-struct arg_lit *h1, *vn1, *v1, *q1;
-struct arg_end *e1;
+private struct arg_lit *h1, *vn1, *v1, *q1;
+private struct arg_end *e1;
 
 BEGIN_CMD_SYNTAX(help) {
   v1  = arg_litn("v",  "verbose", 0, 3,	"Increase verbosity"),
@@ -162,8 +168,8 @@ BEGIN_CMD_SYNTAX(help) {
   /* No defaults to apply here */
 } END_CMD_SYNTAX(help)
 
-struct arg_lit *v2, *q2;
-struct arg_end *e2;
+private struct arg_lit *v2, *q2;
+private struct arg_end *e2;
 
 BEGIN_CMD_SYNTAX(main) {
   v2  = arg_litn("v",  "verbose", 0, 3,	      "Increase verbosity"),
@@ -181,6 +187,7 @@ BEGIN_CMD_SYNTAX(main) {
         arg_str0("g",  "group", "<gid/name>", "Group to run as"),
         arg_int0("B",  "bufsz", "<int>",      "Comedi Buffer Size [MiB]"),
         arg_int0("m",  "ram", "<int>",        "Data Transfer RAM Size [MiB]"),
+        arg_int0("r",  "range", "<int>",      "ADC full-scale range [mV]"),
         arg_int0("c",  "chunk", "<int>",      "File transfer chunk size [kiB]"),
         arg_dbl0("W",  "wof", "<real>",       "Write Overbooking Fraction"),
   e2  = arg_end(20)
@@ -189,7 +196,7 @@ BEGIN_CMD_SYNTAX(main) {
 } END_CMD_SYNTAX(main);
 
 /* Standard help routines: display the version banner */
-void print_version(FILE *fp, int verbosity) {
+private void print_version(FILE *fp, int verbosity) {
   fprintf(fp, "%s: Vn. %s\n", program, PROGRAM_VERSION);
   if(verbosity > 0) {		/* Verbose requested... */
     fprintf(fp, VERSION_VERBOSE_BANNER);
@@ -197,7 +204,7 @@ void print_version(FILE *fp, int verbosity) {
 }
 
 /* Standard help routines: display the usage summary for a syntax */
-void print_usage(FILE *fp, void **argtable, int verbosity, char *program) {
+private void print_usage(FILE *fp, void **argtable, int verbosity, char *program) {
   if( !verbosity ) {
     fprintf(fp, "Usage: %s ", program);
     arg_print_syntax(fp, argtable, "\n");
@@ -216,43 +223,43 @@ void print_usage(FILE *fp, void **argtable, int verbosity, char *program) {
  * Snapshot globals for this file.
  */
 
-static const char *snapshot_addr = NULL;  /* The address of the main command socket */
-static const char *snapshot_user = NULL;  /* The user we should run as, after startup */
-static const char *snapshot_group = NULL; /* The group to run as, after startup */
-static int	   schedprio;		  /* Real-time priority for reader and writer */
+private const char *snapshot_addr = NULL;  /* The address of the main command socket */
+private const char *snapshot_user = NULL;  /* The user we should run as, after startup */
+private const char *snapshot_group = NULL; /* The group to run as, after startup */
+private int	   schedprio;		  /* Real-time priority for reader and writer */
 
 /*
  * Snapshot globals shared between threads
  */
 
-void       *snapshot_zmq_ctx;	/* ZMQ context for messaging -- created by the TIDY thread */
+public void       *snapshot_zmq_ctx;	/* ZMQ context for messaging -- created by the TIDY thread */
 
-int	    tmpdir_dirfd;	/* The file descriptor obtained for the TMPDIR directory */
-const char *tmpdir_path;	/* The path for the file descriptor above */
+public int	    tmpdir_dirfd;	/* The file descriptor obtained for the TMPDIR directory */
+public const char *tmpdir_path;		/* The path for the file descriptor above */
 
 /*
  * Thread handles for reader and writer
  */
 
-static pthread_t  reader_thread,
+private pthread_t reader_thread,
 		  writer_thread,
 		  tidy_thread;
 
-static pthread_attr_t reader_thread_attr,
-		      writer_thread_attr,
-		      tidy_thread_attr;
+private pthread_attr_t reader_thread_attr,
+		       writer_thread_attr,
+		       tidy_thread_attr;
 
 /*
  * Establish main comms:  this routine runs last, so it mostly does connect() calls.
  * It must run when the other three threads are already active.
  */
 
-static void *log_socket;	/* N.B.  This socket is opened by the TIDY thread, but not used there */
-static void *reader;
-static void *writer;
-static void *command;
+private void *log_socket;	/* N.B.  This socket is opened by the TIDY thread, but not used there */
+private void *reader;
+private void *writer;
+private void *command;
 
-static int create_main_comms() {
+private int create_main_comms() {
   int ret;
 
   /* Create and initialise the sockets: reader and writer command sockets */
@@ -280,7 +287,7 @@ static int create_main_comms() {
 
 /* Close everything created above */
 
-static void close_main_comms() {
+private void close_main_comms() {
   zmq_close(reader);
   zmq_close(writer);
   zmq_close(command);
@@ -306,7 +313,7 @@ static void close_main_comms() {
  * is also unprivileged, and is currently spawned during context creation from tidy.
  */
 
-static int snap_adjust_capabilities() {
+private int snap_adjust_capabilities() {
   cap_t c = cap_get_proc();
   uid_t u = geteuid();
   int ret = 0;
@@ -344,7 +351,7 @@ static int snap_adjust_capabilities() {
  * Drop privileges and capabilities when appropriate.
  */
 
-static int main_adjust_capabilities(uid_t uid, gid_t gid) {
+private int main_adjust_capabilities(uid_t uid, gid_t gid) {
   cap_t c = cap_get_proc();
   const cap_value_t vs[] = { CAP_SETUID, CAP_SETGID, };
   
@@ -395,13 +402,14 @@ static int main_adjust_capabilities(uid_t uid, gid_t gid) {
 /*
  * Deal nicely with the interrupt signal.
  * Basically, the signal sets the die_die_die_now flag which the various threads notice.
+ * CURRENTLY NOT WORKING PROPERLY SO DISABLED
  */
 
-static void intr_handler(int i) {
+private void intr_handler(int i) {
   die_die_die_now++;
 }
 
-static int set_intr_sig_handler() {
+private int set_intr_sig_handler() {
   struct sigaction a;
 
   bzero(&a, sizeof(a));
@@ -419,11 +427,11 @@ static int set_intr_sig_handler() {
  */
 
 #define LOGBUF_SIZE	MSGBUFSIZE
+private char pfx[] = "Log: ";
 
-int process_log_message(void *s) {
+private int process_log_message(void *s) {
   char log_buffer[MSGBUFSIZE];
   int used;
-  static char pfx[] = "Log: ";
   
   memcpy(&log_buffer[0], &pfx[0], sizeof(pfx));
   used = sizeof(pfx)-1;
@@ -448,9 +456,9 @@ int process_log_message(void *s) {
  */
 
 #define REPLY_BUFSIZE	MSGBUFSIZE
-static char reply_buffer[REPLY_BUFSIZE];
+private char reply_buffer[REPLY_BUFSIZE];
 
-static int process_reply(void *s) {
+private int process_reply(void *s) {
   int     size;
   strbuf  err;
   char   *b = &reply_buffer[0];
@@ -498,7 +506,7 @@ static int process_reply(void *s) {
  * one outstanding message is in process, so simplifies the reply routing.
  */
 
-int process_snapshot_command() {
+private int process_snapshot_command() {
   strbuf c,e;			/* Command and Error buffers */
   char  *buf;
   int   size, ret;
@@ -580,7 +588,7 @@ int process_snapshot_command() {
 
 #define	MAIN_LOOP_POLL_INTERVAL	20
 
-static void main_thread_msg_loop() {    /* Read and process messages */
+private void main_thread_msg_loop() {    /* Read and process messages */
   int poll_delay;
   int running;
   zmq_pollitem_t  poll_list[] =
@@ -627,7 +635,7 @@ static void main_thread_msg_loop() {    /* Read and process messages */
  * Snapshot main routine.
  */
 
-int main(int argc, char *argv[], char *envp[]) {
+public int main(int argc, char *argv[], char *envp[]) {
   char *thread_return = NULL;
   int ret, running, poll_delay;
   char *cmd_addr;

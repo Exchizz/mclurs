@@ -1,10 +1,10 @@
 #
 
+#include "general.h"
+
 #include <argtable2.h>
 #include <stdlib.h>
 #include "argtab-int16.h"
-
-#define private static
 
 /*
  * Callback functions for this argument class -- based closely on the

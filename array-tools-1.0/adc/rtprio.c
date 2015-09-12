@@ -1,5 +1,7 @@
 #
 
+#include "general.h"
+
 #define __GNU_SOURCE
 
 #include <syscall.h>
@@ -18,7 +20,7 @@
  * Routine(s) for establishing threads in RT FIFO scheduling mode using Linux tricks
  */
 
-int set_rt_scheduling(int p) {
+public int set_rt_scheduling(int p) {
   pid_t  me = gettid();
   struct sched_param pri;
   int    mode;
@@ -53,7 +55,7 @@ int set_rt_scheduling(int p) {
  * Routine(s) for establishing threads in RT FIFO scheduling mode using POSIX calls
  */
 
-int set_rt_scheduling(int p) {
+public int set_rt_scheduling(int p) {
   pthread_t me = pthread_self();
   struct sched_param pri;
   int mode;
@@ -94,7 +96,7 @@ int set_rt_scheduling(int p) {
  * is also unprivileged, and is currently spawned during context creation from TIDY.
  */
 
-int check_permitted_capabilities_ok() {
+public int check_permitted_capabilities_ok() {
   cap_t c = cap_get_proc();
   cap_flag_value_t v = CAP_CLEAR;
   

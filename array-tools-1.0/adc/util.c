@@ -1,5 +1,7 @@
 #
 
+#include "general.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -15,7 +17,7 @@
  * Create, open and bind a ZMQ socket.
  */
 
-void *zh_bind_new_socket(void *ctx, int type, const char *url) {
+public void *zh_bind_new_socket(void *ctx, int type, const char *url) {
   void *skt;
 
   skt = zmq_socket(ctx, type);
@@ -35,7 +37,7 @@ void *zh_bind_new_socket(void *ctx, int type, const char *url) {
  * Create, open and connect a ZMQ socket.
  */
 
-void *zh_connect_new_socket(void *ctx, int type, const char *url) {
+public void *zh_connect_new_socket(void *ctx, int type, const char *url) {
   void *skt;
 
   skt = zmq_socket(ctx, type);
@@ -57,7 +59,7 @@ void *zh_connect_new_socket(void *ctx, int type, const char *url) {
  * the arrival of the message, not its content.
  */
 
-int zh_get_msg(void *socket, int flags, size_t size, void *buf) {
+public int zh_get_msg(void *socket, int flags, size_t size, void *buf) {
   zmq_msg_t  msg;
   int ret;
   size_t msg_size;
@@ -85,7 +87,7 @@ int zh_get_msg(void *socket, int flags, size_t size, void *buf) {
  * Returns true if there is more of this message, otherwise false
  */
 
-int zh_any_more(void *socket) {
+public int zh_any_more(void *socket) {
   int ret, more;
   size_t sz;
 
@@ -100,7 +102,7 @@ int zh_any_more(void *socket) {
  * pieces, with `spc' in between.  End with \0.  Return the size.
  */
 
-int zh_collect_multi(void *socket, char *buf, int bufsz, char *spc) {
+public int zh_collect_multi(void *socket, char *buf, int bufsz, char *spc) {
  int used = 0,
      left = bufsz-1,
      nspc = strlen(spc);
@@ -128,7 +130,7 @@ int zh_collect_multi(void *socket, char *buf, int bufsz, char *spc) {
  * is part of a multipart message.
  */
 
-int zh_put_msg(void *socket, int flags, size_t size, void *buf) {
+public int zh_put_msg(void *socket, int flags, size_t size, void *buf) {
   zmq_msg_t  msg;
   int ret;
 
@@ -146,7 +148,7 @@ int zh_put_msg(void *socket, int flags, size_t size, void *buf) {
  * Send an n-frame message via a socket given an argument list of strings.
  */
 
-int zh_put_multi(void *socket, int n, ...) {
+public int zh_put_multi(void *socket, int n, ...) {
   va_list ap;
   int ret;
 

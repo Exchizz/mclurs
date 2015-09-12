@@ -3,6 +3,8 @@
 #ifndef _UTIL_H
 #define _UTIL_H
 
+#include "general.h"
+
 #include <stdarg.h>
 #include <unistd.h>
 #include "assert.h"
@@ -20,13 +22,13 @@
 
 #include <zmq.h>
 
-extern int zh_get_msg(void *, int, size_t, void *);
-extern int zh_any_more(void *);
+export int zh_get_msg(void *, int, size_t, void *);
+export int zh_any_more(void *);
 
-extern int zh_put_msg(void *, int, size_t, void *);
-extern int zh_put_multi(void *, int, ...);
+export int zh_put_msg(void *, int, size_t, void *);
+export int zh_put_multi(void *, int, ...);
 
-extern void *zh_bind_new_socket(void *, int, const char *);
-extern void *zh_connect_new_socket(void *, int, const char *);
+export void *zh_bind_new_socket(void *, int, const char *);
+export void *zh_connect_new_socket(void *, int, const char *);
 
 #endif /* _UTIL_H */

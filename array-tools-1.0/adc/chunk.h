@@ -3,6 +3,8 @@
 #ifndef _CHUNK_H
 #define _CHUNK_H
 
+#include "general.h"
+
 /* Structure for a memory block */
 
 typedef struct {
@@ -38,14 +40,15 @@ typedef struct {
 #define chunk2rq(c)	(&(c)->c_rQ)
 #define rq2chunk(q)	((chunk_t *)&((q)[-1]))
 
-extern chunk_t *alloc_chunk(int);
-extern void release_chunk(chunk_t *);
-extern void setup_chunks(chunk_t *, snapfile_t *);
-extern void completed_chunk(chunk_t *);
-extern void abort_chunk(chunk_t *);
+export chunk_t *alloc_chunk(int);
+export void release_chunk(chunk_t *);
+export void setup_chunks(chunk_t *, snapfile_t *);
+export void completed_chunk(chunk_t *);
+export void abort_chunk(chunk_t *);
 
-extern int  debug_chunk(char [], int, chunk_t *);
+export int  debug_chunk(char [], int, chunk_t *);
 
-extern void release_frame(frame *);
+export void release_frame(frame *);
 
 #endif /* _CHUNK_H */
+

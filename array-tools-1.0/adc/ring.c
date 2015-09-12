@@ -1,5 +1,7 @@
 #
 
+#include "general.h"
+
 #define _GNU_SOURCE	/* Linux-specific code below (O_TMPFILE) */
 
 #include <stdio.h>
@@ -30,7 +32,7 @@
  * Create and mmap() the ring buffer pages
  */
 
-struct readbuf *create_ring_buffer(int size, const char *tmpdir) {
+public struct readbuf *create_ring_buffer(int size, const char *tmpdir) {
   int fd;
   size_t sz;
   void *map;
@@ -151,7 +153,7 @@ struct readbuf *create_ring_buffer(int size, const char *tmpdir) {
  * Tidy up a previously-created ring buffer
  */
 
-int destroy_ring_buffer(struct readbuf *rb) {
+public int destroy_ring_buffer(struct readbuf *rb) {
   int ret;
 
   if( !rb || !rb->rb_start )

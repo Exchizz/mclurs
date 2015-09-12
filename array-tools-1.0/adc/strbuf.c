@@ -1,5 +1,7 @@
 #
 
+#include "general.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -19,7 +21,7 @@ struct _strbuf {
  * Return the usable string space in a strbuf.
  */
 
-int strbuf_space(strbuf s) {
+public int strbuf_space(strbuf s) {
   return MAX_STRBUF_SIZE;
 }
 
@@ -27,10 +29,10 @@ int strbuf_space(strbuf s) {
  * Allocate and free strbufs, using a queue to avoid excessive malloc()
  */
 
-static QUEUE_HEADER(sbufQ);
-static int N_in_Q = 0;
+private QUEUE_HEADER(sbufQ);
+private int N_in_Q = 0;
 
-strbuf alloc_strbuf(int nr) {
+public strbuf alloc_strbuf(int nr) {
   queue *ret;
 
   if( N_in_Q < nr ) {	/* The queue doesn't have enough */
@@ -61,11 +63,11 @@ strbuf alloc_strbuf(int nr) {
   return (strbuf)ret;
 }
 
-static void free_strbuf(strbuf s) {
+private void free_strbuf(strbuf s) {
   free( (void *)s );
 }
 
-void release_strbuf(strbuf s) {
+public void release_strbuf(strbuf s) {
   queue *p;
 
   while( (p = de_queue(queue_next(&s->s_Q))) != NULL ) {
@@ -81,7 +83,7 @@ void release_strbuf(strbuf s) {
  * Get the string pointer from an strbuf (since the latter is opaque, we need a function for this).
  */
 
-char *strbuf_string(strbuf s) {
+public char *strbuf_string(strbuf s) {
   return &s->s_buffer[0];
 }
 
@@ -89,7 +91,7 @@ char *strbuf_string(strbuf s) {
  * Return the number of characters printed into a strbuf so far
  */
 
-int strbuf_used(strbuf s) {
+public int strbuf_used(strbuf s) {
   return s->s_used;
 }
 
@@ -97,7 +99,7 @@ int strbuf_used(strbuf s) {
  * Mark the current used position.
  */
 
-int strbuf_setpos(strbuf s, int pos) {
+public int strbuf_setpos(strbuf s, int pos) {
   if( !s  ) {
     errno = EINVAL;
     return -1;
@@ -115,7 +117,7 @@ int strbuf_setpos(strbuf s, int pos) {
  * Do a formatted print into an strbuf, starting at pos.
  */
 
-static int strbuf_vprintf(strbuf s, int pos, const char *fmt, va_list ap) {
+private int strbuf_vprintf(strbuf s, int pos, const char *fmt, va_list ap) {
   int   rest;
   int   used;
   char *buf;
@@ -147,9 +149,9 @@ struct _percent {
   const char (*pc_func)();	/* then this function gives us the string */
 };
 
-static percent percent_list = NULL;
+private percent percent_list = NULL;
 
-static percent find_in_list(char c) {
+private percent find_in_list(char c) {
   percent p = percent_list;
 
   for( ; p; p=p->pc_link) {
@@ -159,7 +161,7 @@ static percent find_in_list(char c) {
   return NULL;
 }
 
-static void do_extra_percents(char *buf, int size, const char *fmt) {
+private void do_extra_percents(char *buf, int size, const char *fmt) {
 
   /* Copy the format into the buffer, checking each % modifier against the list */
   for( ; size > 1 && *fmt; size-- ) {
@@ -185,7 +187,7 @@ static void do_extra_percents(char *buf, int size, const char *fmt) {
 
 /* Start printing into the buffer at position pos */
 
-int strbuf_printf_pos(strbuf s, int pos, const char *fmt, ...) {
+public int strbuf_printf_pos(strbuf s, int pos, const char *fmt, ...) {
   va_list ap;
   int     used;
   char    fmt_buf[MAX_STRBUF_SIZE];
@@ -201,7 +203,7 @@ int strbuf_printf_pos(strbuf s, int pos, const char *fmt, ...) {
 
 /* Start printing into the buffer at position 0 */
 
-int strbuf_printf(strbuf s, const char *fmt, ...) {
+public int strbuf_printf(strbuf s, const char *fmt, ...) {
   va_list ap;
   int     used;
   char    fmt_buf[MAX_STRBUF_SIZE];
@@ -217,7 +219,7 @@ int strbuf_printf(strbuf s, const char *fmt, ...) {
 
 /* Start printing into the buffer at the current position */
 
-int strbuf_appendf(strbuf s, const char *fmt, ...) {
+public int strbuf_appendf(strbuf s, const char *fmt, ...) {
   va_list ap;
   int     used;
   char    fmt_buf[MAX_STRBUF_SIZE];
@@ -233,7 +235,7 @@ int strbuf_appendf(strbuf s, const char *fmt, ...) {
  * Register new percent interpreters.
  */
 
-int register_error_percent_handler(char c, const char (*fn)()) {
+public int register_error_percent_handler(char c, const char (*fn)()) {
   percent p = calloc(1, sizeof(struct _percent));
 
   if(p == NULL) {
@@ -251,7 +253,7 @@ int register_error_percent_handler(char c, const char (*fn)()) {
  * Revert a strbuf -- remove extra NUL characters inserted by tokenising
  */
 
-void strbuf_revert(strbuf s) {
+public void strbuf_revert(strbuf s) {
   char *p = &s->s_buffer[0];
   int   n;
 
@@ -265,7 +267,7 @@ void strbuf_revert(strbuf s) {
  * Debug a strbuf
  */
 
-void debug_strbuf(FILE *fp, strbuf s) {
+public void debug_strbuf(FILE *fp, strbuf s) {
   char *str = strbuf_string(s);
   char  buf[MAX_STRBUF_SIZE+64];
   char *b;

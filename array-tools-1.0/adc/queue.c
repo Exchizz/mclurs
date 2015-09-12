@@ -1,5 +1,7 @@
 #
 
+#include "general.h"
+
 #include <stdlib.h>
 #include "assert.h"
 #include "queue.h"
@@ -10,7 +12,7 @@
  * Invariant:  every q structure is doubly-linked;  new structures are singletons.
  */
 
-queue *init_queue(queue *p) {
+public queue *init_queue(queue *p) {
   if( p == NULL ) {
     p = (queue *)calloc(1, sizeof(queue));
     assertv(p != NULL, "Queue alocation failure\n");
@@ -24,7 +26,7 @@ queue *init_queue(queue *p) {
  * a singleton from its queue.
  */
 
-queue *de_queue(queue *p) {
+public queue *de_queue(queue *p) {
   if( p->q_next == p )
     return NULL;
   p->q_prev->q_next = p->q_next;
@@ -38,7 +40,7 @@ queue *de_queue(queue *p) {
  * next and prev chains continue in the correct senses
  */
 
-queue *splice_queue(queue *q, queue *p) {
+public queue *splice_queue(queue *q, queue *p) {
   queue *qn, *pp;
 
   qn = q->q_next;
@@ -55,7 +57,7 @@ queue *splice_queue(queue *q, queue *p) {
  * join start and end.
  */
 
-queue *unsplice_queue(queue *start, queue *end) {
+public queue *unsplice_queue(queue *start, queue *end) {
 }
 
 /*
@@ -68,14 +70,14 @@ queue *unsplice_queue(queue *start, queue *end) {
  * functions traverse the whole list visiting each node exactly once.
  */
 
-void map_queue_nxt(queue *start, queue *end, void (*fn)(void *, queue *), void *arg) {
+public void map_queue_nxt(queue *start, queue *end, void (*fn)(void *, queue *), void *arg) {
 
   for_nxt_in_Q(queue *p, start, end)
     (*fn)(arg, p);
   end_for_nxt;
 }
 
-void map_queue_prv(queue *start, queue *end, void (*fn)(void *, queue *), void *arg) {
+public void map_queue_prv(queue *start, queue *end, void (*fn)(void *, queue *), void *arg) {
 
   for_prv_in_Q(queue *p, start, end)
     (*fn)(arg, p);

@@ -1,5 +1,7 @@
 #
 
+#include "general.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -11,7 +13,7 @@
  * Useful utility function to ensure pages are pre-faulted.
  */
 
-void prefault_pages(void *p, int n, int w) {
+public void prefault_pages(void *p, int n, int w) {
   int ret = 0;
 
   while( n-- > 0 ) {
@@ -27,7 +29,7 @@ void prefault_pages(void *p, int n, int w) {
  * Locate a region of memory where one could map a file of size size.
  */
 
-void *mmap_locate(size_t length, int flags) {
+public void *mmap_locate(size_t length, int flags) {
   void *map;
 
   if( flags & MAL_DOUBLED ) length *= 2;
@@ -43,7 +45,7 @@ void *mmap_locate(size_t length, int flags) {
  * Map and lock a region of a file into memory at given fixed address.
  */
 
-void *mmap_and_lock_fixed(int fd, off_t offset, size_t length, int flags, void *fixed) {
+public void *mmap_and_lock_fixed(int fd, off_t offset, size_t length, int flags, void *fixed) {
   void *map;
   int   mflags = 0;
 
@@ -74,7 +76,7 @@ void *mmap_and_lock_fixed(int fd, off_t offset, size_t length, int flags, void *
  * Map and lock a region of a file into memory, don't care where...
  */
 
-void *mmap_and_lock(int fd, off_t offset, size_t length, int flags) {
+public void *mmap_and_lock(int fd, off_t offset, size_t length, int flags) {
   void *map;
   void *ms;
 

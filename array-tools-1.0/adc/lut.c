@@ -1,5 +1,7 @@
 #
 
+#include "general.h"
+
 #include "assert.h"
 #include <string.h>
 #include <comedi.h>
@@ -45,12 +47,12 @@
 #define	TABLE_SIZE	(1<<ADC_BITS)
 #endif
 
-static sampl_t lut_raw_to_1Vpk_500mV[TABLE_SIZE];
-static sampl_t lut_raw_to_1Vpk_750mV[TABLE_SIZE];
+private sampl_t lut_raw_to_1Vpk_500mV[TABLE_SIZE];
+private sampl_t lut_raw_to_1Vpk_750mV[TABLE_SIZE];
 
-static int lut_not_ready = 1;
+private int lut_not_ready = 1;
 
-void populate_conversion_luts() {
+public void populate_conversion_luts() {
   short raw;
 
   assertv(sizeof(sampl_t) == 2, "sizeof(sampl_t) is %d not 2\n", sizeof(sampl_t));	/* Check type definitions on this architecture */
@@ -73,7 +75,7 @@ void populate_conversion_luts() {
   lut_not_ready = 0;		/* The tables are ready now... */
 }
 
-void convert_raw_500mV(sampl_t *dst, sampl_t *src, int nsamples) {
+public void convert_raw_500mV(sampl_t *dst, sampl_t *src, int nsamples) {
   if(lut_not_ready)
     populate_conversion_luts();
 
@@ -92,7 +94,7 @@ void convert_raw_500mV(sampl_t *dst, sampl_t *src, int nsamples) {
   }
 }
 
-void convert_raw_750mV(sampl_t *dst, sampl_t *src, int nsamples) {
+public void convert_raw_750mV(sampl_t *dst, sampl_t *src, int nsamples) {
   if(lut_not_ready)
     populate_conversion_luts();
 
@@ -111,7 +113,7 @@ void convert_raw_750mV(sampl_t *dst, sampl_t *src, int nsamples) {
   }
 }
 
-void convert_raw_raw(sampl_t *dst, sampl_t *src, int nsamples) {
+public void convert_raw_raw(sampl_t *dst, sampl_t *src, int nsamples) {
   if(dst == src)
     return;
   memcpy(dst, src, nsamples*sizeof(sampl_t));

@@ -1,7 +1,9 @@
 #
 
+#include "general.h"
+
 /*
- * The main function for the writer thread
+ * The ZMQ address for the writer thread
  */
 
 #define	WRITER_CMD_ADDR	"inproc://Writer-CMD"
@@ -32,8 +34,8 @@ typedef struct {
 }
   wparams;
 
-extern int   verify_writer_params(wparams *, strbuf);
-extern void *writer_main(void *);
+export int   verify_writer_params(wparams *, strbuf);
+export void *writer_main(void *);
 
 #define FILE_NAME_SIZE		32
 
@@ -46,5 +48,5 @@ extern void *writer_main(void *);
 #define SNAPSHOT_COMPLETE	6 /* Snapshot written correctly (off queue) */
 #define SNAPSHOT_DONE		7 /* Structure is finished with */
 
-extern const char *snapshot_status(int);
+export const char *snapshot_status(int);
 

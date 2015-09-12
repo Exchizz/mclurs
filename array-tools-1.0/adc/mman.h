@@ -3,12 +3,14 @@
 #ifndef _MMAN_H
 #define _MMAN_H
 
+#include "general.h"
+
 /* Memory mapping and locking utilities */
 
-extern void  prefault_pages(void *, int, int);
-extern void *mmap_locate(size_t, int);
-extern void *mmap_and_lock_fixed(int, off_t, size_t, int, void *);
-extern void *mmap_and_lock(int, off_t, size_t, int);
+export void  prefault_pages(void *, int, int);
+export void *mmap_locate(size_t, int);
+export void *mmap_and_lock_fixed(int, off_t, size_t, int, void *);
+export void *mmap_and_lock(int, off_t, size_t, int);
 
 #define PROT_RDONLY	1
 #define PROT_WRONLY	2

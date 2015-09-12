@@ -1,5 +1,7 @@
 #
 
+#include "general.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,7 +28,7 @@ PARAM_TYPE_DECL(string, char *,   NULL,   "%s");
  * by the caller.
  */
 
-void reset_param(param_t *p) {
+public void reset_param(param_t *p) {
   if(p->p_type == PARAM_TYPE(string)) { /* Special case of dynamic string in two places */
     if( p->p_val && *(char **)p->p_val == p->p_str) { /* String copy is in both places */
       p->p_dyn = 0;				     /* Ignore dynamic:  caller is responsible */
@@ -44,7 +46,7 @@ void reset_param(param_t *p) {
  * Set the val pointer for a param.
  */
 
-void setval_param(param_t *p, void **val) {
+public void setval_param(param_t *p, void **val) {
   p->p_val = val;
 }
 
@@ -55,7 +57,7 @@ void setval_param(param_t *p, void **val) {
  * value is a permanent buffer, so just push.
  */
 
-int set_param_value(param_t *p, char *v) {
+public int set_param_value(param_t *p, char *v) {
   /*  fprintf(stderr, "Pushing value %s\n", v); */
   if( !p->p_source ) {
     errno = EPERM;
@@ -76,7 +78,7 @@ int set_param_value(param_t *p, char *v) {
  * parameter, if it exists.
  */
 
-param_t *find_param_by_name(const char *name, int sz, param_t ps[], int nps) {
+public param_t *find_param_by_name(const char *name, int sz, param_t ps[], int nps) {
   int i;
 
   /*  fprintf(stderr, "Looking for name "); fwrite(name, sz, 1, stderr); fprintf(stderr, "\n"); */
@@ -95,7 +97,7 @@ param_t *find_param_by_name(const char *name, int sz, param_t ps[], int nps) {
  * environment variable's value replaces the parameter's value, if any.
  */
 
-int set_param_from_env(char *env[], param_t ps[], int nps) {
+public int set_param_from_env(char *env[], param_t ps[], int nps) {
   int i;
 
   if( !env )
@@ -126,7 +128,7 @@ int set_param_from_env(char *env[], param_t ps[], int nps) {
  * cmd string is assumed NUL-terminated after the value.
  */
 
-int set_param_from_cmd(char *cmd, param_t ps[], int nps) {
+public int set_param_from_cmd(char *cmd, param_t ps[], int nps) {
   char *s;
   param_t *p;
 
@@ -158,7 +160,7 @@ int set_param_from_cmd(char *cmd, param_t ps[], int nps) {
  * start.
  */
 
-static int do_set_params_from_string(char *str, int opt, param_t ps[], int nps) {  
+private int do_set_params_from_string(char *str, int opt, param_t ps[], int nps) {  
   char *save;
   char *cur;
   int   done;
@@ -188,13 +190,13 @@ static int do_set_params_from_string(char *str, int opt, param_t ps[], int nps) 
 
 /* Parameters are compulasory */
 
-int set_params_from_string(char *str, param_t ps[], int nps) {
+public int set_params_from_string(char *str, param_t ps[], int nps) {
   return do_set_params_from_string(str, 0, ps, nps);
 }
 
 /* String may be empty of parameters */
 
-int set_opt_params_from_string(char *str, param_t ps[], int nps) {
+public int set_opt_params_from_string(char *str, param_t ps[], int nps) {
   return do_set_params_from_string(str, 1, ps, nps);
 }
 
@@ -203,7 +205,7 @@ int set_opt_params_from_string(char *str, param_t ps[], int nps) {
  * the location pointed to by the val pointer, which must be of the correct kind.
  */
 
-int assign_param(param_t *p) {
+public int assign_param(param_t *p) {
   if(p == NULL) {
     errno = EINVAL;
     return -1;
@@ -245,7 +247,7 @@ int assign_param(param_t *p) {
  * appropriate types and installing them in the external addresses where provided.
  */
 
-int assign_all_params(param_t ps[], int nps) {
+public int assign_all_params(param_t ps[], int nps) {
   int n;
 
   for(n=0; n<nps; n++) {
@@ -280,7 +282,7 @@ int assign_cmd_params(param_t ps[], int nps) {
  * buffer pointed to by vp, which must be suitable to receive it.
  */
 
-int get_param_str(param_t *p, const char **vp) {
+public int get_param_str(param_t *p, const char **vp) {
   const char *v = NULL;
   if( !p->p_str  ) {
     if( p->p_type == PARAM_TYPE(bool) ) {
@@ -305,7 +307,7 @@ int get_param_str(param_t *p, const char **vp) {
  * source has been set.  The long option names are tried in order; only one may match!
  */
 
-static param_t *arg_param_match(const char *a, param_t ps[], int nps) {
+private param_t *arg_param_match(const char *a, param_t ps[], int nps) {
   param_t *p, *ret;
   const char *ap;
 
@@ -346,7 +348,7 @@ static param_t *arg_param_match(const char *a, param_t ps[], int nps) {
  * reset.
  */
 
-int arg_defaults_from_params(void **argtable, int nargs, param_t ps[], int nps) {
+public int arg_defaults_from_params(void **argtable, int nargs, param_t ps[], int nps) {
   struct arg_hdr **ate = (struct arg_hdr **)&argtable[nargs-1];	/* The arg_end structure slot */
   param_t *endp = &ps[nps];
 
@@ -395,7 +397,7 @@ int arg_defaults_from_params(void **argtable, int nargs, param_t ps[], int nps) 
  * of precision for real number values.
  */
 
-int arg_results_to_params(void **argtable, param_t ps[], int nps) {
+public int arg_results_to_params(void **argtable, param_t ps[], int nps) {
   struct arg_hdr **ate =  (struct arg_hdr **)argtable;
   param_t *endp = &ps[nps];
 
@@ -461,7 +463,7 @@ int arg_results_to_params(void **argtable, param_t ps[], int nps) {
  * Generate part of a usage message based on the parameter structures
  */
 
-void param_option_usage(FILE *f, int spc, param_t ps[], int nps) {
+public void param_option_usage(FILE *f, int spc, param_t ps[], int nps) {
   int i;
   char *buf = malloc(spc+1);
 
@@ -475,7 +477,7 @@ void param_option_usage(FILE *f, int spc, param_t ps[], int nps) {
   }
 }
 
-void param_brief_usage(char *buf, int sz, param_t ps[], int nps) {
+public void param_brief_usage(char *buf, int sz, param_t ps[], int nps) {
   int i,
     used = 0,
     rest = sz-1;
@@ -499,7 +501,7 @@ void param_brief_usage(char *buf, int sz, param_t ps[], int nps) {
 
 #define LOCALBUF_SIZE 64
 
-int param_value_to_string(param_t *p, const char **s) {
+public int param_value_to_string(param_t *p, const char **s) {
   param_type *pt = p->p_type;
   char buf[LOCALBUF_SIZE];
   int  used = 0;
@@ -532,7 +534,7 @@ int param_value_to_string(param_t *p, const char **s) {
   return used;
 }
 
-void debug_params(FILE *fp, param_t ps[], int nps) {
+public void debug_params(FILE *fp, param_t ps[], int nps) {
   int i;
 
   for(i=0; i<nps; i++) {

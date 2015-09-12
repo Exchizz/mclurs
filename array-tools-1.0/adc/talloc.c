@@ -1,5 +1,7 @@
 #
 
+#include "general.h"
+
 /*
  * Table-based storage allocator.
  */
@@ -25,7 +27,7 @@ typedef struct _item {		/* Storage descriptor block */
 }
   item;
 
-const int talloc_overhead = sizeof(item);
+private const int talloc_overhead = sizeof(item);
 
 #define STATE_FREE	0	/* Zero means free, anything else is busy */
 #define STATE_BUSY	1
@@ -36,7 +38,7 @@ const int talloc_overhead = sizeof(item);
  * STATE_BUSY.  Returns NULL with ENOMEM if no items available.
  */
 
-void *talloc(pool *p, int state) {
+public void *talloc(pool *p, int state) {
   item *i;
 
   if( queue_singleton(&p->p_Q) ) { /* The free queue is empty */
@@ -67,7 +69,7 @@ void *talloc(pool *p, int state) {
  * N.B. Returns the item pointer, not the queue member!
  */
 
-void *i2usrq_de_queue(void *v) {
+public void *i2usrq_de_queue(void *v) {
   item *i = &((item *)v)[-1];
   de_queue(&i->i_Q);
   return v;
@@ -80,7 +82,7 @@ void *i2usrq_de_queue(void *v) {
  * N.B. Returns the queue member, not the item pointer!
  */
 
-queue *i2usrq_ins_after(queue *q, void *v) {
+public queue *i2usrq_ins_after(queue *q, void *v) {
   item *i = &((item *)v)[-1];
   return queue_ins_after(q, &i->i_Q);
 }
@@ -92,7 +94,7 @@ queue *i2usrq_ins_after(queue *q, void *v) {
  * N.B. Returns the queue member, not the item pointer!
  */
 
-queue *i2usrq_ins_before(queue *q, void *v) {
+public queue *i2usrq_ins_before(queue *q, void *v) {
   item *i = &((item *)v)[-1];
   return queue_ins_before(q, &i->i_Q);
 }
@@ -102,7 +104,7 @@ queue *i2usrq_ins_before(queue *q, void *v) {
  * Items whose state is not STATE_FREE will be skipped by the allocator.
  */
 
-void i2free_queue(void *v) {
+public void i2free_queue(void *v) {
   item *i = &((item *)v)[-1];
   pool *p = i->i_pool;
 
@@ -113,7 +115,7 @@ void i2free_queue(void *v) {
  * Set the state of an item.
  */
 
-void tset_state(void *v, int state) {
+public void tset_state(void *v, int state) {
   item *i = &((item *)v)[-1];
   i->i_state = state;
 }
@@ -122,7 +124,7 @@ void tset_state(void *v, int state) {
  * Get the state of an item.
  */
 
-int tget_state(void *v) {
+public int tget_state(void *v) {
   item *i = &((item *)v)[-1];
   return i->i_state;
 }
@@ -132,7 +134,7 @@ int tget_state(void *v) {
  * Do not call both this and i2free_queue() on the same item!!
  */
 
-void tfree(void *v) {
+public void tfree(void *v) {
   i2free_queue(v);
   tset_state(v, STATE_FREE);
 }
@@ -142,7 +144,7 @@ void tfree(void *v) {
  * If the storage is not dynamic, then flags should include T_STATIC.
  */
 
-pool *pool_create(void *addr, int nb, int os, int flags) {
+public pool *pool_create(void *addr, int nb, int os, int flags) {
   pool *n = (pool *)calloc(1, sizeof(struct _pool));
   int   i, no;
 
@@ -173,7 +175,7 @@ pool *pool_create(void *addr, int nb, int os, int flags) {
  * Add another block of storage to the given pool.
  */
 
-int pool_extend(pool *p, void *addr, int nb, int flags) {
+public int pool_extend(pool *p, void *addr, int nb, int flags) {
   pool *n = (pool *)calloc(1, sizeof(*p));
   pool *q;
   int   i, no;
@@ -206,7 +208,7 @@ int pool_extend(pool *p, void *addr, int nb, int flags) {
  * Destroy a pool:  release all non-static storage blocks and release the pool descriptors.
  */
 
-void pool_destroy(pool *p) {
+public void pool_destroy(pool *p) {
   pool *n;
 
   do {

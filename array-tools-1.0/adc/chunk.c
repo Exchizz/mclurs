@@ -1,5 +1,7 @@
 #
 
+#include "general.h"
+
 #include <stdlib.h>
 #include <stdint.h>
 #include <errno.h>
@@ -19,13 +21,13 @@ struct _frame {
  * Set up the mmap frames for data transfer to snapshot files.
  */
 
-static int    nframes;	  /* The number of simultaneous mmap frames */
-static frame *framelist;  /* The list of mmap frame descriptors */
-static int    n_frame_Q = 0;
+private int    nframes;	  /* The number of simultaneous mmap frames */
+private frame *framelist;  /* The list of mmap frame descriptors */
+private int    n_frame_Q = 0;
 
-static QUEUE_HEADER(frameQ);
+private QUEUE_HEADER(frameQ);
 
-int init_frame_system(strbuf e, int nfr, int ram, int chunk) {
+public int init_frame_system(strbuf e, int nfr, int ram, int chunk) {
 
   framelist = (frame *)calloc(nfr, sizeof(frame));
   if( framelist ) {
@@ -60,7 +62,7 @@ int init_frame_system(strbuf e, int nfr, int ram, int chunk) {
  * the free queue if its queue structure is a singleton.
  */
 
-static void scan_framelist() {
+private void scan_framelist() {
   int    n;
   frame *f;
 
@@ -78,7 +80,7 @@ static void scan_framelist() {
  * Allocate a frame descriptor.
  */
 
-static frame *alloc_frame() {
+private frame *alloc_frame() {
   frame *f;
 
   if( !n_frame_Q ) {
@@ -100,7 +102,7 @@ static frame *alloc_frame() {
  * Release a frame descriptor.  N.B.  this is done in the tidy thread, so must be atomic.
  */
 
-void release_frame(frame *f) {
+public void release_frame(frame *f) {
   f->f_map.b_bytes = 0;
 }
 
@@ -108,18 +110,18 @@ void release_frame(frame *f) {
  * Functions for dealing with transfer chunk descriptors.
  */
 
-static uint16_t chunk_counter;
+private uint16_t chunk_counter;
 
 #define N_CHUNK_ALLOC	(4096/sizeof(chunk_t))
 
-static QUEUE_HEADER(chunkQ);
-static int N_in_chunkQ = 0;
+private QUEUE_HEADER(chunkQ);
+private int N_in_chunkQ = 0;
 
 /*
  * Allocate n new chunk descriptors, chained using the writer queue descriptor
  */
 
-chunk_t *alloc_chunk(int nr) {
+public chunk_t *alloc_chunk(int nr) {
   queue *ret;
 
   if( N_in_chunkQ < nr ) {	/* The queue doesn't have enough */
@@ -161,7 +163,7 @@ chunk_t *alloc_chunk(int nr) {
  * Assume the reader queue descriptor is detached.
  */
 
-void release_chunk(chunk_t *c) {
+public void release_chunk(chunk_t *c) {
   queue *q = chunk2qp(c);
   queue *p;
 
@@ -179,21 +181,21 @@ void release_chunk(chunk_t *c) {
  * Initialise the data structures in a file's chunks
  */
 
-void setup_chunks(chunk_t *c, snapfile_t *f) {
+public void setup_chunks(chunk_t *c, snapfile_t *f) {
 }
 
 /*
  * Completed a chunk
  */
 
-void completed_chunk(chunk_t *c) {
+public void completed_chunk(chunk_t *c) {
 }
 
 /*
  * Abort a chunk
  */
 
-void abort_chunk(chunk_t *c) {
+public void abort_chunk(chunk_t *c) {
 }
 
 /*
@@ -204,9 +206,9 @@ void abort_chunk(chunk_t *c) {
 #define qp2cname(p)	(qp2chunk(p)->c_name)
 #define rq2cname(p)	(rq2chunk(p)->c_name)
 
-int debug_chunk(char buf[], int space, chunk_t *c) {
-  extern const char *snapshot_status(int);
-  extern uint16_t    snapfile_name(snapfile_t *);
+public int debug_chunk(char buf[], int space, chunk_t *c) {
+  import const char *snapshot_status(int);
+  import uint16_t    snapfile_name(snapfile_t *);
   int used;
 
   used = snprintf(buf, space,

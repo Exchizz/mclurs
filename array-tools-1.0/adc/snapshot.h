@@ -1,5 +1,8 @@
 #
 
+#include "general.h"
+
+/* MAYBE THIS SHOULD BE IN THE ADC MODULE */
 #define NCHAN	8
 
 typedef struct { 
@@ -8,17 +11,17 @@ typedef struct {
 
 /* Shared globals */
 
-extern void       *zmq_main_ctx;
+export void       *zmq_main_ctx;
 
-extern param_t	   globals[];
-extern const int   n_global_params;
+export param_t	   globals[];
+export const int   n_global_params;
 
-extern int	   verbose;
+export int	   verbose;
 
-extern int	   die_die_die_now;
+export int	   die_die_die_now;
 
-extern int	   tmpdir_dirfd;
-extern const char *tmpdir_path;
+export int	   tmpdir_dirfd;
+export const char *tmpdir_path;
 
 /* Common definitions */
 

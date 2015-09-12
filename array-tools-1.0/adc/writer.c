@@ -1,5 +1,7 @@
 #
 
+#include "general.h"
+
 #define  _GNU_SOURCE
 
 #include <stdio.h>
@@ -67,7 +69,7 @@ typedef struct {		/* Private snapshot descriptor structure used by writer */
 
 /* Forward declarations of snapshot descriptor routines */
 
-static uint16_t snapshot_name(snap_t *);
+private uint16_t snapshot_name(snap_t *);
 
 #define qp2snap(qp)  ((snap_t *)&(qp)[0])
 #define snap2qp(s)   (&((s)->s_xQ[0]))
@@ -95,11 +97,11 @@ typedef struct _sfile {
 
 /* Forward declarations of snapshot file descriptor routines needed by snapshot */
 
-static snapfile_t *alloc_snapfile();
-static int setup_snapfile(snapfile_t *, snap_t *);
-static void abort_snapfile(snapfile_t *);
-static void debug_snapfile(snapfile_t *);
-extern uint16_t snapfile_name(snapfile_t *);
+private snapfile_t *alloc_snapfile();
+private int setup_snapfile(snapfile_t *, snap_t *);
+private void abort_snapfile(snapfile_t *);
+private void debug_snapfile(snapfile_t *);
+import  uint16_t snapfile_name(snapfile_t *);
 
 #define qp2file(p)	((snapfile_t *)(p))
 #define file2qp(f)	(&(f)->f_Q)
@@ -108,8 +110,8 @@ extern uint16_t snapfile_name(snapfile_t *);
 
 /* Local queue headers etc. used by the WRITER thread */
 
-static QUEUE_HEADER(snapQ);		/* The list of active snapshots */
-static QUEUE_HEADER(WriterChunkQ);	/* The list of chunks awaiting mapping, in order of first sample */
+private QUEUE_HEADER(snapQ);		/* The list of active snapshots */
+private QUEUE_HEADER(WriterChunkQ);	/* The list of chunks awaiting mapping, in order of first sample */
 
 /*
  * --------------------------------------------------------------------------------
@@ -135,12 +137,12 @@ wparams writer_parameters;
  * Called after the process-wide ZMQ context is created (elsewhere).
  */
 
-static void *log;
-static void *reader;
-static void *command;
+private void *log;
+private void *reader;
+private void *command;
 
-static void create_writer_comms() {
-  extern void *snapshot_zmq_ctx;
+private void create_writer_comms() {
+  import void *snapshot_zmq_ctx;
   /* Create necessary sockets */
   command  = zh_bind_new_socket(snapshot_zmq_ctx, ZMQ_REP, WRITER_CMD_ADDR);	/* Receive commands */
   assertv(command != NULL, "Failed to instantiate reader command socket\n");
@@ -152,7 +154,7 @@ static void create_writer_comms() {
 
 /* CLose everything created above */
 
-static void close_writer_comms() {
+private void close_writer_comms() {
   zmq_close(log);
   zmq_close(reader);
   zmq_close(command);
@@ -171,7 +173,7 @@ static void close_writer_comms() {
  * when the main thread dropped privileges by changing to the desired non-root uid/gid.
  */
 
-static int set_up_writer_capability() {
+private int set_up_writer_capability() {
   cap_t c = cap_get_proc();
   const cap_value_t vs[] = { CAP_IPC_LOCK, CAP_SYS_NICE, CAP_SYS_ADMIN, };
 
@@ -183,7 +185,7 @@ static int set_up_writer_capability() {
  * Set the WRITER thread to real-time priority, if RTPRIO is set...
  */
 
-int set_writer_rt_scheduling() {
+private int set_writer_rt_scheduling() {
 
   if( writer_parameters.w_schedprio > 0 ) {	/* Then there is RT priority scheduling to set up */
     if( set_rt_scheduling(writer_parameters.w_schedprio) < 0 )
@@ -201,7 +203,7 @@ int set_writer_rt_scheduling() {
  * Debug writer parameters
  */
 
-static void debug_writer_params() {
+private void debug_writer_params() {
   char buf[MSGBUFSIZE];
   wparams *wp = &writer_parameters;
 
@@ -226,7 +228,7 @@ static void debug_writer_params() {
  * Test for the presence of a directory by getting a path fd for it.
  */
 
-static int test_directory(int dirfd, const char *name) {
+private int test_directory(int dirfd, const char *name) {
   int ret;
 
   ret = openat(dirfd, name, O_PATH|O_DIRECTORY); /* Try to open the directory */
@@ -238,7 +240,7 @@ static int test_directory(int dirfd, const char *name) {
  * Get a path handle to a directory, creating it if necessary.
  */
 
-static int new_directory(int dirfd, const char *name) {
+private int new_directory(int dirfd, const char *name) {
   int ret;
 
   ret = test_directory(dirfd, name);	/* Try to open the directory */
@@ -260,7 +262,7 @@ static int new_directory(int dirfd, const char *name) {
  * Snapshot working directory parameter(s), used by the D command line.
  */
 
-static param_t snapwd_params[] ={
+private param_t snapwd_params[] ={
 #define SNAP_SETWD  0
   { "path",    NULL, NULL,
     PARAM_TYPE(string), PARAM_SRC_CMD,
@@ -268,14 +270,14 @@ static param_t snapwd_params[] ={
   },
 };
 
-static const int n_snapwd_params =  (sizeof(snapwd_params)/sizeof(param_t));
+private const int n_snapwd_params =  (sizeof(snapwd_params)/sizeof(param_t));
 
 /*
  * Manage the writer's 'working directory':  clear the old, resetting to snapdir;
  * find/create and set a new one, clearing an old if necessary.
  */
 
-static void clear_writer_wd() {
+private void clear_writer_wd() {
   int fd = writer_parameters.w_snap_curfd;
 
   if( fd != writer_parameters.w_snap_dirfd ) {
@@ -285,7 +287,7 @@ static void clear_writer_wd() {
 }
 
 
-static int set_writer_new_wd(const char *dir) {
+private int set_writer_new_wd(const char *dir) {
   int fd;
 
   fd = new_directory(writer_parameters.w_snap_dirfd, dir);
@@ -300,7 +302,7 @@ static int set_writer_new_wd(const char *dir) {
  * comprises an introductory Dir verb followed by a  path=... parameter.
  */
 
-static int process_dir_command(strbuf c) {
+private int process_dir_command(strbuf c) {
   strbuf   e   = strbuf_next(c);
   param_t *ps  = &snapwd_params[0]; 
   int      nps = n_snapwd_params;
@@ -344,7 +346,7 @@ static int process_dir_command(strbuf c) {
  * for the parameter when we know exactly where it is.
  */
 
-static param_t snapshot_params[] ={
+private param_t snapshot_params[] ={
 #define SNAP_BEGIN  0
   { "begin",  NULL, NULL,
     PARAM_TYPE(int64), PARAM_SRC_CMD,
@@ -382,7 +384,7 @@ static param_t snapshot_params[] ={
   },
 };
 
-static const int n_snapshot_params = (sizeof(snapshot_params)/sizeof(param_t));
+private const int n_snapshot_params = (sizeof(snapshot_params)/sizeof(param_t));
 
 /*
  * --------------------------------------------------------------------------------
@@ -400,8 +402,9 @@ static const int n_snapshot_params = (sizeof(snapshot_params)/sizeof(param_t));
  * Allocate and free snap_t structures
  */
 
-static snap_t *alloc_snapshot() {
-  static uint16_t snap_counter = 0;
+private uint16_t snap_counter = 0;
+
+private snap_t *alloc_snapshot() {
   snap_t *ret = calloc(1, sizeof(snap_t));
 
   if( !snap_counter ) snap_counter++; /* Avoid snapshots called 0000 */
@@ -415,7 +418,7 @@ static snap_t *alloc_snapshot() {
   return ret;
 }
 
-static void free_snapshot(snap_t *s) {
+private void free_snapshot(snap_t *s) {
   if( !queue_singleton(snap2qp(s)) )
     de_queue(snap2qp(s));
   assertv(queue_singleton(snap2fq(s)),
@@ -437,7 +440,7 @@ uint16_t snapshot_name(snap_t *s) {
  */
 
 const char *snapshot_status(int st) {
-  static const char *stab[] = {
+  private const char *stab[] = {
     "III", "ERR", "PRP", "RDY", "...", ">>>", "+++", "FIN",
   };
   if(st>=0 && st<sizeof(stab)/sizeof(char *))
@@ -451,7 +454,7 @@ const char *snapshot_status(int st) {
  * - Check the parameters in an S command
  */
 
-static int check_snapshot_params(param_t ps[], strbuf e) {
+private int check_snapshot_params(param_t ps[], strbuf e) {
   int ret;
 
   /* path= is MANDATORY */
@@ -561,7 +564,7 @@ static int check_snapshot_params(param_t ps[], strbuf e) {
  * routine.
  */
 
-static void setup_snapshot_samples(snap_t *s, param_t p[]) {
+private void setup_snapshot_samples(snap_t *s, param_t p[]) {
 
   /* Start with length= -- if present, no finish= or end= spec. needed */
   if( p[SNAP_LENGTH].p_str ) {	/* Length was stored in s_samples, round up to integral number of pages */
@@ -624,7 +627,7 @@ static void setup_snapshot_samples(snap_t *s, param_t p[]) {
  * reported in the error buffer.
  */
 
-static snap_t *build_snapshot_descriptor(strbuf c) {
+private snap_t *build_snapshot_descriptor(strbuf c) {
   strbuf      e   = strbuf_next(c);
   param_t    *ps  = &snapshot_params[0]; 
   int         nps = n_snapshot_params;
@@ -698,7 +701,7 @@ static snap_t *build_snapshot_descriptor(strbuf c) {
  * Set up snapshot -- create the necessary file descriptor structures etc.
  */
 
-static void setup_snapshot(snap_t *s) {
+private void setup_snapshot(snap_t *s) {
   snapfile_t *f = alloc_snapfile();
 
   if(f == NULL) {
@@ -719,7 +722,7 @@ static void setup_snapshot(snap_t *s) {
  * Called when a snapshot file has just been written.
  */
 
-static void refresh_snapshot(snap_t *s) {
+private void refresh_snapshot(snap_t *s) {
   wparams *wp = &writer_parameters;
 
   if(s->s_status == SNAPSHOT_ERROR) {   /* Tidy up after an error */
@@ -748,7 +751,7 @@ static void refresh_snapshot(snap_t *s) {
  * Debugging function for snapshot descriptors...
  */
 
-static void debug_snapshot_descriptor(snap_t *s) {
+private void debug_snapshot_descriptor(snap_t *s) {
   char buf[MSGBUFSIZE];
 
   snprintf(buf, MSGBUFSIZE,
@@ -771,7 +774,7 @@ static void debug_snapshot_descriptor(snap_t *s) {
  * Snapshot status request parameter(s), used by the Z command line.
  */
 
-static param_t status_params[] ={
+private param_t status_params[] ={
 #define SNAP_NAME  0
   { "name",    NULL, NULL,
     PARAM_TYPE(int16), PARAM_SRC_CMD,
@@ -779,7 +782,7 @@ static param_t status_params[] ={
   },
 };
 
-static const int n_status_params =  (sizeof(status_params)/sizeof(param_t));
+private const int n_status_params =  (sizeof(status_params)/sizeof(param_t));
 
 /*
  * The snapshot s should report its status as follows.  If it is a
@@ -791,7 +794,7 @@ static const int n_status_params =  (sizeof(status_params)/sizeof(param_t));
  * reports for completed snapshots..
  */
 
-static void snapshot_report_status(strbuf x, snap_t *s) {
+private void snapshot_report_status(strbuf x, snap_t *s) {
 
   if(s->s_status == SNAPSHOT_DONE) {	 /* If completed, attach its error strbuf */
     queue_ins_after(strbuf2qp(x), strbuf2qp(s->s_error));
@@ -814,7 +817,7 @@ static void snapshot_report_status(strbuf x, snap_t *s) {
  * snapshot_report_status for snapshots in progress.
  */
 
-static int process_status_command(strbuf c) {
+private int process_status_command(strbuf c) {
   wparams *wp    = &writer_parameters;
   strbuf   e     = strbuf_next(c);
   param_t *ps    = &status_params[0]; 
@@ -897,9 +900,9 @@ static int process_status_command(strbuf c) {
  * Allocate and free snapfile_t structures
  */
 
-static uint16_t snapfile_counter;
+private uint16_t snapfile_counter;
 
-static snapfile_t *alloc_snapfile() {
+private snapfile_t *alloc_snapfile() {
   snapfile_t *ret = calloc(1, sizeof(snapfile_t));
 
   if(ret) {
@@ -910,7 +913,7 @@ static snapfile_t *alloc_snapfile() {
   return ret;
 }
 
-static void free_snapfile(snapfile_t *f) {
+private void free_snapfile(snapfile_t *f) {
   if(f->f_fd >= 0)
     close(f->f_fd);
   assertv(f->f_chunkQ == NULL, "Freeing snapfile %p with remaining chunks %p\n", f, f->f_chunkQ);
@@ -918,7 +921,7 @@ static void free_snapfile(snapfile_t *f) {
 }
 
 /* Debugging routine to return unique name */
-uint16_t snapfile_name(snapfile_t *f) {
+public uint16_t snapfile_name(snapfile_t *f) {
   return f->f_name;
 }
 
@@ -926,7 +929,7 @@ uint16_t snapfile_name(snapfile_t *f) {
  * Initialise a snapfile_t structure from a snap_t structure.
  */
 
-static int setup_snapfile(snapfile_t *f, snap_t *s) {
+private int setup_snapfile(snapfile_t *f, snap_t *s) {
   wparams *wp = &writer_parameters;
   int fd;
   int ret;
@@ -1020,7 +1023,7 @@ static int setup_snapfile(snapfile_t *f, snap_t *s) {
  * the frames released by the READER.
  */
 
-static void completed_snapfile(snapfile_t *f) {
+private void completed_snapfile(snapfile_t *f) {
   wparams *wp = &writer_parameters;
   snap_t  *s = f->f_parent;
   
@@ -1054,7 +1057,7 @@ static void completed_snapfile(snapfile_t *f) {
  * Adjust the w_totxfrsamples parameter to match new situation.
  */
 
-static void abort_snapfile(snapfile_t *f) {
+private void abort_snapfile(snapfile_t *f) {
   wparams *wp = &writer_parameters;
   snap_t  *s = f->f_parent;
 
@@ -1077,7 +1080,7 @@ static void abort_snapfile(snapfile_t *f) {
  * Emit debugging data for a given file descriptor.
  */
 
-static void debug_snapfile(snapfile_t *f) {
+private void debug_snapfile(snapfile_t *f) {
   snap_t *s = f->f_parent;
   int     left = MSGBUFSIZE-1,
 	  used = 0;
@@ -1120,7 +1123,7 @@ static void debug_snapfile(snapfile_t *f) {
  * Manage the write queue:  deal with queue message from reader.
  */
 
-static int process_reader_message(void *socket) {
+private int process_reader_message(void *socket) {
   return true;
 }
 
@@ -1130,7 +1133,7 @@ static int process_reader_message(void *socket) {
  * Initialise a snapshot file -- this will change to use chunks and frames.
  */
 
-static int initialise_snapshot_file(snapw *s, snapr *r) {
+private int initialise_snapshot_file(snapw *s, snapr *r) {
   int ret, fd;
 
   r->mmap = mmap_and_lock(fd, 0, r->bytes, PROT_RDWR|PREFAULT_RDWR|MAL_LOCKED);
@@ -1256,7 +1259,7 @@ static int initialise_snapshot_file(snapw *s, snapr *r) {
  * Handle command messages
  */
 
-int process_writer_command(void *s) {
+private int process_writer_command(void *s) {
   int     used;
   int     ret;
   char   *p;
@@ -1331,7 +1334,7 @@ int process_writer_command(void *s) {
  * WRITER thread message loop
  */
 
-static void writer_thread_msg_loop() {    /* Read and process messages */
+private void writer_thread_msg_loop() {    /* Read and process messages */
   int ret;
   int running;
   int n;
@@ -1375,7 +1378,7 @@ static void writer_thread_msg_loop() {    /* Read and process messages */
  * WRITER thread main routine
  */
 
-void *writer_main(void *arg) {
+public void *writer_main(void *arg) {
   int ret;
 
   create_writer_comms();
@@ -1413,8 +1416,8 @@ void *writer_main(void *arg) {
  * Called by the MAIN thread during start up initialisation.
  */
 
-int verify_writer_params(wparams *wp, strbuf e) {
-  extern int tmpdir_dirfd;	/* Imported from snapshot.c */
+public int verify_writer_params(wparams *wp, strbuf e) {
+  import int tmpdir_dirfd;	/* Imported from snapshot.c */
   int ret;
 
   if( wp->w_schedprio != 0 ) {	/* Check for illegal value */

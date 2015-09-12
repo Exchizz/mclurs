@@ -1,5 +1,7 @@
 #
 
+#include "general.h"
+
 /*
  * Low-priority thread that unlocks pages after they've been filled.
  */
@@ -19,17 +21,17 @@
 #include "tidy.h"
 #include "snapshot.h"
 
-extern void *snapshot_zmq_ctx;
+import void *snapshot_zmq_ctx;
 
-static void *tidy;
-static void *log;
+private void *tidy;
+private void *log;
 
 /*
  * Establish tidy comms:  this routine gets called first of all threads, so it
  * creates the context.
  */
 
-static char *create_tidy_comms(void **s) {
+private char *create_tidy_comms(void **s) {
   if( !snapshot_zmq_ctx )
     snapshot_zmq_ctx = zmq_ctx_new();
   if( !snapshot_zmq_ctx ) {
@@ -59,7 +61,7 @@ static char *create_tidy_comms(void **s) {
 
 /* Close the TIDY thread's comms channels */
 
-static void close_tidy_comms() {
+private void close_tidy_comms() {
   zmq_close(tidy);
   zmq_close(log);
 }
@@ -71,7 +73,7 @@ static void close_tidy_comms() {
  * log receiver socket, which is created here along with the context.
  */
 
-void *tidy_main(void *arg) {
+public void *tidy_main(void *arg) {
   char *err;
   int   ret;
   block b;

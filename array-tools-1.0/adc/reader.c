@@ -1,5 +1,7 @@
 #
 
+#include "general.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include "assert.h"
@@ -41,7 +43,7 @@
 #define USBDUXFAST_COMEDI_500mV	1 /* Bit 3 control output is 0 iff the CR_RANGE is one */
 #define USBDUXFAST_COMEDI_750mV	0 /* Bit 3 control output is 1 iff the CR_RANGE is zero */
 
-rparams reader_parameters;	/* The externally-visible parameters for the reader thread */
+public rparams reader_parameters;	/* The externally-visible parameters for the reader thread */
 
 struct comedi_state
 { comedi_t  *device;		/* The Comedi device handle */
@@ -126,8 +128,8 @@ struct reader_state
  * Reader internal state variables
  */
 
-static struct reader_state	reader; /* Reader state + parameters */
-static struct comedi_state	adc;	/* Comedi state + parameters */
+private struct reader_state	reader; /* Reader state + parameters */
+private struct comedi_state	adc;	/* Comedi state + parameters */
 
 /*
  * Reader thread comms initialisation.
@@ -135,13 +137,13 @@ static struct comedi_state	adc;	/* Comedi state + parameters */
  * Called after the context is created.
  */
 
-static void *wr_queue_reader;
-static void *tidy;
-static void *log;
-static void *command;
+private void *wr_queue_reader;
+private void *tidy;
+private void *log;
+private void *command;
 
-static void create_reader_comms() {
-  extern void *snapshot_zmq_ctx;
+private void create_reader_comms() {
+  import void *snapshot_zmq_ctx;
   /* Create necessary sockets */
   command  = zh_bind_new_socket(snapshot_zmq_ctx, ZMQ_REP, READER_CMD_ADDR);	/* Receive commands */
   assertv(command != NULL, "Failed to instantiate reader command socket\n");
@@ -155,7 +157,7 @@ static void create_reader_comms() {
 
 /* Close everything created above. */
 
-static void close_reader_comms() {
+private void close_reader_comms() {
   zmq_close(command);
   zmq_close(log);
   zmq_close(wr_queue_reader);
@@ -174,25 +176,12 @@ static void close_reader_comms() {
  * when the main thread dropped privileges by changing to the desired non-root uid/gid.
  */
 
-static int set_up_reader_capability() {
+private int set_up_reader_capability() {
   cap_t c = cap_get_proc();
   const cap_value_t vs[] = { CAP_IPC_LOCK, CAP_SYS_NICE, };
 
   cap_set_flag(c, CAP_EFFECTIVE, sizeof(vs)/sizeof(cap_value_t), &vs[0], CAP_SET);
   return cap_set_proc(c);
-}
-
-/*
- * Resource usage debugging
- */
-
-void print_rusage() {
-  struct rusage usage;
-
-  getrusage(RUSAGE_SELF, &usage);
-  fprintf(stderr, "Reader: maj %ld min %ld swap %d vsw %d isw %d\n",
-	  usage.ru_majflt, usage.ru_minflt, usage.ru_nswap, usage.ru_nvcsw, usage.ru_nivcsw
-	  );
 }
 
 /*
@@ -206,7 +195,7 @@ void print_rusage() {
  * RETURNS zero for success, < 0 for failure (value is failed step number)
  */
 
-static int comedi_transfer_initialise() {
+private int comedi_transfer_initialise() {
   int         i, ret, range;
   uint64_t    buf_window;
   comedi_cmd *cmd;
@@ -349,7 +338,7 @@ static int comedi_transfer_initialise() {
  * RETURNS 0 for normal completion, <0 for errors.
  */
 
-static int comedi_start_data_transfer() {
+private int comedi_start_data_transfer() {
   int   ret;
 
   if( reader_parameters.r_state != READER_RESTING ) {
@@ -376,7 +365,7 @@ static int comedi_start_data_transfer() {
  * reader structure state.
  */
 
-static int comedi_stop_data_transfer() {
+private int comedi_stop_data_transfer() {
   /* Tell Comedi to stop, if necessary */
   if( reader.adc_run )
     comedi_cancel(adc.device, 0);
@@ -401,7 +390,7 @@ static int comedi_stop_data_transfer() {
  * The data began ns samples before the timestamp in ts (more-or-less).
  */
 
-static void compute_data_start_timestamp(struct timespec *ts, int ns) {
+private void compute_data_start_timestamp(struct timespec *ts, int ns) {
   uint64_t timestamp_ns;
   long	   delay = ns*adc.sample_ns;
 
@@ -417,7 +406,7 @@ static void compute_data_start_timestamp(struct timespec *ts, int ns) {
  * Returns true if processing messages should continue.
  */
 
-static int process_reader_command(void *s) {
+private int process_reader_command(void *s) {
   rparams *rp = &reader_parameters;
   int      used;
   int      ret;
@@ -544,7 +533,7 @@ static int process_reader_command(void *s) {
  * Set the READER thread to real-time priority, if RTPRIO is set...
  */
 
-int set_reader_rt_scheduling() {
+public int set_reader_rt_scheduling() {
 
   if( reader_parameters.r_schedprio > 0 ) {	/* Then there is RT priority scheduling to set up */
     if( set_rt_scheduling(reader_parameters.r_schedprio) < 0 )
@@ -576,7 +565,7 @@ int set_reader_rt_scheduling() {
  * queued blocks before reading new data.
  */
 
-static int check_snapshot_timing(snapr *r) {
+private int check_snapshot_timing(snapr *r) {
   if(r->samples > adc.ring_buf->rb_samples ||
      r->first + adc.ring_buf->rb_samples < adc.head)
     return false;
@@ -593,7 +582,7 @@ static int check_snapshot_timing(snapr *r) {
  * structure back to the Writer.
  */
 
-static void process_ready_write_queue_item(snapr *r) {
+private void process_ready_write_queue_item(snapr *r) {
   int ret;
 
   de_queue(&r->Q);					/* Remove from wait queue */
@@ -617,7 +606,7 @@ static void process_ready_write_queue_item(snapr *r) {
 
 #endif
 
-static int process_queue_message(void *s) {
+private int process_queue_message(void *s) {
   return true;
 }
 
@@ -663,7 +652,7 @@ static int process_queue_message(void *s) {
  * Reader thread message loop
  */
 
-static void reader_thread_msg_loop() {    /* Read and process messages */
+private void reader_thread_msg_loop() {    /* Read and process messages */
   int ret;
   int running;
 
@@ -760,7 +749,7 @@ static void reader_thread_msg_loop() {    /* Read and process messages */
  * it needs.
  */
 
-void *reader_main(void *arg) {
+public void *reader_main(void *arg) {
   int ret;
   char *thread_msg = "normal exit";
 
@@ -806,7 +795,7 @@ void *reader_main(void *arg) {
  * Verify reader parameters and generate reader state description.
  */ 
 
-int verify_reader_params(rparams *rp, strbuf e) {
+public int verify_reader_params(rparams *rp, strbuf e) {
 
   if( rp->r_schedprio != 0 ) { /* Check for illegal value */
     int max, min;
@@ -825,7 +814,7 @@ int verify_reader_params(rparams *rp, strbuf e) {
 		   rp->r_frequency, 6e4, 3.75e5);
     return -1;
   }
-  else {
+  else {  /* THIS CODE SHOULD GO INTO THE ADC MODULE */
     int ns   = 1e9 / (rp->r_frequency*NCHAN); /* Inter-sample period */
     int xtra = ns % 100;
 

@@ -3,6 +3,7 @@
 #ifndef _ARGTAB_HELPER_H
 #define _ARGTAB_HELPER_H
 
+#include "general.h"
 #include "assert.h"
 #include "param.h"
 

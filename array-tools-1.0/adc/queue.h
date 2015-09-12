@@ -3,6 +3,8 @@
 #ifndef _QUEUE_H
 #define _QUEUE_H
 
+#include "general.h"
+
 typedef struct q
 {
   struct q  *q_next;
@@ -10,12 +12,12 @@ typedef struct q
 }
   queue;
 
-extern queue *de_queue(queue *);
-extern queue *init_queue(queue *);
-extern queue *splice_queue(queue *,queue *);
-extern queue *unsplice_queue(queue *, queue *);
-extern void   map_queue_nxt(queue *, queue *, void (*)(void *, queue *), void *);
-extern void   map_queue_prv(queue *, queue *, void (*)(void *, queue *), void *);
+export queue *de_queue(queue *);
+export queue *init_queue(queue *);
+export queue *splice_queue(queue *,queue *);
+export queue *unsplice_queue(queue *, queue *);
+export void   map_queue_nxt(queue *, queue *, void (*)(void *, queue *), void *);
+export void   map_queue_prv(queue *, queue *, void (*)(void *, queue *), void *);
 
 #define queue_next(q)	((q)->q_next)
 #define queue_prev(q)	((q)->q_prev)

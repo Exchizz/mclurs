@@ -6,6 +6,8 @@
 #include <stdio.h>
 #include <stdint.h>
 
+#include "general.h"
+
 typedef const struct {
   const char *t_name;
   int	      t_size;
@@ -16,7 +18,7 @@ typedef const struct {
 
 #define PARAM_TYPE(name) param_type_ ## name
 #define PARAM_TYPE_DECL(name,size,scan,show) param_type PARAM_TYPE(name)[] = { "<" #name ">" , sizeof(size), scan, show, }
-#define PARAM_TYPE_EXPORT(name) extern param_type PARAM_TYPE(name)[];
+#define PARAM_TYPE_EXPORT(name) export param_type PARAM_TYPE(name)[];
 
 PARAM_TYPE_EXPORT(bool);
 PARAM_TYPE_EXPORT(int16);
@@ -40,23 +42,23 @@ typedef struct
 #define	PARAM_SRC_ARG	0x2
 #define	PARAM_SRC_CMD	0x4
 
-extern int set_param_value(param_t *, char *);
-extern param_t *find_param_by_name(const char *, int, param_t [], int);
-extern int set_param_from_env(char *[], param_t [], int);
-extern int set_params_from_string(char *, param_t [], int);
-extern int set_opt_params_from_string(char *, param_t [], int);
-extern int get_param_str(param_t *, const char **);
-// extern void param_brief_usage(char *, int, param_t [], int);
-// extern void param_option_usage(FILE *, int, param_t [], int);
-// extern const char *pop_param_value(param_t *);
-extern void reset_param(param_t *);
-extern void setval_param(param_t *, void **);
-extern int assign_param(param_t *);
-extern int assign_all_params(param_t *, int);
-extern int assign_cmd_params(param_t *, int);
-extern int param_value_to_string(param_t *, const char **);
-extern int arg_defaults_from_params(void **, int, param_t [], int);
-extern int arg_results_to_params(void **, param_t [], int);
-extern void debug_params(FILE *, param_t [], int);
+export int set_param_value(param_t *, char *);
+export param_t *find_param_by_name(const char *, int, param_t [], int);
+export int set_param_from_env(char *[], param_t [], int);
+export int set_params_from_string(char *, param_t [], int);
+export int set_opt_params_from_string(char *, param_t [], int);
+export int get_param_str(param_t *, const char **);
+// export void param_brief_usage(char *, int, param_t [], int);
+// export void param_option_usage(FILE *, int, param_t [], int);
+// export const char *pop_param_value(param_t *);
+export void reset_param(param_t *);
+export void setval_param(param_t *, void **);
+export int assign_param(param_t *);
+export int assign_all_params(param_t *, int);
+export int assign_cmd_params(param_t *, int);
+export int param_value_to_string(param_t *, const char **);
+export int arg_defaults_from_params(void **, int, param_t [], int);
+export int arg_results_to_params(void **, param_t [], int);
+export void debug_params(FILE *, param_t [], int);
 
 #endif /* _PARAM_H */

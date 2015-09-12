@@ -18,7 +18,6 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdint.h>
-#include <assert.h>
 #include <errno.h>
 #include <string.h>
 #include <comedi.h>
@@ -27,8 +26,8 @@
 #include <time.h>
 #include <sys/time.h>
 #include <sys/resource.h>
-#include <sys/mman.h>
 
+#include "assert.h"
 #include "lut.h"
 #include "ring.h"
 #include "mman.h"
@@ -36,11 +35,44 @@
 #include "adc.h"
 
 /*
+ * Private information for the ADC module.
+ */
+
+#define N_USBDUX_CHANS	16
+
+#define ERRBUFSZ 128
+
+struct _adc
+{ comedi_t  *device;		/* The Comedi device handle */
+  int	     devflags;		/* Comedi device flags */
+  comedi_cmd command;		/* The command to send to the device */
+  int	     fd;		/* The device file descriptor for reading data */
+  int	     sample_ns;		/* The ADC inter-sample interval [ns] */
+  int	     poll_adc_interval;	/* Interval to wait when ADC is running [ms] */
+  unsigned   c[N_USBDUX_CHANS]; /* Command chennel list */
+  sampl_t   *comedi_buffer;	/* The memory-mapped Comedi streaming buffer  */
+  uint64_t   buffer_length;	/* The size of the Comedi streaming buffer [bytes] */
+  uint64_t   buffer_samples;	/* The buffer size in samples */
+  uint64_t   head,		/* The current sample number at the front of the Comedi buffer */
+	     tail;		/* The current last sample number processed in the buffer */
+  struct readbuf *ring_buf;	/* Ring buffer handle for Comedi transfer */
+  int	     adc_range;		/* The ADC full-scale range: 500 for 500mV and 750 for 750mV */
+  void	   (*convert)(sampl_t *, sampl_t *, int); /* LUT conversion function */
+  queue	     write_queue;	/* The queue header for the queue of snapshots */
+  int        running;		/* True when the ADC command ↓is running */
+  char       errbuf[ERRBUFSZ];
+  int	     adc_errno;
+};
+
+#define USBDUXFAST_COMEDI_500mV	1 /* Bit 3 control output is 0 iff the CR_RANGE is one */
+#define USBDUXFAST_COMEDI_750mV	0 /* Bit 3 control output is 1 iff the CR_RANGE is zero */
+
+/*
  * Allocate and set up a new ADC descriptor.
  */
 
-adc *adc_new(char *device) {
-  adc *ret = calloc(1, sizeof(adc));
+public adc adc_new(char *device) {
+  adc ret = calloc(1, sizeof(adc));
 
   if(ret) {
     init_queue(&ret->write_queue);
@@ -63,7 +95,7 @@ adc *adc_new(char *device) {
  * Release ADC resources and free an ADC structure.
  */
 
-int adc_destroy(adc *a) {
+public int adc_destroy(adc a) {
   assert(a != NULL);
   adc_stop(a);
   munmap(a->comedi_buffer, 2*a->buffer_length);
@@ -78,7 +110,7 @@ int adc_destroy(adc *a) {
  * Initialise the ADC structure for data capture.
  */
 
-int adc_init(adc *a, int bufsz, int ns, int range) {
+public int adc_init(adc a, int bufsz, int ns, int range) {
   int ret;
   int i;
 
@@ -159,7 +191,7 @@ int adc_init(adc *a, int bufsz, int ns, int range) {
   }
 
   /* Map the Comedi buffer into memory, twice */
-  void *map = mmap_and_lock_double(a->fd, 0, a->buffer_length, PROT_READ|MAL_LOCKED);
+  void *map = mmap_and_lock_double(a->fd, 0, a->buffer_length, PROT_RDONLY|MAL_LOCKED);
   if(map == NULL) {
     a->adc_errno = errno;
     strncpy(&a->errbuf[0], "mmap streaming buffer", sizeof(a->errbuf));
@@ -177,7 +209,7 @@ int adc_init(adc *a, int bufsz, int ns, int range) {
  * Install the ring buffer in the ADC object
  */
 
-int adc_set_ringbuf(adc *a, struct readbuf *r) {
+public int adc_set_ringbuf(adc a, struct readbuf *r) {
   if(r == NULL) {
     a->adc_errno = errno;
     strncpy(&a->errbuf[0], "set ring buffer", sizeof(a->errbuf));
@@ -190,7 +222,7 @@ int adc_set_ringbuf(adc *a, struct readbuf *r) {
  * Start the ADC data collection.
  */
 
-int adc_start(adc *a) {
+public int adc_start(adc a) {
   int ret;
 
   assert(a != NULL);
@@ -210,7 +242,7 @@ int adc_start(adc *a) {
  * Stop the ADC data collection.
  */
 
-int adc_stop(adc *a) {
+public int adc_stop(adc a) {
   assert(a != NULL);
   if(a->running) {
     comedi_cancel(a->device, 0);
@@ -227,7 +259,7 @@ int adc_stop(adc *a) {
  * that value:  used to estimate when ADC conversion begins.
  */
 
-int adc_fetch(adc *a, int nsamples, unint64_t *t) {
+public int adc_fetch(adc a, int nsamples, uint64_t *t) {
   int nb;
 
   assert(a != NULL);
