@@ -89,24 +89,21 @@ struct reader_state
  * and allocated.  The 'Param' command changes parameter values and
  * resets the state to PARAM.
  *
- * Param (space Name=value) [can be multi-frame]
+ * Param (space Name=value)+
  *   Name is a parameter name from the parameter descriptor array, value is a suitable value.
- * Quit
  *
  * Initialisation (RESTING) is managed in PARAM state using command
  * 'Ready'; the ring buffer is allocated and mapped, Comedi command is
  * checked and initialised.  Current buffers are released and new ones
  * allocated.  The verify_reader_params() routine handles all this.
  *
- * Ready
- * Quit
+ * Init
  *
  * In RESTING state, the 'Go' command initiates the ADC transfer process.
  * The state changes to ARMED if successful, otherwise RESTING (with
  * error messages).
  *
  * Go
- * Quit
  *
  * In ARMED state, actually seeing data from the ADC changes to RUN
  * state.  'Stop' command stops acquisition and changes back to
@@ -115,6 +112,9 @@ struct reader_state
  * sent via the pos channel.
  *
  * Stop
+ *
+ * The Quit command shuts the READER thread down smoothly.
+ *
  * Quit
  */
 
@@ -183,6 +183,21 @@ private int set_up_reader_capability() {
   cap_set_flag(c, CAP_EFFECTIVE, sizeof(vs)/sizeof(cap_value_t), &vs[0], CAP_SET);
   return cap_set_proc(c);
 }
+
+/*
+ * Get a value from the monotonic krnel clock and express in nanoseconds.
+ */
+
+public uint64_t  monotonic_ns_clock() {
+  uint64_t ret;
+  struct timespec now;
+
+  clock_gettime(CLOCK_MONOTONIC, &now);		/* Timestamp for debugging */
+  ret = now.tv_sec;
+  ret = ret*1000000000 + now.tv_nsec;
+  return ret;
+}
+
 
 /*
  * Create and initialise Comedi channel and command

@@ -14,6 +14,10 @@
 #define MAX_CHUNK_SZ	4096
 #define MIN_NFRAMES	4
 
+#define WRITER_MAX_CHUNK_DELAY		100 /* [ms] */
+#define WRITER_MAX_CHUNKS_TRANSFER	8
+#define WRITER_POLL_DELAY		50  /* [ms] */
+
 typedef struct {
 
   /* These values come from environment and/or argument parameters */
@@ -45,8 +49,9 @@ export void *writer_main(void *);
 #define SNAPSHOT_READY		3 /* Snapshot etc. is ready, but waiting for READER queue space */
 #define SNAPSHOT_WAITING	4 /* Snapshot etc. is ready, but waiting for data */
 #define SNAPSHOT_WRITING	5 /* Snapshot file's chunks are being written */
-#define SNAPSHOT_COMPLETE	6 /* Snapshot written correctly (off queue) */
-#define SNAPSHOT_DONE		7 /* Structure is finished with */
+#define SNAPSHOT_WRITTEN	6 /* Snapshot's chunk has been successfully written */
+#define SNAPSHOT_COMPLETE	7 /* Snapshot written correctly (off queue) */
+#define SNAPSHOT_DONE		8 /* Structure is finished with */
 
 export const char *snapshot_status(int);
 

@@ -5,12 +5,14 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <errno.h>
+#include <comedilib.h>
 
 #include "assert.h"
 #include "queue.h"
 #include "mman.h"
 #include "strbuf.h"
 #include "chunk.h"
+#include "writer.h"
 
 struct _frame {
   queue f_Q;
@@ -107,6 +109,14 @@ public void release_frame(frame *f) {
 }
 
 /*
+ * Report the index of a frame pointer in the table.
+ */
+
+public int frame_nr(frame *f) {
+  return f - framelist;
+}
+
+/*
  * Functions for dealing with transfer chunk descriptors.
  */
 
@@ -178,24 +188,28 @@ public void release_chunk(chunk_t *c) {
 }
 
 /*
- * Initialise the data structures in a file's chunks
+ * FInd a frame for a chunk and map the chunk into memory.  This may
+ * take arbitrary time since this is where Linux has to find us new
+ * pages.  This code runs in the WRITER thread.
  */
 
-public void setup_chunks(chunk_t *c, snapfile_t *f) {
-}
+public int map_chunk_to_frame(chunk_t *c) {
+  frame *fp = alloc_frame();
+  void  *map;
+  
+  if(fp == NULL)
+    return -1;
 
-/*
- * Completed a chunk
- */
-
-public void completed_chunk(chunk_t *c) {
-}
-
-/*
- * Abort a chunk
- */
-
-public void abort_chunk(chunk_t *c) {
+  fp->f_map.b_bytes = c->c_samples*sizeof(sampl_t);
+  /* Would really like to do WRONLY here, but I *think* that will break */
+  map = mmap_and_lock_fixed(c->c_fd, c->c_offset, fp->f_map.b_bytes, PROT_RDWR|PREFAULT_RDWR|MAL_LOCKED, fp->f_map.b_data);
+  if(map != fp->f_map.b_data) {	/* A (fatal) mapping error occurred... */
+    strbuf_appendf(c->c_error, "Unable to map chunk c:%04hx to frame %d: %m", c->c_name, frame_nr(fp));
+    c->c_status = SNAPSHOT_ERROR;
+    return -1;
+  }
+  c->c_frame = fp;		/* Succeeded, chunk now has a mapped frame */
+  return 0;
 }
 
 /*

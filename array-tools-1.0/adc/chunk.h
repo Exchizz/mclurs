@@ -20,16 +20,18 @@ typedef struct _sfile snapfile_t;
 
 typedef struct {
   queue	        c_Q[2];	    /* Q header for READER capture queue and WRITER file chunk list*/
-#define c_wQ c_Q[0]	    /* The chunk Q linkage associated with the file */
-#define c_rQ c_Q[1]	    /* The chunk Q linkage associated with the data flow */
-  uint32_t      c_samples;  /* The number of samples to copy */
-  int16_t      *c_ring;	    /* The ring buffer start for this chunk */
-  frame	       *c_frame;    /* The mmap'd file buffer for this chunk */
-  int	        c_status;   /* The status of this capture chunk */
-  strbuf        c_error;    /* The error buffer, for error messages (copy from snapshot_t origin) */
-  uint64_t      c_first;    /* First and last samples of this chunk */
-  uint64_t      c_last;
-  snapfile_t   *c_parent;   /* The chunk belongs to this file */
+#define c_wQ c_Q[0]	    /* Chunk Q linkage associated with the file */
+#define c_rQ c_Q[1]	    /* Chunk Q linkage associated with the data flow */
+  int16_t      *c_ring;	    /* Ring buffer start for this chunk */
+  frame	       *c_frame;    /* Mmap'd file buffer for this chunk */
+  strbuf        c_error;    /* Error buffer, for error messages (copy from snapshot_t origin) */
+  snapfile_t   *c_parent;   /* Chunk belongs to this file */
+  uint64_t      c_first;    /* First sample of this chunk */
+  uint64_t      c_last;     /* First sample beyond this chunk */
+  uint32_t      c_samples;  /* Number of samples to copy */
+  uint32_t      c_offset;   /* File offset for this chunk */
+  int	        c_status;   /* Status of this capture chunk */
+  int		c_fd;	    /* File descriptor for this chunk */
   uint16_t	c_name;	    /* Unique name for this chunk */
 }
   chunk_t;
@@ -42,11 +44,9 @@ typedef struct {
 
 export chunk_t *alloc_chunk(int);
 export void release_chunk(chunk_t *);
-export void setup_chunks(chunk_t *, snapfile_t *);
-export void completed_chunk(chunk_t *);
-export void abort_chunk(chunk_t *);
+export int map_chunk_to_frame(chunk_t *);
 
-export int  debug_chunk(char [], int, chunk_t *);
+export int debug_chunk(char [], int, chunk_t *);
 
 export void release_frame(frame *);
 

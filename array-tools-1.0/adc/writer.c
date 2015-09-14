@@ -87,6 +87,7 @@ typedef struct _sfile {
   int         f_fd;			/* System file descriptor -- only needed while pages left to map */
   int	      f_indexnr;		/* Index number of this file in the full set for the snapshot */
   int	      f_nchunks;		/* Number of chunks allocated for this file transfer */
+  int	      f_written;		/* NUmber of chunks actually written so far */
   chunk_t    *f_chunkQ;			/* Pointer to this file's writer chunk queue */
   int	      f_status;			/* Status flags for this file */
   strbuf      f_error;			/* The strbuf to write error text into */
@@ -441,7 +442,7 @@ uint16_t snapshot_name(snap_t *s) {
 
 const char *snapshot_status(int st) {
   private const char *stab[] = {
-    "III", "ERR", "PRP", "RDY", "...", ">>>", "+++", "FIN",
+    "INI", "ERR", "PRP", "RDY", "...", ">>>", "+++", "DON", "FIN",
   };
   if(st>=0 && st<sizeof(stab)/sizeof(char *))
     return stab[st];
@@ -966,27 +967,33 @@ private int setup_snapfile(snapfile_t *f, snap_t *s) {
   f->f_fd      = fd;
   f->f_parent  = s;
   f->f_error   = s->s_error;
-
+  f->f_written = 0;
+  
   wp->w_totxfrsamples -= s->s_samples; /* We are committing to writing this many more samples */
 
   /* Go through the chunk queue writing in data */
-  uint64_t first = s->s_first;
-  uint64_t rest  = s->s_samples;
-  uint32_t chunk = wp->w_chunksamples;
+  uint64_t first  = s->s_first;
+  uint64_t rest   = s->s_samples;
+  uint32_t chunk  = wp->w_chunksamples;
+  uint32_t offset = 0;
+
   for_nxt_in_Q(queue *p, chunk2qp(f->f_chunkQ), chunk2qp(f->f_chunkQ))
     chunk_t *c = qp2chunk(p);
     /* Determine chunk parameters */
     c->c_status  = SNAPSHOT_READY;
     c->c_parent  = f;
     c->c_error   = f->f_error;
+    c->c_fd	 = f->f_fd;
     c->c_ring    = NULL;	/* The ADC object computes this pointer */
     c->c_frame   = NULL;	/* The transfer frames are allocated elsewhere */
     c->c_first   = first;
     if(rest > chunk && rest < 2*chunk) /* Deal with final partial chunk(s) */
       chunk = rest / 2;
     c->c_samples = chunk;
-    c->c_last = first + chunk;
-    first += chunk;
+    c->c_last    = first + chunk;
+    c->c_offset  = offset;
+    offset += chunk*sizeof(sampl_t);
+    first  += chunk;
 
     /* Add the chunk to the WRITER chunk queue */
     queue *pos = &WriterChunkQ;
@@ -1054,6 +1061,10 @@ private void completed_snapfile(snapfile_t *f) {
 /*
  * Abort a file from the WRITER thread's viewpoint: remove all chunks
  * from the WRITER's chunk queue and mark the file in ERROR state.
+ *
+ * N.B. The READER AND WRITER both use the rq chunk linkage, and keep
+ * track of who has it by means of exchanged messages.
+ *
  * Adjust the w_totxfrsamples parameter to match new situation.
  */
 
@@ -1070,7 +1081,8 @@ private void abort_snapfile(snapfile_t *f) {
     if(queue_singleton(chunk2rq(c))) /* These were chunks in the READER queue */
       continue;
     de_queue(chunk2rq(c));	     /* Remove from WRITER chunk queue */
-    wp->w_totxfrsamples += c->c_samples;
+    if(c->c_status == SNAPSHOT_ERROR)    /* Release the write commitment for this chunk */
+      wp->w_totxfrsamples += c->c_samples;
   end_for_nxt;
 
   completed_snapfile(f);	/* This file is finished */
@@ -1088,12 +1100,12 @@ private void debug_snapfile(snapfile_t *f) {
   char    buf[MSGBUFSIZE];
 
   used = snprintf(&buf[used], left,
-		  "File %s (f:%04hx) of snapshot %04hx at %p: "
+		  "File %s (f:%04hx) of snapshot %04hx, at %p: "
 		  "Q [f:%04hx,f:%04hx] "
-		  "fd %d ix %d nc %d st %s\n",
+		  "fd %d ix %d nc %d/%d st %s\n",
 		  &f->f_file[0], f->f_name, s->s_name, f,
 		  qp2fname(queue_prev(&f->f_Q)), qp2fname(queue_next(&f->f_Q)),
-		  f->f_fd, f->f_indexnr, f->f_nchunks, snapshot_status(f->f_status)
+		  f->f_fd, f->f_indexnr, f->f_written, f->f_nchunks, snapshot_status(f->f_status)
 		  );
   if(used >= left) used = left;
   left -= used;
@@ -1112,6 +1124,41 @@ private void debug_snapfile(snapfile_t *f) {
 }
 
 /*
+ * Service the WRITER queue, i.e try to find frames to attach to
+ * chunks, and pass such chunks to the READER.  Steps are:
+ *
+ * - check to see what is in the WRITER queue
+ * - allocate at least one frame and pass chunk to READER
+ * - loop while time remains...
+ */
+
+private uint64_t writer_service_queue(uint64_t start) {
+  uint64_t now  = start;
+  uint64_t stop = start + WRITER_MAX_CHUNK_DELAY;
+  int	   max  = WRITER_MAX_CHUNKS_TRANSFER;
+  
+  while( !queue_singleton(&WriterChunkQ) && now < stop) {
+    chunk_t *c = rq2chunk(queue_next(&WriterChunkQ));
+    
+    if( map_chunk_to_frame(c) < 0 ) {
+      if(c->c_status == SNAPSHOT_ERROR) { /* Something nasty went wrong! */
+	abort_snapfile(c->c_parent);
+      }
+      max = 0;			/* Couldn't get a frame, so we are done */
+    }
+    else {			/* We succeeded */
+      de_queue(chunk2rq(c));
+      int ret = zh_put_msg(reader, 0, sizeof(chunk_t *), (void *)&c);
+      assertv(ret==sizeof(chunk_t *), "Message to READER has wrong size %d not %d\n", ret, sizeof(chunk_t *));
+    }
+    now = monotonic_ns_clock();
+    if( --max <= 0 )		/* Only ever do max chunks at the most */
+      break;
+  }
+  return now;			/* Current end-of-loop time */
+}
+
+/*
  * --------------------------------------------------------------------------------
  *
  * DEAL WITH COMMAND AND QUEUE MESSAGES AS THEY ARRIVE.
@@ -1120,144 +1167,55 @@ private void debug_snapfile(snapfile_t *f) {
  */
 
 /*
- * Manage the write queue:  deal with queue message from reader.
+ * Deal with a queue message from the READER thread.  These messages
+ * are chunk pointers and fall into two disjoint classes.  In either
+ * case any chunk received here has been detached from the READER's
+ * chunk queue and its frame has been released.
+ *
+ * - a chunk in SNAPSHOT_WRITTEN state:
+ *   release the write commitment.
+ *   
+ * If this was the last chunk of a snapfile, then run completed_snapfile.
+ *
+ * - a chunk in SNAPSHOT_ERROR state:
+ *   abort the snapfile.
+ *
+ * In this case the READER will have released all chunks in its queue
+ * and marked them in SNAPSHOT_ERROR state so that the abort_snapfile
+ * routine can clean them up.
  */
 
 private int process_reader_message(void *socket) {
-  return true;
-}
+  wparams    *wp = &writer_parameters;
+  chunk_t    *c;
+  int         ret;
+  snapfile_t *f;
+  
+  /* We are expecting a chunk pointer message */
+  ret = zh_get_msg(socket, 0, sizeof(chunk_t *), (void *)&c);
+  assertv(ret == sizeof(chunk_t *), "Queue message size wrong %d vs %d\n", ret, sizeof(chunk_t *));
+  assertv(c != NULL, "Queue message from READER was NULL pointer\n");
 
-#if 0
-
-/*
- * Initialise a snapshot file -- this will change to use chunks and frames.
- */
-
-private int initialise_snapshot_file(snapw *s, snapr *r) {
-  int ret, fd;
-
-  r->mmap = mmap_and_lock(fd, 0, r->bytes, PROT_RDWR|PREFAULT_RDWR|MAL_LOCKED);
-  if( r->mmap == NULL || errno )
-    return -18;
-  close(fd);
-
-  r->rd_state = SNAPSHOT_INIT;
-  return 0;
-}
-
-#endif
-
-#if 0
-  snapr *r = NULL;
-  snapw *s;
-  int ret;
-
-  ret = zh_get_msg(socket, 0, sizeof(snapr *), (void *)&r);
-  assertv(ret == sizeof(snapr *), "Queue message size wrong %d vs %d\n", ret, sizeof(snapr *));		/* We are expecting a message */
-  assertv(r != NULL, "Queue message was NULL pointer\n");
-
-  s = r->parent;
-  assertv(s != NULL, "Queue message %p with null parent\n", r);
-
-  /*
-   * This first if() handles the case where the received command is waiting for its reply.
-   *
-   * We sent a snapshot descriptor to the reader for checking.  By the time we process this reply, the Reader
-   * will have rejected with an error or queued the snapshot.  The Reader replies to this block when the first
-   * batch of snapshot data (all of it, unless the snapshot repeats) has been transferred.
-   */
-
-  if( s->wr_state == SNAPSHOT_CHECK ) {				 /* This is reader's reply for this message */
-    switch( r->rd_state ) {
-    case SNAPSHOT_ERROR:					 /* Failed reader check -- send error reply */
-      zh_put_multi(command, 2, "NO SNAP ", &s->name[0]);
-      unlinkat(s->dirfd, &r->file[0], 0);			 /* Remove contentless snapshot file */
-      s->wr_state = SNAPSHOT_DONE;
-      break;
-
-    case SNAPSHOT_STOPPED:					 /* Snapshot parameters fine, but no capture in progress */
-      zh_put_multi(command, 2, "ST SNAP ", &s->name[0]);
-      unlinkat(s->dirfd, &r->file[0], 0);			 /* Remove contentless snapshot file */
-      s->wr_state = SNAPSHOT_DONE;
-      break;
-
-    case SNAPSHOT_WRITTEN:
-      zh_put_multi(command, 2, "OK SNAP ", &s->name[0]);
-      s->wr_state = SNAPSHOT_REPLIED;
-      break;
+  f= c->c_parent;
+  
+  if(c->c_status == SNAPSHOT_WRITTEN) {
+    f->f_written++;
+    if(f->f_written == f->f_nchunks) {
+      f->f_status = SNAPSHOT_WRITTEN;
+      wp->w_totxfrsamples += c->c_samples;
+      completed_snapfile(f);
     }
+    return true;      
   }
-
-  /*
-   * Next we handle the case where a snapshot part has been written successfully and a subsequent block in the
-   * same series is being processed.
-   *
-   * At this point we have sent a (positive) reply to the original snapshot command message.  We can arrive
-   * here if the Reader has replied to a SNAPSHOT_CHECK request with SNAPSHOT_WRITTEN, or to a repeat (i.e. 
-   * SNAPSHOT_REPLIED) request.  If the reply was SNAPSHOT_WRITTEN, then we check for repeats and organise them
-   * as required.
-   */
-
-#define TIMESPECSUB(a,b,c) do { c.tv_sec=a.tv_sec-b.tv_sec; c.tv_nsec=a.tv_nsec-b.tv_nsec; if(c.tv_nsec<0) { c.tv_sec--; c.tv_nsec+=1000000000; } } while(0)
-
-  if( s->wr_state == SNAPSHOT_REPLIED ) {			 /* An OK reply has already been sent;  this is a repeat snapshot  */
-    struct timespec iv1;
-    char   timebuf[256] = { '\0' };
-
-    TIMESPECSUB(r->written, r->ready,   iv1);			 /* Compute data copying interval */
-    snprintf(timebuf, 256, " [%d,%09d]", iv1.tv_sec, iv1.tv_nsec);
-    switch( r->rd_state ) {
-    case SNAPSHOT_ERROR:					 /* Snapshot capture parameters unacceptable */
-      zh_put_multi(log, 4, "Snapshot ", s->name, " aborted", timebuf);
-      s->wr_state = SNAPSHOT_DONE;
-      break;
-
-    case SNAPSHOT_WRITTEN:					 /* The reader has finished with this one */
-      zh_put_multi(log, 4, "Snapshot ", s->name, " completed", timebuf);
-      s->wr_state = r->count? SNAPSHOT_REPEAT : SNAPSHOT_DONE;
-      break;
-    }
-  }
-
-  /*
-   * Here we actually deal with repeat requests for new parts
-   */
-
-  if( s->wr_state == SNAPSHOT_REPEAT ) {			 /* Finished with a snapshot but count > 0, so repeat */
-    ret = refresh_snapshot_descriptor(s);			 /* Re-initialise for next file */
-    if(ret < 0) {
-      s->wr_state = SNAPSHOT_DONE;
-      zh_put_multi(log, 3, "Snapshot ", s->name, " rollover failed");
-    }
-    else {							 /* New snapshot descriptor ready */
-      s->wr_state = SNAPSHOT_REPLIED;
-      ret = zh_put_msg(socket, 0, sizeof(snapr *), (void *)&r);	 /* Hand it off to Reader */
-      assertv(ret > 0, "Message to reader failed with %d\n", ret);
-      return true;
-    }
-  }
-
-  /*
-   * And here we tidy up
-   */
-
-  if( s->wr_state == SNAPSHOT_DONE ) {				 /* Finished with this descriptor */
-    destroy_snapshot_descriptor(s);
+  if(c->c_status == SNAPSHOT_ERROR) {
+    abort_snapfile(f);
     return true;
   }
-
-  /* SHOULD NOT REACH HERE, IF THE STATE MACHINE IS WORKING AS EXPECTED! */
-  assertv(false, "Writer: queue message in illegal state pair (%d,%d)\n", r->rd_state, s->wr_state);
-  return false;
+  
+  assertv(false, "Chunk c:%04hx received in unexpected state %s\n", c->c_name, snapshot_status(c->c_status));
 }
 
-#endif
-
 /* ================================ Process Command Messages ================================ */
-
-/*
- * Handle command messages
- */
 
 private int process_writer_command(void *s) {
   int     used;
@@ -1335,6 +1293,7 @@ private int process_writer_command(void *s) {
  */
 
 private void writer_thread_msg_loop() {    /* Read and process messages */
+  int borrowedtime;
   int ret;
   int running;
   int n;
@@ -1354,8 +1313,12 @@ private void writer_thread_msg_loop() {    /* Read and process messages */
   zh_put_multi(log, 1, "WRITER thread is initialised");
 
   running = writer_parameters.w_running;
+  borrowedtime = 0;		/* Keeps track of the number of [ms] we owe */
+
   while( running && !die_die_die_now ) {
-    int ret = zmq_poll(&poll_list[0], N_POLL_ITEMS, -1);
+    int delay = borrowedtime + WRITER_POLL_DELAY; /* This is how long we wait normally in [ms] */
+
+    int ret = zmq_poll(&poll_list[0], N_POLL_ITEMS, (delay<=0? -1 : delay));
 
     if( ret < 0 && errno == EINTR ) { /* Interrupted */
       zh_put_multi(log, 1, "WRITER loop interrupted");
@@ -1364,11 +1327,20 @@ private void writer_thread_msg_loop() {    /* Read and process messages */
     if(ret < 0)
       break;
 
+    if(delay >= 0)		/* We did some waiting, we owe no time */
+      borrowedtime = 0;
+
+    uint64_t tick = monotonic_ns_clock();
+    
     for(n=0; n<N_POLL_ITEMS; n++) {
       if( poll_list[n].revents & ZMQ_POLLIN ) {
-	running = (*poll_responders[n])(poll_list[n].socket);
+	if( (*poll_responders[n])(poll_list[n].socket) )
+	  running = true;
       }
     }
+    
+    uint64_t tock = writer_service_queue(tick);
+    borrowedtime -= (tock-tick+500000)/1000000; /* Rounded elapsed time in [ms] */
   }
 }
 
