@@ -74,9 +74,9 @@ private void close_tidy_comms() {
  */
 
 public void *tidy_main(void *arg) {
-  char *err;
-  int   ret;
-  block b;
+  char  *err;
+  int    ret;
+  frame *f;
 
   err = create_tidy_comms((void **)arg);
   if(err) {
@@ -86,11 +86,9 @@ public void *tidy_main(void *arg) {
 
   zh_put_multi(log, 1, "TIDY   thread initialised");
   
-  while( ret = zh_get_msg(tidy, 0, sizeof(block), &b) && !die_die_die_now ) {
-    assertv(ret > 0, "TIDY read message error, ret=%d\n", ret);
-    if(b.b_data == NULL)
-      break;
-    munmap(b.b_data, b.b_bytes);
+  while( ret = zh_get_msg(tidy, 0, sizeof(frame *), &f) && !die_die_die_now ) {
+    assertv(ret==sizeof(frame *), "TIDY read message error, ret=%d\n", ret);
+    release_frame(f);
   }
 
   zh_put_multi(log, 1, "TIDY   thread terminates by return");

@@ -87,7 +87,8 @@ typedef struct _sfile {
   int         f_fd;			/* System file descriptor -- only needed while pages left to map */
   int	      f_indexnr;		/* Index number of this file in the full set for the snapshot */
   int	      f_nchunks;		/* Number of chunks allocated for this file transfer */
-  int	      f_written;		/* NUmber of chunks actually written so far */
+  int	      f_written;		/* Number of chunks actually written so far */
+  int	      f_pending;		/* Number of chunks controlled by the READER thread */
   chunk_t    *f_chunkQ;			/* Pointer to this file's writer chunk queue */
   int	      f_status;			/* Status flags for this file */
   strbuf      f_error;			/* The strbuf to write error text into */
@@ -1078,14 +1079,17 @@ private void abort_snapfile(snapfile_t *f) {
 
   for_nxt_in_Q(queue *p, chunk2qp(f->f_chunkQ), chunk2qp(f->f_chunkQ));
     chunk_t *c = qp2chunk(p);
-    if(queue_singleton(chunk2rq(c))) /* These were chunks in the READER queue */
+    if(queue_singleton(chunk2rq(c))) {	    /* These were chunks in the READER queue */
+      if(c->c_status == SNAPSHOT_WAITING) { /* These were pending chunks in transit from WRITER to READER */
+	c->c_status = SNAPSHOT_ERROR;
+	wp->w_totxfrsamples += c->c_samples;
+      }
       continue;
-    de_queue(chunk2rq(c));	     /* Remove from WRITER chunk queue */
-    if(c->c_status == SNAPSHOT_ERROR)    /* Release the write commitment for this chunk */
+    }
+    de_queue(chunk2rq(c));		    /* Remove from WRITER chunk queue */
+    if(c->c_status == SNAPSHOT_ERROR)       /* Release the write commitment for this chunk */
       wp->w_totxfrsamples += c->c_samples;
   end_for_nxt;
-
-  completed_snapfile(f);	/* This file is finished */
 }
 
 /*
@@ -1124,20 +1128,38 @@ private void debug_snapfile(snapfile_t *f) {
 }
 
 /*
+ * --------------------------------------------------------------------------------
+ *
+ * MAIN LOOP TASKS: deal with command and queue messages as they arrive and transfer
+ *		    chunks to the READER when possible.
+ *
+ *  --------------------------------------------------------------------------------
+ */
+
+/*
  * Service the WRITER queue, i.e try to find frames to attach to
  * chunks, and pass such chunks to the READER.  Steps are:
  *
  * - check to see what is in the WRITER queue
  * - allocate at least one frame and pass chunk to READER
  * - loop while time remains...
+ *
+ * The READER receives messages for chunks that are now in Waiting
+ * state, and it returns chunks in either Written state or Error
+ * state.
+ *
+ * Note that when the READER returns a chunk in error state there may
+ * be other chunks in transit as messages between the WRITER and
+ * READER...  The WRITER needs to keep track of these and make sure
+ * they are released in an orderly fashion.
  */
 
 private uint64_t writer_service_queue(uint64_t start) {
   uint64_t now  = start;
   uint64_t stop = start + WRITER_MAX_CHUNK_DELAY;
-  int	   max  = WRITER_MAX_CHUNKS_TRANSFER;
+  int	   max;
   
-  while( !queue_singleton(&WriterChunkQ) && now < stop) {
+  for(max=WRITER_MAX_CHUNKS_TRANSFER; max > 0 && !queue_singleton(&WriterChunkQ) && now < stop; --max) { /* Only ever do max chunks at the most */
     chunk_t *c = rq2chunk(queue_next(&WriterChunkQ));
     
     if( map_chunk_to_frame(c) < 0 ) {
@@ -1147,24 +1169,16 @@ private uint64_t writer_service_queue(uint64_t start) {
       max = 0;			/* Couldn't get a frame, so we are done */
     }
     else {			/* We succeeded */
-      de_queue(chunk2rq(c));
+      de_queue(chunk2rq(c));	/* Hand the chunk over to the READER thread */
+      c->c_status = SNAPSHOT_WAITING;
+      c->c_parent->f_pending++;
       int ret = zh_put_msg(reader, 0, sizeof(chunk_t *), (void *)&c);
       assertv(ret==sizeof(chunk_t *), "Message to READER has wrong size %d not %d\n", ret, sizeof(chunk_t *));
     }
     now = monotonic_ns_clock();
-    if( --max <= 0 )		/* Only ever do max chunks at the most */
-      break;
   }
   return now;			/* Current end-of-loop time */
 }
-
-/*
- * --------------------------------------------------------------------------------
- *
- * DEAL WITH COMMAND AND QUEUE MESSAGES AS THEY ARRIVE.
- *
- *  --------------------------------------------------------------------------------
- */
 
 /*
  * Deal with a queue message from the READER thread.  These messages
@@ -1182,7 +1196,11 @@ private uint64_t writer_service_queue(uint64_t start) {
  *
  * In this case the READER will have released all chunks in its queue
  * and marked them in SNAPSHOT_ERROR state so that the abort_snapfile
- * routine can clean them up.
+ * routine can clean them up.  Chunks in transit between WRITER and
+ * READER will still be in SNAPSHOT_WAITING state and are tidied by
+ * abort_snapfile which runs for the first erroneous chunk.  The
+ * snapfile structure is tidied by completed_snapfile which runs when
+ * the last pending chunk is returned.
  */
 
 private int process_reader_message(void *socket) {
@@ -1197,18 +1215,22 @@ private int process_reader_message(void *socket) {
   assertv(c != NULL, "Queue message from READER was NULL pointer\n");
 
   f= c->c_parent;
+  f->f_pending--;
   
   if(c->c_status == SNAPSHOT_WRITTEN) {
     f->f_written++;
     if(f->f_written == f->f_nchunks) {
       f->f_status = SNAPSHOT_WRITTEN;
       wp->w_totxfrsamples += c->c_samples;
-      completed_snapfile(f);
+      completed_snapfile(f);	/* This file is finished -- all chunks were written */
     }
     return true;      
   }
   if(c->c_status == SNAPSHOT_ERROR) {
-    abort_snapfile(f);
+    if(f->f_status != SNAPSHOT_ERROR)
+      abort_snapfile(f);	/* Tidy the chunk list, marking all into SNAPSHOT_ERROR state */
+    if(f->f_pending == 0)
+      completed_snapfile(f);	/* This file is finished -- no pending chunks in transit */
     return true;
   }
   

@@ -101,10 +101,16 @@ private frame *alloc_frame() {
 }
 
 /*
- * Release a frame descriptor.  N.B.  this is done in the tidy thread, so must be atomic.
+ * Release a frame descriptor.  N.B.  this is done in the tidy thread,
+ * so must be atomic: the frame is released by setting the bytes value
+ * to zero.  The munmap() here complements the mmap call in the chunk
+ * mapper below.
  */
 
 public void release_frame(frame *f) {
+  if(f->f_map.b_data == NULL)
+      return;
+  munmap(f->f_map.b_data, f->f_map.b_bytes);
   f->f_map.b_bytes = 0;
 }
 

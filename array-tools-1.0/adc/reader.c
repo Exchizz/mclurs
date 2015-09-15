@@ -137,7 +137,7 @@ private struct comedi_state	adc;	/* Comedi state + parameters */
  * Called after the context is created.
  */
 
-private void *wr_queue_reader;
+private void *writer;
 private void *tidy;
 private void *log;
 private void *command;
@@ -149,8 +149,8 @@ private void create_reader_comms() {
   assertv(command != NULL, "Failed to instantiate reader command socket\n");
   log      = zh_connect_new_socket(snapshot_zmq_ctx, ZMQ_PUSH, LOG_SOCKET);  /* Socket for log messages */
   assertv(log != NULL, "Failed to instantiate reader log socket\n");
-  wr_queue_reader = zh_bind_new_socket(snapshot_zmq_ctx, ZMQ_PAIR, READER_QUEUE_ADDR);
-  assertv(wr_queue_reader != NULL, "Failed to instantiate reader queue socket\n");
+  writer = zh_bind_new_socket(snapshot_zmq_ctx, ZMQ_PAIR, READER_QUEUE_ADDR);
+  assertv(writer != NULL, "Failed to instantiate reader queue socket\n");
   tidy     = zh_connect_new_socket(snapshot_zmq_ctx, ZMQ_PAIR, TIDY_SOCKET);  /* Socket to TIDY thread */
   assertv(tidy != NULL, "Failed to instantiate reader->tidy socket\n");
 }
@@ -160,7 +160,7 @@ private void create_reader_comms() {
 private void close_reader_comms() {
   zmq_close(command);
   zmq_close(log);
-  zmq_close(wr_queue_reader);
+  zmq_close(writer);
   zmq_close(tidy);
 }
 
@@ -606,7 +606,7 @@ private void process_ready_write_queue_item(snapr *r) {
   clock_gettime(CLOCK_MONOTONIC, &r->written);;		/* Timestamp for debugging */
   r->rd_state = SNAPSHOT_WRITTEN;
   r->count--;						/* Completed 1 snapshot */
-  ret = zh_put_msg(wr_queue_reader, 0, sizeof(snapr *), &r);  /* Reply, and return block to writer */
+  ret = zh_put_msg(writer, 0, sizeof(snapr *), &r);	/* Reply, and return block to writer */
   assertv(ret > 0, "Failed to send message to writer\n");
   print_rusage();
 }
@@ -621,47 +621,58 @@ private void process_ready_write_queue_item(snapr *r) {
 
 #endif
 
+/*
+ * Handle a message from the WRITER.  The message will be a chunk
+ * which is ready to add to the READER's pending-work queue.  Chunks
+ * arrive here with a state of SNAPSHOT_WAITING or SNAPSHOT_ERROR (if
+ * they were in transit when an error occurred).  The latter are sent
+ * straight back to the WRITER, which is counting down pending chunks
+ * to file completion, after their frame has been released.
+ */
+
+private QUEUE_HEADER(ReaderChunkQ);
+
 private int process_queue_message(void *s) {
-  return true;
-}
+  rparams *rp = &reader_parameters;
+  chunk_t *c;
+  int      ret;
+
+  ret = zh_get_msg(s, 0, sizeof(chunk_t *), (void *)&c);
+  assertv(ret==sizeof(chunk_t *), "Received message from WRITER with wrong size %d (not %d)\n", ret, sizeof(chunk_t *));
 
 #if 0
-  int   ret;
-  snapr *r = NULL;
+  /* Check the chunk is still current -- set SNAPSHOT_ERROR state on failure */
 
-  ret = zh_get_msg(s, 0, sizeof(snapr *), (void *)&r);
-  assertv(ret == sizeof(snapr *), "Reader receives wrongly sized message: %d got vs %d expected\n", ret, sizeof(snapr *));
-  assertv(r != NULL, "Received NULL pointer from writer\n");
-
-  if(reader_parameters.r_state != READER_ARMED && reader_parameters.r_state != READER_RUN) {
-    r->rd_state = SNAPSHOT_STOPPED; /* Snapshot fine but cannot do it */
+  if(rp->r_state != READER_ARMED && rp->r_state != READER_RUN) {
+    /* Chunk is fine but READER cannot do it */
   }
-  else {
-    if( check_snapshot_timing(r) ) {
-      queue *h = &adc.write_queue;
-      queue *q = h->q_next;
-
-      if(q == h) {
-	queue_ins_after(h, &r->Q);
-      }
-      else {
-	while(q->q_next != h && r->last > ((snapr *)q->q_next)->last);
-	queue_ins_after(q, &r->Q);
-      }
-      r->rd_state = SNAPSHOT_WAITING;    
-      return;			/* Snapshot accepted, queue it and reply later */
-    }
-    else {
-      r->rd_state = SNAPSHOT_ERROR;
-    }
-  }
-
-  /* An error was detected:  reply now */
-  ret = zh_put_msg(s, 0, sizeof(snapr *), (void *)&r); /* Send reply */
-  assertv(ret > 0, "Failed to send message to writer\n");
-}
-
 #endif
+
+  if(c->c_status==SNAPSHOT_ERROR) {
+    ret = zh_put_msg(writer, 0, sizeof(chunk_t *), (void *)&c);		/* ... so we send it straight back */
+    assertv(ret==sizeof(chunk_t *), "Message returned to WRITER with wrong size %d (not %d)\n", ret, sizeof(chunk_t *));
+    ret = zh_put_msg(tidy, 0, sizeof(block *), &c->c_frame);
+    assertv(ret==sizeof(frame *), "Frane message to TIDY with wrong size %d (not %d)\n", ret, sizeof(frame *));
+    c->c_frame = NULL;
+    return true;
+  }
+
+  assertv(c->c_status==SNAPSHOT_WAITING, "Received chunk c:%04hx has unexpected state %s\n", c->c_name, snapshot_status(c->c_status));
+
+  /* Add the chunk to the READER chunk queue */
+  queue *pos = &ReaderChunkQ;
+  if( !queue_singleton(&ReaderChunkQ) ) {
+    for_nxt_in_Q(queue *p, queue_next(&ReaderChunkQ), &ReaderChunkQ);
+    chunk_t *h = rq2chunk(p);
+    if(h->c_first > c->c_first) {
+      pos = p;
+      break;
+    }
+    end_for_nxt;
+  }
+  queue_ins_before(pos, chunk2rq(c));
+  return true;
+}
 
 /*
  * Reader thread message loop
@@ -675,7 +686,7 @@ private void reader_thread_msg_loop() {    /* Read and process messages */
 
   /* Main loop:  read messages and process messages */
   zmq_pollitem_t  poll_list[] =
-    { { wr_queue_reader, 0, ZMQ_POLLIN, 0 },
+    { { writer,  0, ZMQ_POLLIN, 0 },
       { command, 0, ZMQ_POLLIN, 0 },
     };
 #define	N_POLL_ITEMS	(sizeof(poll_list)/sizeof(zmq_pollitem_t))
