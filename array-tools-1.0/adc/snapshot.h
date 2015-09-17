@@ -2,13 +2,6 @@
 
 #include "general.h"
 
-/* MAYBE THIS SHOULD BE IN THE ADC MODULE */
-#define NCHAN	8
-
-typedef struct { 
-  int16_t channels[NCHAN];
-} samples_t;
-
 /* Shared globals */
 
 export void       *zmq_main_ctx;

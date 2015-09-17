@@ -11,4 +11,6 @@ export void convert_raw_500mV(sampl_t *, sampl_t *, int);
 export void convert_raw_750mV(sampl_t *, sampl_t *, int);
 export void convert_raw_raw(sampl_t *, sampl_t *, int);
 
+typedef void (*convertfn)(sampl_t *, sampl_t *, int);
+
 #endif /* _LUT_H */

@@ -2,7 +2,7 @@
 
 TARGETS=grab trig snapchat snapshot
 OFILES=snapshot.o reader.o writer.o tidy.o
-LIBOBJS=util.o lut.o ring.o mman.o param.o queue.o rtprio.o strbuf.o chunk.o
+LIBOBJS=util.o lut.o ring.o mman.o param.o queue.o rtprio.o strbuf.o chunk.o adc.o
 XTRAS=grab.o snapchat.o trig.o
 LIBRARY=utilities.a
 ARGTAB_SRCS=argtab-int16.c argtab-int64.c
@@ -33,7 +33,7 @@ grab.o:		grab.c mman.h lut.h argtab.h
 
 trig.o:		trig.c snapshot.h util.h param.h argtab.h
 
-reader.o:	reader.c reader.h snapshot.h util.h queue.h param.h ring.h mman.h lut.h tidy.h chunk.h general.h
+reader.o:	reader.c reader.h snapshot.h util.h queue.h param.h adc.h mman.h tidy.h chunk.h general.h
 
 adc.o:		adc.c adc.h mman.h queue.h ring.h general.h
 

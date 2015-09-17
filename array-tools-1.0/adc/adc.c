@@ -28,6 +28,8 @@
 #include <sys/resource.h>
 
 #include "assert.h"
+#include "strbuf.h"
+#include "chunk.h"
 #include "lut.h"
 #include "ring.h"
 #include "mman.h"
@@ -40,53 +42,73 @@
 
 #define N_USBDUX_CHANS	16
 
-#define ERRBUFSZ 128
+#define MIN_SAMPLING_FREQUENCY	6e4	/* Minimum sampling frequency per channel [Hz] */
+#define MAX_SAMPLING_FREQUENCY  3.75e5	/* Maximum sampling frequency per channel [Hz] */
+#define MIN_COMEDI_BUF_SIZE	8      	/* Minimum Comedi Buffer size [MiB] */
+#define MAX_COMEDI_BUF_SIZE	256    	/* Maximum Comedi Buffer size [MiB] */
 
-struct _adc
-{ comedi_t  *device;		/* The Comedi device handle */
-  int	     devflags;		/* Comedi device flags */
-  comedi_cmd command;		/* The command to send to the device */
-  int	     fd;		/* The device file descriptor for reading data */
-  int	     sample_ns;		/* The ADC inter-sample interval [ns] */
-  int	     poll_adc_interval;	/* Interval to wait when ADC is running [ms] */
-  unsigned   c[N_USBDUX_CHANS]; /* Command chennel list */
-  sampl_t   *comedi_buffer;	/* The memory-mapped Comedi streaming buffer  */
-  uint64_t   buffer_length;	/* The size of the Comedi streaming buffer [bytes] */
-  uint64_t   buffer_samples;	/* The buffer size in samples */
-  uint64_t   head,		/* The current sample number at the front of the Comedi buffer */
-	     tail;		/* The current last sample number processed in the buffer */
-  struct readbuf *ring_buf;	/* Ring buffer handle for Comedi transfer */
-  int	     adc_range;		/* The ADC full-scale range: 500 for 500mV and 750 for 750mV */
-  void	   (*convert)(sampl_t *, sampl_t *, int); /* LUT conversion function */
-  queue	     write_queue;	/* The queue header for the queue of snapshots */
-  int        running;		/* True when the ADC command ↓is running */
-  char       errbuf[ERRBUFSZ];
-  int	     adc_errno;
+struct _adc {
+  comedi_t  *a_device;			/* Comedi device handle */
+  int	     a_devflags;		/* Comedi device flags */
+  int	     a_fd;			/* Device file descriptor */
+  int	     a_req_bufsz_mib;		/* Requested buffer size [MiB] */
+  int	     a_bufsz_bytes;		/* Size of the buffer in bytes */
+  int	     a_bufsz_samples;		/* Size of the buffer in samples */
+  sampl_t   *a_comedi_ring;		/* Ring buffer for the device */
+  double     a_totfrequency;		/* Total sampling frequency */
+  int	     a_intersample_ns;		/* Time between samples [ns] */
+  int	     a_range;			/* Current conversion range */
+  convertfn  a_convert;			/* Current conversion function */
+  comedi_cmd a_command;			/* Comedi command descriptor structure */
+  unsigned   a_chans[N_USBDUX_CHANS];	/* Channel descriptors for hardware channels */
+  int	     a_running;			/* True when an ADC data conversion is running */
+  int	     a_live;			/* True when we have seen data, and a_start_time is set */
+  uint64_t   a_start_time;		/* Time the current data conversion stream started */
+  uint64_t   a_head_time;		/* Timestamp of latest buffer sample */
+  uint64_t   a_head;			/* Latest sample present in the ring buffer */
+  uint64_t   a_tail;			/* Earliest sample present in the ring buffer */
 };
 
 #define USBDUXFAST_COMEDI_500mV	1 /* Bit 3 control output is 0 iff the CR_RANGE is one */
 #define USBDUXFAST_COMEDI_750mV	0 /* Bit 3 control output is 1 iff the CR_RANGE is zero */
 
 /*
+ * ADC is a singleton class, so we can get away with defining a single private structure.
+ */
+
+private struct _adc snapshot_adc;
+
+/*
+ * Error string function for strbuf module.
+ */
+
+private int comedi_error_set_up = 0;
+
+private const char *comedi_error() {
+  return comedi_strerror( comedi_errno() );
+}
+
+/*
  * Allocate and set up a new ADC descriptor.
  */
 
-public adc adc_new(char *device) {
-  adc ret = calloc(1, sizeof(adc));
+public adc adc_new(const char *device, strbuf e) {
+  adc ret = &snapshot_adc;
 
-  if(ret) {
-    init_queue(&ret->write_queue);
-    ret->device = comedi_open(device);
-    if(ret->device) {
-      ret->fd = comedi_fileno(ret->device);
-      ret->devflags = comedi_get_subdevice_flags(ret->device, 0);
-    }
-    else {
-      int saved_errno = errno;
-      free(ret);
-      errno = saved_errno;
-      ret = NULL;
-    }
+  if( !comedi_error_set_up ) {	/* Install the routine to interpolate %C strings */
+    int ret = register_error_percent_handler('C', comedi_error);
+    assertv(ret==0, "Failed to register handler for Comedi errors (%%C): %m\n");
+  }
+  
+  ret->a_device = comedi_open(device);
+  if(ret->a_device) {
+    ret->a_fd = comedi_fileno(ret->a_device);
+    ret->a_devflags = comedi_get_subdevice_flags(ret->a_device, 0);
+  }
+  else {
+    ret->a_device = NULL;
+    ret = NULL;
+    strbuf_appendf(e, "Comedi device %s failure setting up ADC structure: %C", device);
   }
   return ret;
 }
@@ -95,14 +117,87 @@ public adc adc_new(char *device) {
  * Release ADC resources and free an ADC structure.
  */
 
-public int adc_destroy(adc a) {
-  assert(a != NULL);
-  adc_stop(a);
-  munmap(a->comedi_buffer, 2*a->buffer_length);
-  comedi_close(a->device);
-  close(a->fd);
-  destroy_ring_buffer(a->ring_buf);
-  free(a);
+public void adc_destroy(adc a) {
+  adc_stop_data_transfer(a);
+
+  if(a->a_fd)
+    close(a->a_fd);
+
+  if(a->a_device)
+    comedi_close(a->a_device);    
+
+  if(a->a_comedi_ring)
+    munmap(a->a_comedi_ring, a->a_bufsz_bytes);  
+
+  /* Zero the structure -- back to initial state */
+  bzero(a, sizeof(struct _adc));
+}
+
+/*
+ * Set the total capture sampling frequency from the per-channel frequency.
+ */
+
+public int adc_set_chan_frequency(adc a, strbuf e, double *freq) {
+  double f = *freq;
+  
+  if(f < MIN_SAMPLING_FREQUENCY || f > MAX_SAMPLING_FREQUENCY) {
+    strbuf_appendf(e, "Sampling frequency %g not within compiled-in ADC limits [%g,%g] Hz",
+		   f, MIN_SAMPLING_FREQUENCY, MAX_SAMPLING_FREQUENCY);
+    return -1;
+  }
+
+  int ns   = 1e9 / (f*NCHANNELS); /* Inter-sample period */
+  int xtra = ns % 100;
+  
+  /* Adjust period for 30[MHz] USBDUXfast clock rate */
+  ns = 100 * (ns / 100);
+  if( xtra > 17 && xtra < 50 )
+    ns += 33;
+  if( xtra >= 50 && xtra < 83 )
+    ns += 67;
+  if( xtra >= 84 )
+    ns += 100;
+  a->a_intersample_ns = ns; /* Need a plausible value at all times for computing snapshot data */
+  a->a_totfrequency = 1e9 / ns;
+  *freq = a->a_totfrequency / NCHANNELS;
+  return 0;
+}
+
+/*
+ * Set the desired ring buffer size.
+ */
+
+public int adc_set_bufsz(adc a, strbuf e, int bufsz) {
+  if(bufsz < MIN_COMEDI_BUF_SIZE || bufsz > MAX_COMEDI_BUF_SIZE) {
+    strbuf_appendf(e, "Comedi buffer size %d MiB outwith compiled-in range [%d,%d] MiB",
+		   bufsz, MIN_COMEDI_BUF_SIZE, MAX_COMEDI_BUF_SIZE);
+    return -1;
+  }
+  a->a_req_bufsz_mib = bufsz;
+  return 0;
+}
+
+/*
+ * Set the desired ADC range
+ */
+
+public int adc_set_range(adc a, strbuf e, int range) {
+  /* Set up the conversion function:  500mV or 750mV FSD */
+  switch(range) {
+  case 500:			/* Narrow FSD range */
+    a->a_convert = convert_raw_500mV;
+    a->a_range = USBDUXFAST_COMEDI_500mV;
+    break;
+
+  case 750:			/* Wide FSD range */
+    a->a_convert = convert_raw_750mV;
+    a->a_range = USBDUXFAST_COMEDI_750mV;
+    break;
+
+  default:
+    strbuf_appendf(e, "Comedi range spec %d unknown", range);
+    return -1;
+  }
   return 0;
 }
 
@@ -110,130 +205,93 @@ public int adc_destroy(adc a) {
  * Initialise the ADC structure for data capture.
  */
 
-public int adc_init(adc a, int bufsz, int ns, int range) {
+public int adc_init(adc a, strbuf e) {
   int ret;
   int i;
 
-  assert(a != NULL);
-
   /* Initialise Comedi streaming buffer */
-  int request = bufsz * 1024 * 1024;
-  ret = comedi_get_buffer_size(a->device, 0);
+  int request = a->a_req_bufsz_mib * 1024 * 1024;
+  ret = comedi_get_buffer_size(a->a_device, 0);
   if( request > ret ) {
-    ret = comedi_get_max_buffer_size(a->device, 0);  
+    ret = comedi_get_max_buffer_size(a->a_device, 0);  
     if( request > ret ) {
-      ret = comedi_set_max_buffer_size(a->device, 0, request);
+      ret = comedi_set_max_buffer_size(a->a_device, 0, request);
       if( ret < 0 ) {
-	a->adc_errno = comedi_errno();
-	snprintf(&a->errbuf[0], sizeof(a->errbuf), "Comedi set max buffer to %dMiB", bufsz);
+	strbuf_appendf(e, "Comedi set max buffer to %dMiB failed: %C", a->a_req_bufsz_mib);
 	return -1;
       }
     }
-    ret = comedi_set_buffer_size(a->device, 0, request);
+    ret = comedi_set_buffer_size(a->a_device, 0, request);
     if( ret < 0 ) {
-      a->adc_errno = comedi_errno();
-      snprintf(&a->errbuf[0], sizeof(a->errbuf), "Comedi set streaming buffer to %dMiB", bufsz);
+      strbuf_appendf(e, "Comedi set streaming buffer to %dMiB failed: %C", a->a_req_bufsz_mib);
       return -1;
     }
   }
 
-  a->buffer_length = comedi_get_buffer_size(a->device, 0);
-  a->buffer_samples = a->buffer_length / sizeof(sampl_t);
+  a->a_bufsz_bytes = comedi_get_buffer_size(a->a_device, 0);
+  a->a_bufsz_samples = a->a_bufsz_bytes / sizeof(sampl_t);
   comedi_set_global_oor_behavior(COMEDI_OOR_NUMBER);
 
   /* Initialise the command structure */
-  ret = comedi_get_cmd_generic_timed(a->device, 0, &a->command, N_USBDUX_CHANS, 0);
+  ret = comedi_get_cmd_generic_timed(a->a_device, 0, &a->a_command, N_USBDUX_CHANS, 0);
   if(ret < 0) {
-    a->adc_errno = comedi_errno();
-    snprintf(&a->errbuf[0], sizeof(a->errbuf), "Comedi set-up-command step 1");
-    return -1;
-  }
-
-  /* Inter-channel sample period [ns] */
-  a->sample_ns = ns;
-
-  /* Set up the conversion function:  500mV or 750mV FSD */
-  switch(range) {
-
-  case 1:
-  case 500:			/* Narrow FSD range */
-    a->convert = convert_raw_500mV;
-    range = USBDUXFAST_COMEDI_500mV;
-    break;
-
-  case 0:
-  case 750:			/* Wide FSD range */
-    a->convert = convert_raw_750mV;
-    range = USBDUXFAST_COMEDI_750mV;
-    break;
-
-  default:
-    snprintf(&a->errbuf[0], sizeof(a->errbuf), "Comedi range spec %d unknown", range);
-    errno = EINVAL;
+    strbuf_appendf(e, "Comedi generic command setup failed: %C");
     return -1;
   }
 
   /* Set the command parameters from the reader parameter values */
   for(i=0; i<N_USBDUX_CHANS; i++)
-    a->c[i] = CR_PACK_FLAGS(i, range, AREF_GROUND, 0);
-  a->command.chanlist    = &a->c[0];
-  a->command.stop_src    = TRIG_NONE;
-  a->command.stop_arg    = 0;
-  a->command.convert_arg = a->sample_ns;
+    a->a_chans[i] = CR_PACK_FLAGS(i, a->a_range, AREF_GROUND, 0);
+  a->a_command.chanlist    = &a->a_chans[0];
+  a->a_command.stop_src    = TRIG_NONE;
+  a->a_command.stop_arg    = 0;
+  a->a_command.convert_arg = a->a_intersample_ns;
 
   /* Ask the driver to check the command structure and complete any omissions */
-  (void) comedi_command_test(a->device, &a->command);
-  ret = comedi_command_test(a->device, &a->command);
+  (void) comedi_command_test(a->a_device, &a->a_command);
+  ret = comedi_command_test(a->a_device, &a->a_command);
   if( ret < 0 ) {
-    a->adc_errno = comedi_errno();
-    snprintf(&a->errbuf[0], sizeof(a->errbuf), "Comedi set-up-command step 2");
+    strbuf_appendf(e, "Comedi second command test fails: %C");
     return -1;
   }
 
-  /* Map the Comedi buffer into memory, twice */
-  void *map = mmap_and_lock_double(a->fd, 0, a->buffer_length, PROT_RDONLY|MAL_LOCKED);
+  /* Check the timing:  a difference here means a problem with the driver */
+  if(a->a_command.convert_arg != a->a_intersample_ns) {
+    a->a_intersample_ns = a->a_command.convert_arg;
+    a->a_totfrequency = 1e9 / a->a_command.convert_arg;
+  }
+  
+  /* Map the Comedi buffer into memory, duplicated */
+  void *map = mmap_and_lock(a->a_fd, 0, a->a_bufsz_bytes, PROT_RDONLY|PREFAULT_RDONLY|MAL_LOCKED|MAL_DOUBLED);
   if(map == NULL) {
-    a->adc_errno = errno;
-    strncpy(&a->errbuf[0], "mmap streaming buffer", sizeof(a->errbuf));
+    strbuf_appendf(e, "Unable to mmap Comedi streaming buffer: %m");
     return -1;
   }
-  a->comedi_buffer = map;
+  a->a_comedi_ring = map;
 
   /* Initialise the sample position indices */
-  a->head = 0;  /* MAY BE REDUNDANT */
-  a->tail = 0;
+  a->a_head = 0;
+  a->a_tail = 0;
+  a->a_start_time = 0;
+  a->a_head_time  = 0;
+  a->a_running = 0;
   return 0;
 }
 
-/*
- * Install the ring buffer in the ADC object
- */
-
-public int adc_set_ringbuf(adc a, struct readbuf *r) {
-  if(r == NULL) {
-    a->adc_errno = errno;
-    strncpy(&a->errbuf[0], "set ring buffer", sizeof(a->errbuf));
-    return -1;
-  }
-  a->ring_buf = r;
-  return 0;
-}
 /*
  * Start the ADC data collection.
  */
 
-public int adc_start(adc a) {
+public int adc_start_data_transfer(adc a, strbuf e) {
   int ret;
 
-  assert(a != NULL);
   /* Execute the command to initiate data acquisition */
-  ret = comedi_command(a->device, &a->command);
+  ret = comedi_command(a->a_device, &a->a_command);
   if(ret < 0) {
-    a->adc_errno = errno;
-    strncpy(&a->errbuf[0], comedi_strerror(comedi_errno()), sizeof(a->errbuf));
+    strbuf_appendf(e, "Comedi command failed: %C");
   }
   else {
-    a->running = 1;
+    a->a_running = 1;
   }
   return ret;
 }
@@ -242,63 +300,142 @@ public int adc_start(adc a) {
  * Stop the ADC data collection.
  */
 
-public int adc_stop(adc a) {
-  assert(a != NULL);
-  if(a->running) {
-    comedi_cancel(a->device, 0);
-    a->running = 0;
+public void adc_stop_data_transfer(adc a) {
+  if(a->a_running) {
+    comedi_cancel(a->a_device, 0);
+    a->a_running = 0;
+  }
+}
+
+/*
+ * Convert a sample index into an ADC ring pointer.  This is used by
+ * adc_setup_chunk().  It depends on the fact that the Comedi buffer
+ * is double-mapped so the pointer is always the start of a contiguous
+ * block of memory that will at some time hold the data for the chunk.
+ */
+
+private sampl_t *adc_sample_to_ring_ptr(adc a, uint64_t sample) {
+  return &a->a_comedi_ring[sample % a->a_bufsz_samples];
+}
+
+/*
+ * Set up the ADC-dependent information in a chunk, and determine whether the chunk is recordable.
+ * In case of error, set the c_error strbuf and set the c_status code to SNAPSHOT_ERROR.
+ */
+
+public void adc_setup_chunk(adc a, chunk_t *c) {
+
+}
+
+/*
+ * Convert times to sample indices and vice versa
+ */
+
+public uint64_t adc_time_to_sample(adc a, uint64_t time) {
+  uint64_t ret;
+
+  ret = (time - a->a_start_time) / a->a_intersample_ns;
+  return ret;
+}
+
+public uint64_t adc_sample_to_time(adc a, uint64_t sample) {
+  uint64_t ret;
+
+  ret = a->a_start_time + sample*a->a_intersample_ns;
+  return ret;
+}
+
+/*
+ * Read-only access to some ADC parameters
+ */
+
+public int adc_ns_per_sample(adc a) {
+  return a->a_intersample_ns;
+}
+
+public double adc_tot_frequency(adc a) {
+  return a->a_totfrequency;
+}
+
+public uint64_t adc_capture_start_time(adc a) {
+  return a->a_start_time;
+}
+
+public uint64_t adc_capture_head_time(adc a) {
+  return a->a_head_time;
+}
+
+public int adc_is_running(adc a) {
+  return a && a->a_running;
+}
+
+/*
+ * The default buffer strategy below assumes that the data in the
+ * buffer remains live after we have marked it as read.  That may not
+ * be true, in which case the reader has to take an explicit strategy
+ * of periodically advancing the tail to avoid buffer overrun.  In
+ * fact, this would have some advantages if it could be made secure.
+ * If this second strategy is used, the EXPLICIT_DATA_LIFETIME macro
+ * should be defined.
+ */
+
+/*
+ * Recognise data in the Comedi buffer: ask Comedi how much new data
+ * is available, set the local data structure to match, tell Comedi we
+ * have accepted the data.  If this is the first data received this
+ * time, we compute the start time, i.e. the timestamp for sample
+ * index 0, from the current head timestamp and the amount of data
+ * obtained.
+ */
+
+public int adc_data_collect(adc a) {
+  uint64_t now;
+  int      nb;
+  int      ns;
+  
+  /* Retrieve any new data if possible */
+  nb  = comedi_get_buffer_contents(a->a_device, 0);
+  now = monotonic_ns_clock();
+  if(nb) {
+    ns  = nb / sizeof(sampl_t);
+    a->a_head += ns;
+    a->a_head_time = now;
+#ifndef EXPLICIT_DATA_LIFETIME
+    if( a->a_head >= a->a_bufsz_samples ) { /* See comment about mark read below */
+      a->a_tail = a->a_head - a->a_bufsz_samples;
+    }
+#endif
+    if( !a->a_live ) {		/* Estimate the timestamp of sample index 0 */
+      a->a_start_time = a->a_head_time - ns*a->a_intersample_ns;
+      a->a_live++;
+    }
+#ifndef EXPLICIT_DATA_LIFETIME
+    int ret = comedi_mark_buffer_read(a->a_device, 0, nb);
+    if(ret != nb)
+      return -1;
+#endif
+  }
+  return nb;
+}
+
+#ifndef EXPLICIT_DATA_LIFETIME
+
+/*
+ * Purge data from the tail of the ring buffer if explicit data
+ * lifetime management is used.
+ */
+
+public int adc_data_purge(adc a, int ns) {
+  int nb = ns*sizeof(sampl_t);
+  int ret;
+
+  ret = comedi_mark_buffer_read(a->a_device, 0, nb);
+  if(ret != nb)
+    return -1;
+  if( a->a_head >= a->a_bufsz_samples ) {
+    a->a_tail += ns;
   }
   return 0;
 }
 
-/*
- * Fetch up to nsamples samples from Comedi into the ring buffer.
- *
- * If the pointer t is set, then calculate the timestamp of the first
- * sample of the current set, in [ns] after the epoch, and set *t to
- * that value:  used to estimate when ADC conversion begins.
- */
-
-public int adc_fetch(adc a, int nsamples, uint64_t *t) {
-  int nb;
-
-  assert(a != NULL);
-
-  /* Retrieve any new data if possible */
-  nb = comedi_get_buffer_contents(a->device, 0);
-  int ns = nb / sizeof(sampl_t);
-
-  if(nb) {
-    int ret;
-
-    /* Used to get first data arrival time */
-    if(t != NULL) {
-      struct timespec ts;
-
-      clock_gettime(CLOCK_MONOTONIC, &ts);
-      *t = ts.tv_sec;
-      *t = *t * 1000000000 + ts.tv_nsec;
-      *t = *t - a->sample_ns * nb / sizeof(sampl_t);
-    }
-
-    /* Limit to maximum requested samples */
-    if(nsamples != 0 && ns > nsamples)
-      ns = nsamples;
-
-    /* This is the live data start point */
-    sampl_t *in  = &a->comedi_buffer[ a->tail % a->buffer_samples ];
-
-    /* This is where to put it, in the ring buffer */
-    struct readbuf *r = a->ring_buf;
-    sampl_t *out = &((sampl_t *)r->rb_start)[ a->tail % r->rb_samples ];
-
-    a->head += ns;		   /* This many new samples have arrived in the Comedi buffer */
-    /* ^^^^^^  MAY BE REDUNDANT */
-    (*a->convert)(out, in, ns);    /* Copy the data from in to out with LUT conversion */
-    a->tail += ns;		   /* Processed this many new samples */
-    ret = comedi_mark_buffer_read(a->device, 0, nb);
-    assert(ret == nb);
-  }
-  return ns;
-}
-
+#endif

@@ -219,6 +219,18 @@ public int map_chunk_to_frame(chunk_t *c) {
 }
 
 /*
+ * Copy the data for a chunk from the ring buffer into the frame.
+ * Apply the appropriate ADC conversion.
+ */
+
+public void copy_chunk_data(chunk_t *c) {
+  convertfn fn = c->c_convert;
+
+  (*fn)((sampl_t *)c->c_frame->f_map.b_data, (sampl_t *)c->c_ring, c->c_samples);
+  c->c_status = SNAPSHOT_WRITTEN;
+}
+
+/*
  * Generate a debugging line for a chunk desdcriptor.  Put it in the buffer buf.
  * Return the actual size, no greater than the space available.
  */

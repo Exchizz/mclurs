@@ -144,9 +144,9 @@ private int strbuf_vprintf(strbuf s, int pos, const char *fmt, va_list ap) {
 
 typedef struct _percent *percent;
 struct _percent {
-  percent      pc_link;
-  char         pc_flag;		/* If we see this flag */
-  const char (*pc_func)();	/* then this function gives us the string */
+  percent       pc_link;
+  char          pc_flag;	/* If we see this flag ... */
+  const char *(*pc_func)();	/* ... then this function gives us the string */
 };
 
 private percent percent_list = NULL;
@@ -235,7 +235,7 @@ public int strbuf_appendf(strbuf s, const char *fmt, ...) {
  * Register new percent interpreters.
  */
 
-public int register_error_percent_handler(char c, const char (*fn)()) {
+public int register_error_percent_handler(char c, const char *(*fn)()) {
   percent p = calloc(1, sizeof(struct _percent));
 
   if(p == NULL) {

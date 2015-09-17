@@ -24,7 +24,7 @@ export int    strbuf_setpos(strbuf,int);
 export int  strbuf_printf(strbuf, const char *, ...);
 export int  strbuf_appendf(strbuf, const char *, ...);
 export int  strbuf_printf_pos(strbuf, int, const char *, ...);
-export int  register_error_percent_handler(char, const char (*)());
+export int  register_error_percent_handler(char, const char *(*)());
 export void strbuf_revert(strbuf);
 export void debug_strbuf(FILE *, strbuf);
 

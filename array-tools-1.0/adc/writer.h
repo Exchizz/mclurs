@@ -26,15 +26,8 @@ typedef struct {
   int	       w_lockedram;
   int	       w_chunksize;
   double       w_writeahead;
-  
-  /* The values below are computed and exported */
-  int	       w_nframes;	/* Number of transfer frames prepared */
-  int	       w_chunksamples;	/* Number of samples in a chunk */
-  int	       w_snap_dirfd;	/* Snapdir path fd */
-  int	       w_snap_curfd;	/* Path fd of the 'working' directory */
-  int	       w_running;	/* Thread is running and ready */
-  int	       w_totxfrsamples;	/* Total scheduled transfer samples remaining */
-  int	       w_nfiles;	/* Number of files in progress */
+  /* Thread is running and ready -- set by main routine */
+  int          w_running;
 }
   wparams;
 
