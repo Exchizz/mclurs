@@ -1216,6 +1216,8 @@ private uint64_t writer_service_queue(uint64_t start) {
  * the last pending chunk is returned.
  */
 
+/* CHECK THE COUNTING FOR totsamples TO MAKE SURE THINGS ARE ONLY COUNTED ONCE */
+
 private int process_reader_message(void *s) {
   chunk_t    *c;
   int         ret;
@@ -1231,9 +1233,9 @@ private int process_reader_message(void *s) {
   
   if(c->c_status == SNAPSHOT_WRITTEN) {
     f->f_written++;
+    wp_totxfrsamples += c->c_samples;
     if(f->f_written == f->f_nchunks) {
       f->f_status = SNAPSHOT_WRITTEN;
-      wp_totxfrsamples += c->c_samples;
       completed_snapfile(f);	/* This file is finished -- all chunks were written */
     }
     return true;      

@@ -320,6 +320,7 @@ public int set_reader_rt_scheduling() {
  */
 
 private QUEUE_HEADER(ReaderChunkQ);
+private chunk_t *rq_head = NULL;
 
 private int process_queue_message(void *s) {
   rparams *rp = &reader_parameters;
@@ -335,6 +336,8 @@ private int process_queue_message(void *s) {
   }
   else {  /* Check the chunk is still current -- set SNAPSHOT_ERROR state on failure */
     adc_setup_chunk(reader_adc, c);
+    if( !c->c_ring )
+      c->c_status = SNAPSHOT_ERROR;
   }
   
   if(c->c_status==SNAPSHOT_ERROR) {		/* we send it straight back */
@@ -348,18 +351,21 @@ private int process_queue_message(void *s) {
 
   assertv(c->c_status==SNAPSHOT_WAITING, "Received chunk c:%04hx has unexpected state %s\n", c->c_name, snapshot_status(c->c_status));
 
-  /* Add the chunk to the READER chunk queue */
+  /* Add the chunk to the READER chunk queue in order of increasing *last* sample */
   queue *pos = &ReaderChunkQ;
   if( !queue_singleton(&ReaderChunkQ) ) {
     for_nxt_in_Q(queue *p, queue_next(&ReaderChunkQ), &ReaderChunkQ);
     chunk_t *h = rq2chunk(p);
-    if(h->c_first > c->c_first) {
+    if(h->c_last > c->c_last) {
       pos = p;
       break;
     }
     end_for_nxt;
   }
   queue_ins_before(pos, chunk2rq(c));
+  if(pos == &ReaderChunkQ) {
+    rq_head = c;		/* Points to the chunk at the head of the READER queue, when not NULL */
+  }
   return true;
 }
 
@@ -380,13 +386,44 @@ private void abort_queue_head_chunk() {
   if(c->c_parent == parent) {
     de_queue(p);
     c->c_status = SNAPSHOT_ERROR;
-    ret = zh_put_msg(writer, 0, sizeof(chunk_t *), (void *)&c);
-    assertv(ret==sizeof(chunk_t *), "Abort to WRITER with wrong size %d (not %d)\n", ret, sizeof(chunk_t *));
     ret = zh_put_msg(tidy, 0, sizeof(frame *), &c->c_frame);
     assertv(ret==sizeof(frame *), "Frane message to TIDY with wrong size %d (not %d)\n", ret, sizeof(frame *));
     c->c_frame = NULL;
+    ret = zh_put_msg(writer, 0, sizeof(chunk_t *), (void *)&c);
+    assertv(ret==sizeof(chunk_t *), "Abort to WRITER with wrong size %d (not %d)\n", ret, sizeof(chunk_t *));
   }
   end_for_nxt;
+  rq_head = queue_singleton(&ReaderChunkQ) ? NULL : rq2chunk(queue_next(&ReaderChunkQ));
+}
+
+/*
+ * Complete the chunk at the head of the ReaderChunkQ: remove the queue
+ * head and compute new head chunk; copy the data for the old head;
+ * send the frame to TIDY for release and the chunk pointer back to
+ * WRITER for book-keeping.  Before doing this, check we still have
+ * the data for the head chunk and if not then abort it.
+ */
+
+private void complete_queue_head_chunk() {
+  int      ret;
+  chunk_t *c = rq_head;
+
+  if(c->c_first < adc_ring_tail(reader_adc)) { /* Oops, we are too late */
+    abort_queue_head_chunk();
+    return;
+  }
+    
+  de_queue(chunk2rq(rq_head));
+  rq_head = queue_singleton(&ReaderChunkQ) ? NULL : rq2chunk(queue_next(&ReaderChunkQ));
+
+  copy_chunk_data(c);
+
+  ret = zh_put_msg(tidy, 0, sizeof(frame *), &c->c_frame);
+  assertv(ret==sizeof(frame *), "Frane message to TIDY with wrong size %d (not %d)\n", ret, sizeof(frame *));
+  c->c_frame = NULL;
+  
+  ret = zh_put_msg(writer, 0, sizeof(chunk_t *), (void *)&c);
+  assertv(ret==sizeof(chunk_t *), "Abort to WRITER with wrong size %d (not %d)\n", ret, sizeof(chunk_t *));
 }
 
 /*
@@ -405,12 +442,51 @@ private void drain_reader_chunk_queue() {
 
 /*
  * READER thread message loop
+ *
+ * The two variables buf_hwm_samples and buf_window_samples are
+ * determined by the program parameters window and bufhwm and set the
+ * policy for moving the ring buffer tail pointer.  Their values are
+ * computed in the parameter verify routine for the READER (see below).
+ *
+ * Operation is as follows.  The routine waits for incoming messages
+ * up to a certain maximum delay; then on each pass through the loop,
+ * at least once per delay interval assuming we got some new data, we
+ * do two things:
+ *
+ * - first, try to advance the adc_ring_head position which records
+ *   data placed in the ADC ring buffer by Comedi's ADC driver.  If
+ *   the head advances past the last sample index of any chunk we can
+ *   write that chunk out, recomputing the next theshold for head.
+ *
+ * - second, check if the head has passed the ring buffer high-water
+ *   mark threshold, which is computed by adding buf_hwm_samples to
+ *   the adc_ring_tail value.  If it has, the ring buffer is too full
+ *   and we must move the adc_ring_tail using adc_data_purge().  We
+ *   advance the tail to (at most) buf_window_samples before the
+ *   current head position -- this ensures that we have at least the
+ *   specified 'window' duration in the ring buffer at all times.
+ *
+ * In the first step, if the first sample index of the chunk is
+ * earlier than the current tail, we have been forced to purge data
+ * (to avoid buffer overrun in Comedi) before we got the complete
+ * chunk.  This can only happen if the chunks are very large compared
+ * to the buffer, which should be disallowed by parameter checking.
+ *
+ * Furthermore, if the main loop is executed for too long without any
+ * data being captured, we shut down the ADC and enter error state.
  */
 
+#define ADC_DRY_PERIOD_MAX 1000	/* Initial default is 10 [s] */
+
+private int buf_hwm_samples = 0;
+private int buf_window_samples = 0;
+private int adc_dry_period_max = ADC_DRY_PERIOD_MAX;
+
 private void reader_thread_msg_loop() {    /* Read and process messages */
-  int ret;
-  int running;
-  int poll_delay = -1;
+  uint64_t high_water_mark;
+  int      adc_dry_period;
+  int      ret;
+  int      running;
 
   /* Main loop:  read messages and process messages */
   zmq_pollitem_t  poll_list[] =
@@ -425,60 +501,46 @@ private void reader_thread_msg_loop() {    /* Read and process messages */
 
   zh_put_multi(log, 1, "READER thread is initialised");
   rp_state = READER_PARAM;
+
+  high_water_mark = adc_ring_tail(reader_adc) + buf_hwm_samples;
+  adc_dry_period  = adc_dry_period_max;
+
   reader_parameters.r_running = true;
   running = true;
-
-  /* CURRENT CODE FOR SETTING THE DATA START TIME WILL BE LATE ... ? */
 
   while( running && !die_die_die_now ) {
     int ret; 
     int nb;
     int delay = 10;
     int n;
+    
+    if(reader_adc && adc_is_running(reader_adc)) {
+      adc_dry_period--;
+      nb = adc_data_collect(reader_adc);
+      if( nb ) {			/* There was some new data, adc_ring_head has advanced */
+	adc_dry_period = adc_dry_period_max;
+	/* Once the ADC head pointer has advanced past the READER queue head's end, a chunk is ready */
+	while( rq_head && rq_head->c_last <= adc_ring_head(reader_adc) ) {
+	  complete_queue_head_chunk();      
+	}
 
-#if 0
-    if( reader.adc_run ) {		/* If ADC is running, process data  */
-
-      /* Process any items in the write queue that are now ready -- do this before reading new data */
-      queue *n = adc.write_queue.q_next;
-      if( n != &adc.write_queue ) {	/* The write queue is not empty */
-	snapr *s = (snapr *) n;
-
-	if( s->count && adc.tail > s->last ) { /* There is a write queue item ready to process */
-	  process_ready_write_queue_item(s);
-	  delay = 0;			       /* If we wrote a file, don't wait in the poll */
+	/* Check buffer fullness;  if necessary, call adc_data_purge to move adc_ring_tail */
+	uint64_t head = adc_ring_head(reader_adc);
+	if(head > high_water_mark) {
+	  uint64_t lwm  = head - buf_window_samples;
+	  uint64_t tail =adc_ring_tail(reader_adc);
+	  if(lwm > tail) {
+	    ret = adc_data_purge(reader_adc, (int)(lwm-tail));
+	    assertv(ret==0, "Comedi mark read failed for %d bytes: %C", (int)(lwm-tail));
+	    high_water_mark = lwm + buf_hwm_samples;
+	  }
 	}
       }
+      if(adc_dry_period <= 0) { /* Data capture interrupted or failed to start... */
 
-      /* Now, retrieve any new data if possible */
-      nb = comedi_get_buffer_contents(adc.device, 0);
-      if(nb) {
-	int ns = nb / sizeof(sampl_t);
-
-	if( rp_state != READER_RUN ) { /* First data has arrived */
-	  struct timespec start_stamp;
-
-	  clock_gettime(CLOCK_MONOTONIC, &start_stamp);
-	  compute_data_start_timestamp(&start_stamp, ns);
-	  rp_state = READER_RUN;
-	}
-
-	/* NEED TO WORRY HERE ABOUT DATA THAT IS BEING FLUSHED TO FILE */
-	/* WHICH MAY MEAN SOME OF THE BUFFER SHOULD NOT BE OVERWRITTEN */
-
-	sampl_t *in  = &adc.comedi_buffer[ adc.tail % adc.buffer_samples ]; /* This is the live data start point */
-	sampl_t *out = &((sampl_t *)adc.ring_buf->rb_start)[ adc.tail % adc.ring_buf->rb_samples ];
-
-	adc.head += ns;			/* This many new samples have arrived in the Comedi buffer */
-	(*adc.convert)(out, in, ns);    /* Copy the data from in to out with LUT conversion */
-	adc.tail += ns;			/* Processed this many new samples */
-	ret = comedi_mark_buffer_read(adc.device, 0, nb);
-	assertv(ret == nb, "Comedi mark_buffer_read returned %d instead of %d\n", ret, nb);
       }
     }
-
-#endif
-
+    
     ret = zmq_poll(&poll_list[0], N_POLL_ITEMS, delay);	/* Look for commands here */
     if( ret < 0 && errno == EINTR ) { /* Interrupted */
       zh_put_multi(log, 1, "READER loop interrupted");
@@ -574,14 +636,38 @@ public int verify_reader_params(rparams *rp, strbuf e) {
     return -1;
   
   if(rp->r_window < 1 || rp->r_window > 30) {
-    strbuf_appendf(e, "Capture window %d seconds outwith compiled-in range [%d,%d] seconds",
+    strbuf_appendf(e, "Min. capture window %d seconds outwith compiled-in range [%d,%d] seconds",
 		   rp->r_window, 1, 30);
     return -1;
   }
 
+  int pagesize = sysconf(_SC_PAGESIZE)/sizeof(sampl_t);
+  
+  /* Compute the size of the desired capture window in samples, rounded up to a full page */
+  int rbw_samples = rp->r_window * rp->r_frequency * NCHANNELS;
+  rbw_samples = (rbw_samples + pagesize - 1) / pagesize;
+  rbw_samples *= pagesize;
+  
+  if(rp->r_buf_hwm_fraction < 0.5 || rp->r_buf_hwm_fraction > 0.95) {
+    strbuf_appendf(e, "Ring buffer high-water mark fraction %g outwith compiled-in range [%g,%g] seconds",
+		   rp->r_buf_hwm_fraction, 0.5, 0.95);
+    return -1;
+  }
+  
+  /* Compute ring buffer high-water mark in samples, rounded up to a full page */
+  int bhwm_samples = rp->r_buf_hwm_fraction * rp->r_bufsz * 1024 * 1024;
+  bhwm_samples = (bhwm_samples + pagesize - 1) / pagesize;
+  bhwm_samples = pagesize * bhwm_samples;
+
+  if(rbw_samples > bhwm_samples) {
+    strbuf_appendf(e, "Capture buffer of %d [kiB] is bigger than ring buffer high-water mark at %d [kiB]",
+		   rbw_samples*sizeof(sampl_t)/1024, bhwm_samples*sizeof(sampl_t)/1024);
+    return -1;
+  }
+      
   if( adc_set_bufsz(reader_adc, e, rp->r_bufsz) < 0 )
     return -1;
-  
+
   if( adc_set_range(reader_adc, e, rp->r_range) < 0 )
     return -1;
   

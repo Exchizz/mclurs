@@ -30,4 +30,10 @@ export int adc_ns_per_sample(adc);
 export double adc_tot_frequency(adc);
 export uint64_t adc_capture_start_time(adc);
 
+export uint64_t adc_ring_head(adc);
+export uint64_t adc_ring_tail(adc);
+
+export int adc_data_collect(adc);
+export int adc_data_purge(adc,int);
+
 #endif /* _ADC_H */

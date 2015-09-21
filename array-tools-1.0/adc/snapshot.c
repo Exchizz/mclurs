@@ -87,7 +87,7 @@ public param_t globals[] ={
     PARAM_TYPE(string), PARAM_SRC_ENV|PARAM_SRC_ARG,
     "the Comedi device to open"
   },
-  { "range",	"500",
+  { "range",	"750",
     &reader_parameters.r_range,
     PARAM_TYPE(int32), PARAM_SRC_ENV|PARAM_SRC_ARG|PARAM_SRC_CMD,
     "the ADC converter full-scale range [mV]"
@@ -100,8 +100,13 @@ public param_t globals[] ={
   { "window",	"10",
     &reader_parameters.r_window,
     PARAM_TYPE(double),  PARAM_SRC_ENV|PARAM_SRC_ARG|PARAM_SRC_CMD,
-    "size of the ring buffer [s]"
+    "guaranteed window in the ring buffer [s]"
   },
+  { "bufhwm",	"0.9",
+    &reader_parameters.r_buf_hwm_fraction,
+    PARAM_TYPE(double), PARAM_SRC_ENV|PARAM_SRC_ARG,
+    "ring buffer high-water mark fraction"
+  }, 
   { "rtprio",	NULL,
     &schedprio,
     PARAM_TYPE(int32),  PARAM_SRC_ENV|PARAM_SRC_ARG,
@@ -178,15 +183,16 @@ BEGIN_CMD_SYNTAX(main) {
         arg_str0(NULL, "tmpdir", "<path>",    "Path to temporary directory"),
         arg_str0("S",  "snapdir", "<path>",   "Path to samples directory"),
         arg_dbl0("f",  "freq", "<real>",      "Per-channel sampling frequency [Hz]"),
-        arg_dbl0("w",  "window", "<real>",    "Capture window length [s]"),
+        arg_dbl0("w",  "window", "<real>",    "Min. capture window length [s]"),
+        arg_dbl0("B",  "bufhwm", "<real>",    "Ring buffer High-water mark fraction"),
         arg_str0("d",  "dev", "<path>",       "Comedi device to use"),
         arg_int0("P",  "rtprio", "<1-99>",    "Common thread RT priority"),
         arg_int0("R",  "rdprio", "<1-99>",    "Reader thread RT priority"),
         arg_int0("W",  "wrprio", "<1-99>",    "Writer thread RT priority"),
         arg_str0("u",  "user", "<uid/name>",  "User to run as"),
         arg_str0("g",  "group", "<gid/name>", "Group to run as"),
-        arg_int0("B",  "bufsz", "<int>",      "Comedi Buffer Size [MiB]"),
-        arg_int0("m",  "ram", "<int>",        "Data Transfer RAM Size [MiB]"),
+        arg_int0("b",  "bufsz", "<int>",      "Comedi ring buffer Size [MiB]"),
+        arg_int0("m",  "ram", "<int>",        "Data Transfer RAM size [MiB]"),
         arg_int0("r",  "range", "<int>",      "ADC full-scale range [mV]"),
         arg_int0("c",  "chunk", "<int>",      "File transfer chunk size [kiB]"),
         arg_dbl0("W",  "wof", "<real>",       "Write Overbooking Fraction"),

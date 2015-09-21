@@ -324,7 +324,13 @@ private sampl_t *adc_sample_to_ring_ptr(adc a, uint64_t sample) {
  */
 
 public void adc_setup_chunk(adc a, chunk_t *c) {
-
+  if(c->c_first < a->a_tail) {	/* Too late */
+    strbuf_appendf(c->c_error, "Chunk was %d [us] too late", (int)((a->a_tail - c->c_first)/1000));
+    c->c_ring = NULL;
+    return;
+  }
+  c->c_ring = adc_sample_to_ring_ptr(a, c->c_first);  
+  return;
 }
 
 /*
@@ -369,6 +375,14 @@ public int adc_is_running(adc a) {
   return a && a->a_running;
 }
 
+public uint64_t adc_ring_head(adc a) {
+  return a->a_head;
+}
+
+public uint64_t adc_ring_tail(adc a) {
+  return a->a_tail;
+}
+
 /*
  * The default buffer strategy below assumes that the data in the
  * buffer remains live after we have marked it as read.  That may not
@@ -378,6 +392,8 @@ public int adc_is_running(adc a) {
  * If this second strategy is used, the EXPLICIT_DATA_LIFETIME macro
  * should be defined.
  */
+
+#define EXPLICIT_DATA_LIFETIME
 
 /*
  * Recognise data in the Comedi buffer: ask Comedi how much new data
@@ -398,10 +414,12 @@ public int adc_data_collect(adc a) {
   now = monotonic_ns_clock();
   if(nb) {
     ns  = nb / sizeof(sampl_t);
-    a->a_head += ns;
     a->a_head_time = now;
-#ifndef EXPLICIT_DATA_LIFETIME
-    if( a->a_head >= a->a_bufsz_samples ) { /* See comment about mark read below */
+#ifdef EXPLICIT_DATA_LIFETIME
+    a->a_head = a->a_tail + ns;	/* Assume that nb accumulates if mark read not called */
+#else
+    a->a_head += ns;			    /* Head moves on the full amount */
+    if( a->a_head >= a->a_bufsz_samples ) { /* Tail catches up in mark read below */
       a->a_tail = a->a_head - a->a_bufsz_samples;
     }
 #endif
@@ -418,7 +436,7 @@ public int adc_data_collect(adc a) {
   return nb;
 }
 
-#ifndef EXPLICIT_DATA_LIFETIME
+#ifdef EXPLICIT_DATA_LIFETIME
 
 /*
  * Purge data from the tail of the ring buffer if explicit data

@@ -31,7 +31,6 @@ typedef struct {
   uint64_t      c_last;     /* First sample beyond this chunk */
   int16_t      *c_ring;	    /* Ring buffer start for this chunk */
   convertfn	c_convert;  /* Function to copy samles into frame with conversion */
-  uint64_t	c_deadline; /* Time by which this chunk must have been written [ns past epoch] */
   uint32_t      c_samples;  /* Number of samples to copy */
   uint32_t      c_offset;   /* File offset for this chunk */
   int	        c_status;   /* Status of this capture chunk */

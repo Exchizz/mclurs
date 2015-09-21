@@ -14,13 +14,14 @@
  */
 
 typedef struct {
-  double      r_frequency; /* Per-channel sampling frequency [Hz] */
-  int         r_schedprio; /* Reader real-time priority */
-  int         r_bufsz;	   /* Reader buffer size [MiB] */
-  int	      r_range;	   /* ADC full-scale range [mV] */
-  double      r_window;	   /* Snapshot window [s] (must fit in buffer) */
-  const char *r_device;	   /* Comedi device to use */
-  int	      r_running;   /* Thread is running and ready */
+  double      r_frequency;	   /* Per-channel sampling frequency [Hz] */
+  int         r_schedprio;	   /* Reader real-time priority */
+  int         r_bufsz;		   /* Reader buffer size [MiB] */
+  int	      r_range;		   /* ADC full-scale range [mV] */
+  double      r_window;		   /* Snapshot window [s] (must fit in buffer) */
+  double      r_buf_hwm_fraction;  /* Ring buffer high-water mark as fraction of size */
+  const char *r_device;		   /* Comedi device to use */
+  int	      r_running;	   /* Thread is running and ready */
 }
   rparams;
 
