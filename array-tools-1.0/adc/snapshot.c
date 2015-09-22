@@ -755,19 +755,10 @@ public int main(int argc, char *argv[], char *envp[]) {
     exit(2);
   }
 
+  /* Check the supplied parameters;  WRITER must come first as READER needs chunk size */
   strbuf e = alloc_strbuf(1);	/* Catch parameter error diagnostics */
 
-   /* 5c. Verify and initialise parameters for the reader thread */
-  if( !reader_parameters.r_schedprio )
-    reader_parameters.r_schedprio = schedprio;
-  strbuf_printf(e, "%s: Error -- READER Params: ", program);
-  ret = verify_reader_params(&reader_parameters, e);
-  if( ret < 0 ) {
-    fprintf(stderr, "%s\n", strbuf_string(e));
-    exit(3);
-  }
-
-  /* 5d. Verify and initialise parameters for the writer thread */
+  /* 5c. Verify and initialise parameters for the WRITER thread */
   if( !writer_parameters.w_schedprio)
     writer_parameters.w_schedprio = schedprio;
   strbuf_printf(e, "%s: Error -- WRITER Params: ", program);
@@ -777,10 +768,20 @@ public int main(int argc, char *argv[], char *envp[]) {
     exit(3);
   }
 
+   /* 5d. Verify and initialise parameters for the READER thread */
+  if( !reader_parameters.r_schedprio )
+    reader_parameters.r_schedprio = schedprio;
+  strbuf_printf(e, "%s: Error -- READER Params: ", program);
+  ret = verify_reader_params(&reader_parameters, e);
+  if( ret < 0 ) {
+    fprintf(stderr, "%s\n", strbuf_string(e));
+    exit(3);
+  }
+
   release_strbuf(e);
 
 #if 0
-  /* Disabled for now */
+  /* Exit nicely on SIGINT:  this is done by setting the die_die_die_now flag. */
   if( set_intr_sig_handler() < 0 ) {
     exit(3);
   }

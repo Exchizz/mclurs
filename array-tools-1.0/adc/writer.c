@@ -146,6 +146,12 @@ private int wp_snap_curfd;	/* Path fd of the 'working' directory */
 private int wp_totxfrsamples;	/* Total scheduled transfer samples remaining */
 private int wp_nfiles;		/* Number of files in progress */
 
+/* Read-only access to chunk size, needed by READER */
+
+public int writer_chunksize_samples() {
+  return wp_chunksamples;
+}
+
 /*
  * Reader thread comms initialisation (failure is fatal).
  *
@@ -269,6 +275,7 @@ private int new_directory(int dirfd, const char *name) {
     if(ret < 0)					 /* Give up on failure */
       return -1;
   }
+  return ret;
 }
 
 /* ================================ Handle the Dir Command ================================ */
@@ -984,8 +991,20 @@ private int setup_snapfile(snapfile_t *f, snap_t *s) {
   f->f_parent  = s;
   f->f_error   = s->s_error;
   f->f_written = 0;
+
+  /*
+   * This next variable accounts for the number of samples we have
+   * committed to write.  It is initialised by verify() from the
+   * locked RAM and overbooking parameters.
+   *
+   * It is decremented here when we set up a file for capture.  It is
+   * later incremented in one of two places: for a successfully
+   * written chunk it is incremented by the queue message handler; for
+   * a failed chunk, it is incremented by abort_file when it processes
+   * the chunks in the file's chunk list.
+   */
   
-  wp_totxfrsamples -= s->s_samples; /* We are committing to writing this many more samples */
+  wp_totxfrsamples -= s->s_samples;
 
   /* Go through the chunk queue writing in data */
   uint64_t first  = s->s_first;
@@ -1215,8 +1234,6 @@ private uint64_t writer_service_queue(uint64_t start) {
  * snapfile structure is tidied by completed_snapfile which runs when
  * the last pending chunk is returned.
  */
-
-/* CHECK THE COUNTING FOR totsamples TO MAKE SURE THINGS ARE ONLY COUNTED ONCE */
 
 private int process_reader_message(void *s) {
   chunk_t    *c;

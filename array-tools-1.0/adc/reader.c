@@ -481,6 +481,7 @@ private void drain_reader_chunk_queue() {
 private int buf_hwm_samples = 0;
 private int buf_window_samples = 0;
 private int adc_dry_period_max = ADC_DRY_PERIOD_MAX;
+private int reader_poll_delay = 100; /* Poll wait time [ms] */
 
 private void reader_thread_msg_loop() {    /* Read and process messages */
   uint64_t high_water_mark;
@@ -511,9 +512,9 @@ private void reader_thread_msg_loop() {    /* Read and process messages */
   while( running && !die_die_die_now ) {
     int ret; 
     int nb;
-    int delay = 10;
+    int delay;
     int n;
-    
+
     if(reader_adc && adc_is_running(reader_adc)) {
       adc_dry_period--;
       nb = adc_data_collect(reader_adc);
@@ -528,7 +529,7 @@ private void reader_thread_msg_loop() {    /* Read and process messages */
 	uint64_t head = adc_ring_head(reader_adc);
 	if(head > high_water_mark) {
 	  uint64_t lwm  = head - buf_window_samples;
-	  uint64_t tail =adc_ring_tail(reader_adc);
+	  uint64_t tail = adc_ring_tail(reader_adc);
 	  if(lwm > tail) {
 	    ret = adc_data_purge(reader_adc, (int)(lwm-tail));
 	    assertv(ret==0, "Comedi mark read failed for %d bytes: %C", (int)(lwm-tail));
@@ -541,7 +542,7 @@ private void reader_thread_msg_loop() {    /* Read and process messages */
       }
     }
     
-    ret = zmq_poll(&poll_list[0], N_POLL_ITEMS, delay);	/* Look for commands here */
+    ret = zmq_poll(&poll_list[0], N_POLL_ITEMS, reader_poll_delay);	/* Look for commands here */
     if( ret < 0 && errno == EINTR ) { /* Interrupted */
       zh_put_multi(log, 1, "READER loop interrupted");
       break;
@@ -613,7 +614,8 @@ public void *reader_main(void *arg) {
  */ 
 
 public int verify_reader_params(rparams *rp, strbuf e) {
-
+  import int writer_chunksize_samples();
+  
   if( rp->r_schedprio != 0 ) { /* Check for illegal value */
     int max, min;
 
@@ -630,7 +632,7 @@ public int verify_reader_params(rparams *rp, strbuf e) {
     adc_destroy(reader_adc);
     reader_adc = NULL;
   }
-    reader_adc = adc_new(rp->r_device, e);
+  reader_adc = adc_new(e);
   
   if( adc_set_chan_frequency(reader_adc, e, &rp->r_frequency) < 0 )
     return -1;
@@ -645,8 +647,8 @@ public int verify_reader_params(rparams *rp, strbuf e) {
   
   /* Compute the size of the desired capture window in samples, rounded up to a full page */
   int rbw_samples = rp->r_window * rp->r_frequency * NCHANNELS;
-  rbw_samples = (rbw_samples + pagesize - 1) / pagesize;
-  rbw_samples *= pagesize;
+  rbw_samples = (rbw_samples*sizeof(sampl_t) + pagesize - 1) / pagesize;
+  rbw_samples *= pagesize / sizeof(sampl_t);
   
   if(rp->r_buf_hwm_fraction < 0.5 || rp->r_buf_hwm_fraction > 0.95) {
     strbuf_appendf(e, "Ring buffer high-water mark fraction %g outwith compiled-in range [%g,%g] seconds",
@@ -657,19 +659,44 @@ public int verify_reader_params(rparams *rp, strbuf e) {
   /* Compute ring buffer high-water mark in samples, rounded up to a full page */
   int bhwm_samples = rp->r_buf_hwm_fraction * rp->r_bufsz * 1024 * 1024;
   bhwm_samples = (bhwm_samples + pagesize - 1) / pagesize;
-  bhwm_samples = pagesize * bhwm_samples;
+  bhwm_samples = pagesize * bhwm_samples / sizeof(sampl_t);
 
   if(rbw_samples > bhwm_samples) {
-    strbuf_appendf(e, "Capture buffer of %d [kiB] is bigger than ring buffer high-water mark at %d [kiB]",
+    strbuf_appendf(e, "Capture window of %d [kiB] is bigger than ring buffer high-water mark at %d [kiB]",
 		   rbw_samples*sizeof(sampl_t)/1024, bhwm_samples*sizeof(sampl_t)/1024);
     return -1;
   }
-      
+
+  /* Check the window and high-water mark against the chunk size */
+  int chunksize = writer_chunksize_samples();
+  if(chunksize) {
+    if(rbw_samples < chunksize) {
+      strbuf_appendf(e, "Capture window of %d [kiB] is smaller than chunk size %d[kiB]",
+		     rbw_samples*sizeof(sampl_t)/1024, chunksize*sizeof(sampl_t)/1024);
+      return -1;
+    }
+    if(bhwm_samples+2*chunksize > rp->r_bufsz*1024*1024/sizeof(sampl_t)) {
+      strbuf_appendf(e, "Ring overflow region %d [kiB] is smaller than twice the chunk size %d[kiB]",
+		     (rp->r_bufsz*1024*1024-bhwm_samples*sizeof(sampl_t))/1024, chunksize*sizeof(sampl_t)/1024);
+      return -1;
+    }
+  }
+
   if( adc_set_bufsz(reader_adc, e, rp->r_bufsz) < 0 )
     return -1;
 
   if( adc_set_range(reader_adc, e, rp->r_range) < 0 )
     return -1;
+
+  adc_set_device(reader_adc, rp->r_device); /* Record the path, don't open the device */
+  
+  /* Determine the READER main loop poll delay from the chunk duration */
+  double d = 1e-6 * chunksize * adc_ns_per_sample(reader_adc); /* Length of a chunk in [ms] */
+  reader_poll_delay = ((d+2.5)/5 > 100)? 100.0 : (d+2.5)/5; /* One fifth of a chunk or 100[ms] */
+    
+  /* Set the tail policy variables */
+  buf_hwm_samples = bhwm_samples;
+  buf_window_samples = rbw_samples;
   
   rp_state = READER_PARAM;
   return 0;

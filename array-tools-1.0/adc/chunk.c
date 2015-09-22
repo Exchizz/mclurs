@@ -101,7 +101,7 @@ private frame *alloc_frame() {
 }
 
 /*
- * Release a frame descriptor.  N.B.  this is done in the tidy thread,
+ * Release a frame descriptor.  N.B.  this is done in the TIDY thread,
  * so must be atomic: the frame is released by setting the bytes value
  * to zero.  The munmap() here complements the mmap call in the chunk
  * mapper below.
@@ -134,7 +134,7 @@ private QUEUE_HEADER(chunkQ);
 private int N_in_chunkQ = 0;
 
 /*
- * Allocate n new chunk descriptors, chained using the writer queue descriptor
+ * Allocate n new chunk descriptors, chained using the WRITER queue descriptor
  */
 
 public chunk_t *alloc_chunk(int nr) {
@@ -203,8 +203,9 @@ public int map_chunk_to_frame(chunk_t *c) {
   frame *fp = alloc_frame();
   void  *map;
   
-  if(fp == NULL)
+  if(fp == NULL) {		/* This is not an error:  there may be no frames available for transient reasons */
     return -1;
+  }
 
   fp->f_map.b_bytes = c->c_samples*sizeof(sampl_t);
   /* Would really like to do WRONLY here, but I *think* that will break */

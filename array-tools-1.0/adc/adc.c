@@ -48,25 +48,27 @@
 #define MAX_COMEDI_BUF_SIZE	256    	/* Maximum Comedi Buffer size [MiB] */
 
 struct _adc {
-  comedi_t  *a_device;			/* Comedi device handle */
-  int	     a_devflags;		/* Comedi device flags */
-  int	     a_fd;			/* Device file descriptor */
-  int	     a_req_bufsz_mib;		/* Requested buffer size [MiB] */
-  int	     a_bufsz_bytes;		/* Size of the buffer in bytes */
-  int	     a_bufsz_samples;		/* Size of the buffer in samples */
-  sampl_t   *a_comedi_ring;		/* Ring buffer for the device */
-  double     a_totfrequency;		/* Total sampling frequency */
-  int	     a_intersample_ns;		/* Time between samples [ns] */
-  int	     a_range;			/* Current conversion range */
-  convertfn  a_convert;			/* Current conversion function */
-  comedi_cmd a_command;			/* Comedi command descriptor structure */
-  unsigned   a_chans[N_USBDUX_CHANS];	/* Channel descriptors for hardware channels */
-  int	     a_running;			/* True when an ADC data conversion is running */
-  int	     a_live;			/* True when we have seen data, and a_start_time is set */
-  uint64_t   a_start_time;		/* Time the current data conversion stream started */
-  uint64_t   a_head_time;		/* Timestamp of latest buffer sample */
-  uint64_t   a_head;			/* Latest sample present in the ring buffer */
-  uint64_t   a_tail;			/* Earliest sample present in the ring buffer */
+  const char *a_path;			/* The path to the Comedi device (assumed permanent string) */
+  comedi_t   *a_device;			/* Comedi device handle */
+  int	      a_devflags;		/* Comedi device flags */
+  int	      a_fd;			/* Device file descriptor */
+  int	      a_req_bufsz_mib;		/* Requested buffer size [MiB] */
+  int	      a_bufsz_bytes;		/* Size of the buffer in bytes */
+  int	      a_bufsz_samples;		/* Size of the buffer in samples */
+  sampl_t    *a_comedi_ring;		/* Ring buffer for the device */
+  double      a_totfrequency;		/* Total sampling frequency */
+  int	      a_intersample_ns;		/* Time between samples [ns] */
+  int	      a_range;			/* Current conversion range */
+  int	      a_raw;			/* Don't convert the data, deliver it raw */
+  convertfn   a_convert;		/* Current conversion function */
+  comedi_cmd  a_command;		/* Comedi command descriptor structure */
+  unsigned    a_chans[N_USBDUX_CHANS];	/* Channel descriptors for hardware channels */
+  int	      a_running;		/* True when an ADC data conversion is running */
+  int	      a_live;			/* True when we have seen data, and a_start_time is set */
+  uint64_t    a_start_time;		/* Time the current data conversion stream started */
+  uint64_t    a_head_time;		/* Timestamp of latest buffer sample */
+  uint64_t    a_head;			/* Latest sample present in the ring buffer */
+  uint64_t    a_tail;			/* Earliest sample present in the ring buffer */
 };
 
 #define USBDUXFAST_COMEDI_500mV	1 /* Bit 3 control output is 0 iff the CR_RANGE is one */
@@ -92,24 +94,14 @@ private const char *comedi_error() {
  * Allocate and set up a new ADC descriptor.
  */
 
-public adc adc_new(const char *device, strbuf e) {
+public adc adc_new(strbuf e) {
   adc ret = &snapshot_adc;
 
-  if( !comedi_error_set_up ) {	/* Install the routine to interpolate %C strings */
+  if( !comedi_error_set_up++ ) {	/* Install the routine to interpolate %C strings */
     int ret = register_error_percent_handler('C', comedi_error);
     assertv(ret==0, "Failed to register handler for Comedi errors (%%C): %m\n");
   }
-  
-  ret->a_device = comedi_open(device);
-  if(ret->a_device) {
-    ret->a_fd = comedi_fileno(ret->a_device);
-    ret->a_devflags = comedi_get_subdevice_flags(ret->a_device, 0);
-  }
-  else {
-    ret->a_device = NULL;
-    ret = NULL;
-    strbuf_appendf(e, "Comedi device %s failure setting up ADC structure: %C", device);
-  }
+  ret->a_fd = -1;
   return ret;
 }
 
@@ -120,7 +112,7 @@ public adc adc_new(const char *device, strbuf e) {
 public void adc_destroy(adc a) {
   adc_stop_data_transfer(a);
 
-  if(a->a_fd)
+  if(a->a_fd >= 0)
     close(a->a_fd);
 
   if(a->a_device)
@@ -131,6 +123,15 @@ public void adc_destroy(adc a) {
 
   /* Zero the structure -- back to initial state */
   bzero(a, sizeof(struct _adc));
+}
+
+/*
+ * Set the device path
+ */
+
+public int adc_set_device(adc a, const char *device) {
+  a->a_path = device;
+  return 0;
 }
 
 /*
@@ -185,12 +186,12 @@ public int adc_set_range(adc a, strbuf e, int range) {
   /* Set up the conversion function:  500mV or 750mV FSD */
   switch(range) {
   case 500:			/* Narrow FSD range */
-    a->a_convert = convert_raw_500mV;
+    a->a_convert = a->a_raw? convert_raw_raw : convert_raw_500mV;
     a->a_range = USBDUXFAST_COMEDI_500mV;
     break;
 
   case 750:			/* Wide FSD range */
-    a->a_convert = convert_raw_750mV;
+    a->a_convert = a->a_raw? convert_raw_raw : convert_raw_750mV;
     a->a_range = USBDUXFAST_COMEDI_750mV;
     break;
 
@@ -202,12 +203,42 @@ public int adc_set_range(adc a, strbuf e, int range) {
 }
 
 /*
+ * Set ADC to raw mode, i.e. don't range-map the incoming data.
+ */
+
+public void adc_set_raw_mode(adc a, int on) {
+  a->a_raw = (on != 0);
+  if(a->a_raw)
+    a->a_convert = convert_raw_raw;
+  else {
+    if(a->a_range == USBDUXFAST_COMEDI_500mV)
+      a->a_convert = convert_raw_500mV;
+    if(a->a_range == USBDUXFAST_COMEDI_750mV)
+      a->a_convert = convert_raw_750mV;
+  }
+}
+
+/*
  * Initialise the ADC structure for data capture.
  */
 
 public int adc_init(adc a, strbuf e) {
   int ret;
   int i;
+
+  if( !a->a_path ) {
+    strbuf_appendf(e, "Comedi device path not set");
+    return -1;
+  }
+  
+  /* Open the Comedi device */
+  a->a_device = comedi_open(a->a_path);
+  if(a->a_device == NULL) {
+    strbuf_appendf(e, "Comedi device %s failure setting up ADC structure: %C", a->a_path);
+    return -1;
+  }
+  a->a_fd = comedi_fileno(a->a_device);
+  a->a_devflags = comedi_get_subdevice_flags(a->a_device, 0);
 
   /* Initialise Comedi streaming buffer */
   int request = a->a_req_bufsz_mib * 1024 * 1024;
@@ -259,6 +290,7 @@ public int adc_init(adc a, strbuf e) {
   if(a->a_command.convert_arg != a->a_intersample_ns) {
     a->a_intersample_ns = a->a_command.convert_arg;
     a->a_totfrequency = 1e9 / a->a_command.convert_arg;
+    /* TODO: consider logging a warning here */
   }
   
   /* Map the Comedi buffer into memory, duplicated */
@@ -304,6 +336,7 @@ public void adc_stop_data_transfer(adc a) {
   if(a->a_running) {
     comedi_cancel(a->a_device, 0);
     a->a_running = 0;
+    a->a_live = 0;
   }
 }
 
@@ -375,6 +408,10 @@ public int adc_is_running(adc a) {
   return a && a->a_running;
 }
 
+public int adc_is_live(adc a) {
+  return a && a->a_live;
+}
+
 public uint64_t adc_ring_head(adc a) {
   return a->a_head;
 }
@@ -384,16 +421,11 @@ public uint64_t adc_ring_tail(adc a) {
 }
 
 /*
- * The default buffer strategy below assumes that the data in the
- * buffer remains live after we have marked it as read.  That may not
- * be true, in which case the reader has to take an explicit strategy
- * of periodically advancing the tail to avoid buffer overrun.  In
- * fact, this would have some advantages if it could be made secure.
- * If this second strategy is used, the EXPLICIT_DATA_LIFETIME macro
- * should be defined.
+ * The buffer strategy implied below is an explicit one of
+ * periodically advancing the tail to avoid buffer overrun.  The data
+ * bounded by the tail and head pointers in the ring buffer is valid,
+ * under this explicit stragety.
  */
-
-#define EXPLICIT_DATA_LIFETIME
 
 /*
  * Recognise data in the Comedi buffer: ask Comedi how much new data
@@ -415,28 +447,14 @@ public int adc_data_collect(adc a) {
   if(nb) {
     ns  = nb / sizeof(sampl_t);
     a->a_head_time = now;
-#ifdef EXPLICIT_DATA_LIFETIME
     a->a_head = a->a_tail + ns;	/* Assume that nb accumulates if mark read not called */
-#else
-    a->a_head += ns;			    /* Head moves on the full amount */
-    if( a->a_head >= a->a_bufsz_samples ) { /* Tail catches up in mark read below */
-      a->a_tail = a->a_head - a->a_bufsz_samples;
-    }
-#endif
     if( !a->a_live ) {		/* Estimate the timestamp of sample index 0 */
       a->a_start_time = a->a_head_time - ns*a->a_intersample_ns;
       a->a_live++;
     }
-#ifndef EXPLICIT_DATA_LIFETIME
-    int ret = comedi_mark_buffer_read(a->a_device, 0, nb);
-    if(ret != nb)
-      return -1;
-#endif
   }
   return nb;
 }
-
-#ifdef EXPLICIT_DATA_LIFETIME
 
 /*
  * Purge data from the tail of the ring buffer if explicit data
@@ -455,5 +473,3 @@ public int adc_data_purge(adc a, int ns) {
   }
   return 0;
 }
-
-#endif
