@@ -104,7 +104,7 @@ public param_t globals[] ={
   },
   { "bufhwm",	"0.9",
     &reader_parameters.r_buf_hwm_fraction,
-    PARAM_TYPE(double), PARAM_SRC_ENV|PARAM_SRC_ARG,
+    PARAM_TYPE(double), PARAM_SRC_ENV|PARAM_SRC_ARG|PARAM_SRC_CMD,
     "ring buffer high-water mark fraction"
   }, 
   { "rtprio",	NULL,

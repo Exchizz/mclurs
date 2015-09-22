@@ -31,7 +31,6 @@
 #include "strbuf.h"
 #include "chunk.h"
 #include "lut.h"
-#include "ring.h"
 #include "mman.h"
 #include "queue.h"
 #include "adc.h"
