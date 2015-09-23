@@ -231,9 +231,9 @@ private void debug_writer_params() {
   if(verbose<1)
     return;
 
-  snprintf(buf, MSGBUFSIZE, "WRITER: TMPDIR=%s, SNAPDIR=%s, RTprio=%d;  WOF=%g;  FrameRAM = %d[MiB], ChunkSize = %d[kiB], nFrames = %d xfrSampleQ = %d[ki]\n",
+  snprintf(buf, MSGBUFSIZE, "WRITER: TMPDIR=%s, SNAPDIR=%s, RTprio=%d;  WOF=%g;  FrameRAM = %d[MiB], ChunkSize = %d[kiB], nFrames = %d, xfrSampleQ = %d[kiB]\n",
 	   tmpdir_path, wp->w_snapdir, wp->w_schedprio, wp->w_writeahead,
-	   wp->w_lockedram, wp->w_chunksize, wp_nframes, wp_totxfrsamples/1024);
+	   wp->w_lockedram, wp->w_chunksize, wp_nframes, wp_totxfrsamples*sizeof(sampl_t)/1024);
   zh_put_multi(log, 1, buf);
 }
 
@@ -1204,8 +1204,7 @@ private uint64_t writer_service_queue(uint64_t start) {
       de_queue(chunk2rq(c));	/* Hand the chunk over to the READER thread */
       c->c_status = SNAPSHOT_WAITING;
       c->c_parent->f_pending++;
-      int ret = zh_put_msg(reader, 0, sizeof(chunk_t *), (void *)&c);
-      assertv(ret==sizeof(chunk_t *), "Message to READER has wrong size %d not %d\n", ret, sizeof(chunk_t *));
+      send_object_ptr(reader, (void *)&c);
     }
     now = monotonic_ns_clock();
   }
@@ -1241,8 +1240,7 @@ private int process_reader_message(void *s) {
   snapfile_t *f;
   
   /* We are expecting a chunk pointer message */
-  ret = zh_get_msg(s, 0, sizeof(chunk_t *), (void *)&c);
-  assertv(ret == sizeof(chunk_t *), "Queue message size wrong %d vs %d\n", ret, sizeof(chunk_t *));
+  recv_object_ptr(s, (void **)&c);
   assertv(c != NULL, "Queue message from READER was NULL pointer\n");
 
   f= c->c_parent;
@@ -1371,7 +1369,7 @@ private void writer_thread_msg_loop() {    /* Read and process messages */
   while( running && !die_die_die_now ) {
     int delay = borrowedtime + WRITER_POLL_DELAY; /* This is how long we wait normally in [ms] */
 
-    int ret = zmq_poll(&poll_list[0], N_POLL_ITEMS, (delay<=0? -1 : delay));
+    int ret = zmq_poll(&poll_list[0], N_POLL_ITEMS, (delay<=0? 0 : delay));
 
     if( ret < 0 && errno == EINTR ) { /* Interrupted */
       zh_put_multi(log, 1, "WRITER loop interrupted");
@@ -1387,8 +1385,8 @@ private void writer_thread_msg_loop() {    /* Read and process messages */
     
     for(n=0; n<N_POLL_ITEMS; n++) {
       if( poll_list[n].revents & ZMQ_POLLIN ) {
-	if( (*poll_responders[n])(poll_list[n].socket) )
-	  running = true;
+	if( !(*poll_responders[n])(poll_list[n].socket) )
+	  running = false;
       }
     }
     

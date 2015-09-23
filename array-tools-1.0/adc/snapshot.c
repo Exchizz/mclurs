@@ -92,7 +92,7 @@ public param_t globals[] ={
     PARAM_TYPE(int32), PARAM_SRC_ENV|PARAM_SRC_ARG|PARAM_SRC_CMD,
     "the ADC converter full-scale range [mV]"
   },
-  { "bufsz",	"32",
+  { "bufsz",	"56",
     &reader_parameters.r_bufsz,
     PARAM_TYPE(int32),  PARAM_SRC_ENV|PARAM_SRC_ARG|PARAM_SRC_CMD,
     "size of the Comedi buffer [MiB]"
@@ -614,19 +614,19 @@ private void main_thread_msg_loop() {    /* Read and process messages */
   fprintf(stderr, "Log: starting MAIN thread polling loop with %d items\n", N_POLL_ITEMS);
   running = true;
   poll_delay = MAIN_LOOP_POLL_INTERVAL;
-  while(running && !die_die_die_now) {
+  while(running) {
     int n;
     int ret = zmq_poll(&poll_list[0], N_POLL_ITEMS, poll_delay);
 
     if( ret < 0 && errno == EINTR ) { /* Interrupted */
       fprintf(stderr, "%s: MAIN thread loop interrupted\n", program);
-      break;
+      continue;
     }
     if(ret < 0)
       break;
     running = reader_parameters.r_running || writer_parameters.w_running;
-    if( !running )		/* Flush out last messages */
-      poll_delay = 1000;
+    if( !running )		/* Flush out last (log) messages */
+      poll_delay = 100;
     for(n=0; n<N_POLL_ITEMS; n++) {
       if( poll_list[n].revents & ZMQ_POLLIN ) {
 	ret = (*poll_responders[n])(poll_list[n].socket);
@@ -780,12 +780,10 @@ public int main(int argc, char *argv[], char *envp[]) {
 
   release_strbuf(e);
 
-#if 0
   /* Exit nicely on SIGINT:  this is done by setting the die_die_die_now flag. */
   if( set_intr_sig_handler() < 0 ) {
     exit(3);
   }
-#endif
 
   /* Create the TIDY thread */
   pthread_attr_init(&tidy_thread_attr);

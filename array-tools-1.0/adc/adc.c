@@ -467,8 +467,6 @@ public int adc_data_purge(adc a, int ns) {
   ret = comedi_mark_buffer_read(a->a_device, 0, nb);
   if(ret != nb)
     return -1;
-  if( a->a_head >= a->a_bufsz_samples ) {
-    a->a_tail += ns;
-  }
+  a->a_tail += ns;
   return 0;
 }

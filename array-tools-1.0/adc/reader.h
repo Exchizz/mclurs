@@ -10,14 +10,17 @@
 #define READER_QUEUE_ADDR "inproc://Reader-Q"
 
 /*
- * Reader parameter structure.
+ * READER parameter structure.
+ *
+ * The order of r_range and r_bufsz seems to alter whether the
+ * parameters are correctly initialised or not by the param code...
  */
 
 typedef struct {
-  double      r_frequency;	   /* Per-channel sampling frequency [Hz] */
   int         r_schedprio;	   /* Reader real-time priority */
+  double      r_frequency;	   /* Per-channel sampling frequency [Hz] */
+  int         r_range;		   /* ADC full-scale range [mV] */
   int         r_bufsz;		   /* Reader buffer size [MiB] */
-  int	      r_range;		   /* ADC full-scale range [mV] */
   double      r_window;		   /* Snapshot window [s] (must fit in buffer) */
   double      r_buf_hwm_fraction;  /* Ring buffer high-water mark as fraction of size */
   const char *r_device;		   /* Comedi device to use */

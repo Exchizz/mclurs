@@ -57,8 +57,8 @@ public void *mmap_and_lock_fixed(int fd, off_t offset, size_t length, int flags,
   if( !mflags )
     mflags = PROT_NONE;
 
-  map = mmap(fixed, length, mflags, MAP_SHARED, fd, offset);
-  if(map == NULL || map == (void *)-1)
+  map = mmap(fixed, length, mflags, MAP_SHARED|MAP_FIXED, fd, offset);
+  if(map == NULL || map == (void *)-1 || map != fixed)
     return NULL;
 
   if( (flags&MAL_LOCKED) && mlock(map, length) < 0 ) {
@@ -92,11 +92,7 @@ public void *mmap_and_lock(int fd, off_t offset, size_t length, int flags) {
       munmap(map, length);
       return NULL;
     }
-    length *= 2;
   }
-
-  if( flags & PREFAULT_RDWR )
-    prefault_pages(map, length / sysconf(_SC_PAGESIZE), (flags & PREFAULT_RDWR));
 
   return map;
 }

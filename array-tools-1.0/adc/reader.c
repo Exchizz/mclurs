@@ -134,8 +134,9 @@ private void close_reader_comms() {
  *
  * The READER needs:
  *
- * CAP_IPC_LOCK -- ability to mmap and mlock pages.
- * CAP_SYS_NICE -- ability to set RT scheduling priorities
+ * CAP_IPC_LOCK  -- ability to mmap and mlock pages.
+ * CAP_SYS_NICE  -- ability to set RT scheduling priorities
+ * CAP_SYS_ADMIN -- ability to set the Comedi buffer maximum size
  *
  * These capabilities should be in the CAP_PERMITTED set, but not in CAP_EFFECTIVE which was cleared
  * when the main thread dropped privileges by changing to the desired non-root uid/gid.
@@ -143,7 +144,7 @@ private void close_reader_comms() {
 
 private int set_up_reader_capability() {
   cap_t c = cap_get_proc();
-  const cap_value_t vs[] = { CAP_IPC_LOCK, CAP_SYS_NICE, };
+  const cap_value_t vs[] = { CAP_IPC_LOCK, CAP_SYS_NICE, CAP_SYS_ADMIN, };
 
   cap_set_flag(c, CAP_EFFECTIVE, sizeof(vs)/sizeof(cap_value_t), &vs[0], CAP_SET);
   return cap_set_proc(c);
@@ -327,9 +328,8 @@ private int process_queue_message(void *s) {
   chunk_t *c;
   int      ret;
 
-  ret = zh_get_msg(s, 0, sizeof(chunk_t *), (void *)&c);
-  assertv(ret==sizeof(chunk_t *), "Received message from WRITER with wrong size %d (not %d)\n", ret, sizeof(chunk_t *));
-
+  recv_object_ptr(s, (void **)&c);
+  
   if(rp_state != READER_ARMED && rp_state != READER_RUN) {
     strbuf_appendf(c->c_error, "READER thread ADC is not running");
     c->c_status = SNAPSHOT_ERROR;
@@ -341,11 +341,10 @@ private int process_queue_message(void *s) {
   }
   
   if(c->c_status==SNAPSHOT_ERROR) {		/* we send it straight back */
-    ret = zh_put_msg(writer, 0, sizeof(chunk_t *), (void *)&c);
-    assertv(ret==sizeof(chunk_t *), "Message returned to WRITER with wrong size %d (not %d)\n", ret, sizeof(chunk_t *));
-    ret = zh_put_msg(tidy, 0, sizeof(frame *), &c->c_frame);
-    assertv(ret==sizeof(frame *), "Frane message to TIDY with wrong size %d (not %d)\n", ret, sizeof(frame *));
+
+    send_object_ptr(tidy, (void *)&c->c_frame);
     c->c_frame = NULL;
+    send_object_ptr(writer, (void *)&c);
     return true;
   }
 
@@ -386,11 +385,10 @@ private void abort_queue_head_chunk() {
   if(c->c_parent == parent) {
     de_queue(p);
     c->c_status = SNAPSHOT_ERROR;
-    ret = zh_put_msg(tidy, 0, sizeof(frame *), &c->c_frame);
-    assertv(ret==sizeof(frame *), "Frane message to TIDY with wrong size %d (not %d)\n", ret, sizeof(frame *));
+
+    send_object_ptr(tidy, (void *)&c->c_frame);
     c->c_frame = NULL;
-    ret = zh_put_msg(writer, 0, sizeof(chunk_t *), (void *)&c);
-    assertv(ret==sizeof(chunk_t *), "Abort to WRITER with wrong size %d (not %d)\n", ret, sizeof(chunk_t *));
+    send_object_ptr(writer, (void *)&c);
   }
   end_for_nxt;
   rq_head = queue_singleton(&ReaderChunkQ) ? NULL : rq2chunk(queue_next(&ReaderChunkQ));
@@ -418,12 +416,9 @@ private void complete_queue_head_chunk() {
 
   copy_chunk_data(c);
 
-  ret = zh_put_msg(tidy, 0, sizeof(frame *), &c->c_frame);
-  assertv(ret==sizeof(frame *), "Frane message to TIDY with wrong size %d (not %d)\n", ret, sizeof(frame *));
+  send_object_ptr(tidy, (void *)&c->c_frame);
   c->c_frame = NULL;
-  
-  ret = zh_put_msg(writer, 0, sizeof(chunk_t *), (void *)&c);
-  assertv(ret==sizeof(chunk_t *), "Abort to WRITER with wrong size %d (not %d)\n", ret, sizeof(chunk_t *));
+  send_object_ptr(writer, (void *)&c);
 }
 
 /*
@@ -515,10 +510,11 @@ private void reader_thread_msg_loop() {    /* Read and process messages */
     int delay;
     int n;
 
-    if(reader_adc && adc_is_running(reader_adc)) {
+    if(adc_is_running(reader_adc)) {
       adc_dry_period--;
       nb = adc_data_collect(reader_adc);
       if( nb ) {			/* There was some new data, adc_ring_head has advanced */
+	//	fprintf(stderr, "Got %d samples\n", nb/2);
 	adc_dry_period = adc_dry_period_max;
 	/* Once the ADC head pointer has advanced past the READER queue head's end, a chunk is ready */
 	while( rq_head && rq_head->c_last <= adc_ring_head(reader_adc) ) {
@@ -530,6 +526,7 @@ private void reader_thread_msg_loop() {    /* Read and process messages */
 	if(head > high_water_mark) {
 	  uint64_t lwm  = head - buf_window_samples;
 	  uint64_t tail = adc_ring_tail(reader_adc);
+	  fprintf(stderr, "Head %lld HWM %lld LWM %lld Tail %lld\n", head, high_water_mark, lwm, tail);
 	  if(lwm > tail) {
 	    ret = adc_data_purge(reader_adc, (int)(lwm-tail));
 	    assertv(ret==0, "Comedi mark read failed for %d bytes: %C", (int)(lwm-tail));
@@ -556,6 +553,25 @@ private void reader_thread_msg_loop() {    /* Read and process messages */
       }
     }
   }
+}
+
+/*
+ * Debug READER parameters
+ */
+
+private void debug_reader_params() {
+  char buf[MSGBUFSIZE];
+  rparams *rp = &reader_parameters;
+
+  if(verbose<1)
+    return;
+
+  int bufsz_samples = rp->r_bufsz*1024*1024/sizeof(sampl_t);
+  int headroom = 1e-6 * (bufsz_samples - buf_hwm_samples) * adc_ns_per_sample(reader_adc) + 0.5;
+
+  snprintf(buf, MSGBUFSIZE, "READER: High-water Mark %d [spl], Window %d [spl], Bufsz %d [spl], Poll Delay %d [ms], Headroom %d [ms]\n",
+	   buf_hwm_samples, buf_window_samples, bufsz_samples, reader_poll_delay, headroom);
+  zh_put_multi(log, 1, buf);
 }
 
 /*
@@ -593,6 +609,7 @@ public void *reader_main(void *arg) {
   ret = clock_gettime(CLOCK_MONOTONIC, &test_stamp);
   assertv(ret == 0, "Test failed to get monotonic clock time\n");  
 
+  debug_reader_params();
   reader_thread_msg_loop();
   if(rp_state == READER_ARMED || rp_state == READER_RUN || rp_state == READER_RESTING) {
     adc_stop_data_transfer(reader_adc);
@@ -610,7 +627,7 @@ public void *reader_main(void *arg) {
 }
 
 /*
- * Verify reader parameters and generate reader state description.
+ * Verify READER parameters and generate READER state description.
  */ 
 
 public int verify_reader_params(rparams *rp, strbuf e) {
@@ -693,11 +710,11 @@ public int verify_reader_params(rparams *rp, strbuf e) {
   /* Determine the READER main loop poll delay from the chunk duration */
   double d = 1e-6 * chunksize * adc_ns_per_sample(reader_adc); /* Length of a chunk in [ms] */
   reader_poll_delay = ((d+2.5)/5 > 100)? 100.0 : (d+2.5)/5; /* One fifth of a chunk or 100[ms] */
-    
+
   /* Set the tail policy variables */
   buf_hwm_samples = bhwm_samples;
   buf_window_samples = rbw_samples;
-  
+
   rp_state = READER_PARAM;
   return 0;
 }

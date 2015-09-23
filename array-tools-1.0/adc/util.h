@@ -31,4 +31,7 @@ export int zh_put_multi(void *, int, ...);
 export void *zh_bind_new_socket(void *, int, const char *);
 export void *zh_connect_new_socket(void *, int, const char *);
 
+export void send_object_ptr(void *, void *);
+export void recv_object_ptr(void *, void **);
+
 #endif /* _UTIL_H */

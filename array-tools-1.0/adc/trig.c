@@ -242,14 +242,17 @@ void print_message(void *socket) {
   int used;
 
   used = zh_collect_multi(socket, &log_buffer[0], LOGBUF_SIZE-1, "");
-  if( log_buffer[used-1] != '\n') {
-    log_buffer[used] = '\n';
-    fwrite(log_buffer, used+1, 1, stdout);
+  /* If not quiet or an error then show the message */
+  if(verbose > 0 || !strncmp(&log_buffer[0], "NO:", 3)) {
+    if( log_buffer[used-1] != '\n') {
+      log_buffer[used] = '\n';
+      fwrite(log_buffer, used+1, 1, stdout);
+    }
+    else {
+      fwrite(log_buffer, used, 1, stdout);
+    }
+    fflush(stdout);
   }
-  else {
-    fwrite(log_buffer, used, 1, stdout);
-  }
-  fflush(stdout);
 }
 
 /*
@@ -538,8 +541,8 @@ int main(int argc, char *argv[], char *envp[]) {
     /* Wait for reply */
     if(verbose > 1)
       fprintf(stderr, "Awaiting reply...\n");
-    if(verbose > 0)
-      print_message(snapshot);
+
+    print_message(snapshot);
 
   } while(repeat);
 
