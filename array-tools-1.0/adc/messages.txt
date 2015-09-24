@@ -42,5 +42,5 @@ The reply should be constructed as a single fragment message.
 
 We assume that originators of multiple message segments provide the
 newlines to join them as required.  The reply collector in MAIN just
-concatenates the strbuf contents, eliminating trailing NULs that got
-counted, and adds a final newline if none is present.
+concatenates the strbuf contents and adds a final newline if none is
+present.
