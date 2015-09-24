@@ -208,11 +208,17 @@ public int map_chunk_to_frame(chunk_t *c) {
   }
 
   fp->f_map.b_bytes = c->c_samples*sizeof(sampl_t);
+
   /* Would really like to do WRONLY here, but I *think* that will break */
   map = mmap_and_lock_fixed(c->c_fd, c->c_offset, fp->f_map.b_bytes, PROT_RDWR|PREFAULT_RDWR|MAL_LOCKED, fp->f_map.b_data);
+
+  fprintf(stderr, "Map chunk %04hx in frame %d with addr %p and size %d gives res %p\n",
+	  c->c_name, frame_nr(fp), fp->f_map.b_data, fp->f_map.b_bytes, map);
+
   if(map != fp->f_map.b_data) {	/* A (fatal) mapping error occurred... */
     strbuf_appendf(c->c_error, "Unable to map chunk c:%04hx to frame %d: %m", c->c_name, frame_nr(fp));
     c->c_status = SNAPSHOT_ERROR;
+    fp->f_map.b_bytes = 0;	/* Mark frame as free */
     return -1;
   }
   c->c_frame = fp;		/* Succeeded, chunk now has a mapped frame */

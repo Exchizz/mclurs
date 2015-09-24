@@ -1109,8 +1109,9 @@ private void abort_snapfile(snapfile_t *f) {
 
   assertv(f->f_chunkQ != NULL, "Aborted file f:%04hx at %p has an empty chunk queue\n", snapfile_name(f), f);
 
-  for_nxt_in_Q(queue *p, chunk2qp(f->f_chunkQ), chunk2qp(f->f_chunkQ));
+  for_nxt_in_Q(queue *p, chunk2qp(f->f_chunkQ), chunk2qp(f->f_chunkQ))
     chunk_t *c = qp2chunk(p);
+    fprintf(stderr, "Aborting chunk %04hx\n", c->c_name);
     if(queue_singleton(chunk2rq(c))) {	    /* These were chunks in the READER queue */
       if(c->c_status == SNAPSHOT_WAITING) { /* These were pending chunks in transit from WRITER to READER */
 	c->c_status = SNAPSHOT_ERROR;
@@ -1190,13 +1191,16 @@ private uint64_t writer_service_queue(uint64_t start) {
   uint64_t now  = start;
   uint64_t stop = start + WRITER_MAX_CHUNK_DELAY;
   int	   max;
-  
+
   for(max=WRITER_MAX_CHUNKS_TRANSFER; max > 0 && !queue_singleton(&WriterChunkQ) && now < stop; --max) { /* Only ever do max chunks at the most */
     chunk_t *c = rq2chunk(queue_next(&WriterChunkQ));
     
     if( map_chunk_to_frame(c) < 0 ) {
       if(c->c_status == SNAPSHOT_ERROR) { /* Something nasty went wrong! */
 	abort_snapfile(c->c_parent);
+	//	debug_snapfile(c->c_parent);
+	completed_snapfile(c->c_parent);
+	fprintf(stderr, "WRITER service queue aborts chunk %04hx: %s ", c->c_name, strbuf_string(c->c_error));
       }
       max = 0;			/* Couldn't get a frame, so we are done */
     }
@@ -1205,6 +1209,7 @@ private uint64_t writer_service_queue(uint64_t start) {
       c->c_status = SNAPSHOT_WAITING;
       c->c_parent->f_pending++;
       send_object_ptr(reader, (void *)&c);
+      fprintf(stderr, "WRITER service queue transfers chunk %04hx to READER\n", c->c_name);
     }
     now = monotonic_ns_clock();
   }

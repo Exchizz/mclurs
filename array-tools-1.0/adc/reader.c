@@ -406,6 +406,8 @@ private void complete_queue_head_chunk() {
   int      ret;
   chunk_t *c = rq_head;
 
+  fprintf(stderr, "Calling complete on chunk %04hx\n", c->c_name);
+
   if(c->c_first < adc_ring_tail(reader_adc)) { /* Oops, we are too late */
     abort_queue_head_chunk();
     return;
@@ -526,7 +528,10 @@ private void reader_thread_msg_loop() {    /* Read and process messages */
 	if(head > high_water_mark) {
 	  uint64_t lwm  = head - buf_window_samples;
 	  uint64_t tail = adc_ring_tail(reader_adc);
-	  fprintf(stderr, "Head %lld HWM %lld LWM %lld Tail %lld\n", head, high_water_mark, lwm, tail);
+
+	  if(verbose > 1)
+	    fprintf(stderr, "Head %lld HWM %lld LWM %lld Tail %lld\n", head, high_water_mark, lwm, tail);
+
 	  if(lwm > tail) {
 	    ret = adc_data_purge(reader_adc, (int)(lwm-tail));
 	    assertv(ret==0, "Comedi mark read failed for %d bytes: %C", (int)(lwm-tail));
