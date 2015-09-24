@@ -1,0 +1,184 @@
+Design of the new snapshotter program
+
+The snapshotter is designed as far as possible to avoid starvation in
+the reader loop and to do as few data copies as possible.  The design
+comprises four threads as follows:
+
+1. MAIN thread, where the program starts running.  This thread handles
+   the processing of parameters from defaults, environment variables
+   and arguments, checks and manipulates the capability sets and drops
+   user privileges, calls the parameter verify routines and then runs
+   the main messaging loop.
+
+   The main messaging loop receives commands via the public socket and
+   forwards them to the appropriate handler thread, collecting replies
+   and passing them back to the external correspondent.
+
+2. READER thread, responsible for interaction with Comedi and for data
+   capture.  It initialises the Comedi ring buffer and memory maps it.
+   It maintains a queue of work ordered by last sample index of data
+   chunks to be written which have been passed from the WRITER thread.
+   Its main loop processes command messages that set parameters and
+   bring up or tear down the data capture channel, as well as dealing
+   with the asynchronous flow of data.
+
+   Data flow is managed by asking Comedi once per loop how many bytes
+   are present in the ring buffer.  From this, the current head -- the
+   latest sample available -- is computed.  If the head falls after
+   the end of the first chunk on the work queue, that chunk can be
+   processed: for the READER, this means copying a block of data from
+   the mapped ring buffer to a pre-faulted memory-mapped are of file
+   represented by the chunk.  There are no grounds for page faults
+   during this copy because of the pre-faulting.
+
+   If the head sample index falls after the current high-water mark,
+   the ring buffer is sufficiently full.  A new position for the tail,
+   the first (earliest) valid sample in the ring buffer is computed by
+   subracting the desired window size from the current head.  The tail
+   is moved to this point by instructing Comedi to discard earlier
+   samples than this.
+
+3. WRITER thread, which processes snapshot commands and is responsible
+   for interaction with the file system.  When a snap command is
+   issued, the writer creates the necessary files in sequence as
+   required.  Each file is split into chunks, which are entered into
+   the writer's work queue ordered by first sample index.
+
+   Each cycle of its main loop processes command messages but also
+   handles the work queue.  When there are resources available, the
+   WRITER takes chunks from its queue and maps, locks and pre-faults
+   the respective region of the file in memory, using a memory frame
+   structure.  This means that the delays incurred by page faults
+   while trying to find pages for the output files accrue to the
+   WRITER, which tries to keep track of them and compensate for them
+   in its main loop.  Chunks which have been mapped are passed to the
+   READER for filling.
+
+   Once the READER has filled a chunk (or determined that a chunk
+   cannot be filled) the chunk is passed back to the WRITER which
+   manages the snapshot status that follows from the chunk captures.
+
+4. TIDY thread, which is passed the used locked memory frames from
+   chunks that have been written or aborted.  In the latter case these
+   frames are full of zeros, while in the former case they are full of
+   valid data.  TIDY unmaps the frames, releasing the pages into the
+   buffer cache from which they will be written out to long-term
+   storage as dirty pages are flushed by the kernel.  Since delays
+   might arise during unmapping, the TIDY thread exists to segregate
+   such events from the READER.
+
+   The TIDY thread runs unprivileged. It is responsible for generating
+   the ZeroMQ message-passing context (which implies ZMQ I/O threads)
+   so that the message-passing system runs unprivileged as well.
+
+Submodules of snapshot.
+
+adc:
+	The interface to the ADC hardware.  This module encapsulates the
+	Comedi interface code.
+
+argtab-int16:
+argtab-int64:
+
+	Supplementary modules for libargtable2 that implement argument
+	types for 16 and 64 bit integer values.
+
+chunk:
+
+	Files are split into chunks for the purpose of data transfer.
+	Routines in this module allocate and release chunks and
+	memory-mapped file data transfer frames, and handle data
+	copying.
+
+lut:
+
+	Provides look-up tables and conversion functions to transform
+	the raw data from the ADC hardware into standard format (16
+	bit signed fixed point format with +/-1V peak amplitude).
+
+mman:
+
+	Encapsulates the calls require to memory map files, lock the
+	resulting mapped pages and pre-fault them for reading and/or
+	writing.
+
+param:
+
+	Everything to do with parameters, specifically parsing
+	strings, value conversion, interface with environment
+	variables and argument structures in libargtable2 format.
+
+queue:
+
+	Simple doubly-linked queue module.  Provides insertion and
+	removal.  Associated header file provides list for macros.
+
+rtprio:
+
+	Looks after real-time scheduling and capability manipulation.
+
+strbuf:
+
+	Code to manage string buffers.  The buffers maintain a size
+	pointer and have routines for printing into the buffer space.
+	Extra (no argument) % conversions can be registered with the
+	module to simplify e.g. error reporting -- the ADC module
+	registers %C for Comedi errors, for example.
+
+util:
+	A few routines that simplify using the ZeroMQ message-passing
+	library.  These handle socket opening and address binding,
+	message assembly and object pointer transmission.
+
+reader:
+
+	Code that runs in the READER thread.  Comprises parameter
+	handling, command processing, message handling, work queue
+	implementation and main message loop.
+
+snapshot:
+
+	Code that runs in the MAIN thread: initialisation, parameter
+	processing, user and capability management, thread creation,
+	command reception and forwarding, and tidying up on exit are
+	all handled in this module.
+
+tidy:
+
+	Code that runs in the TIDY thread.  Comprises frame-unmap in a
+	simple message loop.  Release of transfer frames occurs in
+	this thread.
+
+writer:
+
+	Code that runs in the WRITER thread.  Comprises parameter
+	verification, command processing, status reporting, file
+	system interface.  The mdoule defines snapshot and
+	snapshot-file description structures and code to manipulate
+	them, and handles chunking policy and allocation of transfer
+	frames.  Deals with the file-system aspects of data capture
+	errors reported by the READER.
+	
+Helper Utilities:
+
+grab:
+
+	Data capture program that uses the lut, mman and param module
+	code.  It reads data from the memory-mapped and locked Coemdi
+	ring buffer and dumps it to stdout as fast as it can.
+	Argument handling is done by the standard mechanisms used in
+	snapshot.
+
+snapchat:
+
+	Utility for talking to snapshot.  This program can send
+	command messages to the snapshot program and present its
+	replies.  It can execute multiple commands in sequence with
+	acknowledgement checking.
+
+trig:
+
+	Program to generate snapshot requests on demand with
+	configurable pre- and post-trigger windows and optional
+	auto-generation of snapshot names.  Works by sending suitable
+	commands to snapshot.
