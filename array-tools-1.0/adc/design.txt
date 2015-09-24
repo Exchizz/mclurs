@@ -182,3 +182,26 @@ trig:
 	configurable pre- and post-trigger windows and optional
 	auto-generation of snapshot names.  Works by sending suitable
 	commands to snapshot.
+
+Other stuff:
+
+assert:
+
+	The assert.h file contains definitions of a 3-ary assert()
+	routine that prints a lot more useful debugging information
+	than standard assert() before executing abort().
+
+
+argtab-helper:
+
+	This header file contains the macro definitions that allow the
+	program command line syntaxes to be expressed declaratively
+	and apparently in global context.  It also provides for the
+	interaction with the param module so that parameters can be
+	provided as command-line arguments in a seamless way.
+
+general:
+
+	Header file defining public, private, export and import used
+	to make the C code inter-relationships more transparent.
+
