@@ -86,8 +86,7 @@ public void *tidy_main(void *arg) {
 
   zh_put_multi(log, 1, "TIDY   thread initialised");
   
-  while( ret = zh_get_msg(tidy, 0, sizeof(frame *), &f) && !die_die_die_now ) {
-    assertv(ret==sizeof(frame *), "TIDY read message error, ret=%d\n", ret);
+  while( (ret = recv_object_ptr(tidy, (void **)&f)) && !die_die_die_now ) {
     release_frame(f);
   }
 

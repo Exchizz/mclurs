@@ -41,6 +41,18 @@ public rparams reader_parameters;   /* The externally-visible parameters for the
 public adc reader_adc;		    /* The ADC object for the READER */
 
 /*
+ * Compiled in parameter limits for the READER
+ */
+
+#define READER_MAX_POLL_DELAY	   100   /* Maximum poll loop delay [ms] */
+#define READER_RB_HEADROOM_CHUNKS    2   /* Ring buffer min. headroom in chunks */
+#define READER_MIN_RBHWMF	  0.50	 /* Ring buffer minimum high-water mark fraction */
+#define READER_MAX_RBHWMF	  0.95	 /* Ring buffer maximum high-water mark fraction */
+#define READER_MIN_WINDOW	     1	 /* Reader minimum capture window [s] */
+#define READER_MAX_WINDOW	    30	 /* Reader maximum capture window [s] */
+#define ADC_DRY_PERIOD_MAX        1000	 /* Maximum Wait for data [ms]: initial default is 10 [s] */
+
+/*
  * READER state machine definitions.
  *
  * The READER state is kept in the rp_state variable, private to the
@@ -166,19 +178,18 @@ public uint64_t  monotonic_ns_clock() {
 
 /*
  * Process a READER command from MAIN thread.  Generate replies as necessary.
- * Returns true if processing messages should continue..
+ * Returns true if processing messages should continue.
  */
 
 private int process_reader_command(void *s) {
   rparams *rp = &reader_parameters;
-  int      used;
   int      ret;
   strbuf   cmd;
   char    *cmd_buf;
   strbuf   err;
 
-  used = zh_get_msg(s, 0, sizeof(strbuf), &cmd);
-  if( !used ) {			/* It was a quit message */
+  ret = recv_object_ptr(s, (void **)&cmd);
+  if( !ret ) {			/* It was a quit message */
     if(rp_state == READER_ARMED || rp_state == READER_RUN || rp_state == READER_RESTING)
       adc_stop_data_transfer(reader_adc);
     return false;
@@ -271,7 +282,7 @@ private int process_reader_command(void *s) {
       break;
     }
     adc_stop_data_transfer(reader_adc);	/* Terminate any transfer in progress */
-    drain_reader_chunk_queue();		/* Empty the chunk queue */
+    drain_reader_chunk_queue("READER ADC was shut down");	/* Empty the chunk queue */
     strbuf_printf(err, "OK Halt");
     adc_destroy(reader_adc);
     reader_adc = NULL;
@@ -288,7 +299,7 @@ private int process_reader_command(void *s) {
     zh_put_multi(log, 4, strbuf_string(err), "\n > '", &cmd_buf[0], "'"); /* Error occurred, log it */
   }
   strbuf_clear(cmd);
-  zh_put_msg(s, 0, sizeof(strbuf), (void *)&err); /* return message */
+  send_object_ptr(s, (void *)&err); /* return message */
   return true;
 }
 
@@ -310,20 +321,45 @@ public int set_reader_rt_scheduling() {
   return 0;
 }
 
-
 /*
- * Handle a message from the WRITER.  The message will be a chunk
- * which is ready to add to the READER's pending-work queue.  Chunks
- * arrive here with a state of SNAPSHOT_WAITING or SNAPSHOT_ERROR (if
- * they were in transit when an error occurred).  The latter are sent
- * straight back to the WRITER, which is counting down pending chunks
- * to file completion, after their frame has been released.
+ * Abort a specified chunk.  This means we must scan for its
+ * siblings in the queue, remove them and set their status to
+ * SNAPSHOT_ERROR, and return them to the WRITER.  We assume that the
+ * caller has set the c_error strbuf.
  */
 
 private QUEUE_HEADER(ReaderChunkQ);
 private chunk_t *rq_head = NULL;
 
+private void abort_reader_chunk(chunk_t *ac) {
+  snapfile_t *parent = ac->c_parent;
+  int         ret;
+  
+  for_nxt_in_Q(queue *p, queue_next(&ReaderChunkQ), &ReaderChunkQ);
+  chunk_t *c = rq2chunk(p);
+  if(c->c_parent == parent) {
+    de_queue(p);
+    set_chunk_status(c, SNAPSHOT_ERROR);
+
+    send_object_ptr(tidy, (void *)&c->c_frame);
+    c->c_frame = NULL;
+    send_object_ptr(writer, (void *)&c);
+  }
+  end_for_nxt;
+  rq_head = queue_singleton(&ReaderChunkQ) ? NULL : rq2chunk(queue_next(&ReaderChunkQ));
+}
+
+/*
+ * Handle a message from the WRITER.  The message will be a chunk
+ * which is ready to add to the READER's pending-work queue.  Chunks
+ * arrive here with a state of SNAPSHOT_WAITING.  If an error is
+ * detected on receipt, the chunk is put into SNAPSHOT_ERROR state and
+ * is returned to the WRITER, along with any other chunks that belong
+ * to the same file.
+ */
+
 private int process_queue_message(void *s) {
+  import int is_dead_snapfile(snapfile_t *);
   rparams *rp = &reader_parameters;
   chunk_t *c;
   int      ret;
@@ -332,23 +368,28 @@ private int process_queue_message(void *s) {
   
   if(rp_state != READER_ARMED && rp_state != READER_RUN) {
     strbuf_appendf(c->c_error, "READER thread ADC is not running");
-    c->c_status = SNAPSHOT_ERROR;
+    set_chunk_status(c, SNAPSHOT_ERROR);
   }
   else {  /* Check the chunk is still current -- set SNAPSHOT_ERROR state on failure */
-    adc_setup_chunk(reader_adc, c);
-    if( !c->c_ring )
-      c->c_status = SNAPSHOT_ERROR;
+    if( is_dead_snapfile(c->c_parent) ) {
+      set_chunk_status(c, SNAPSHOT_ERROR);
+    }
+    else {
+      adc_setup_chunk(reader_adc, c);
+      if( !c->c_ring )
+	set_chunk_status(c, SNAPSHOT_ERROR);
+    }
   }
   
-  if(c->c_status==SNAPSHOT_ERROR) {		/* we send it straight back */
-
+  if(is_chunk_status(c, SNAPSHOT_ERROR)) {		/* We send it straight back */
+    abort_reader_chunk(c);				/* Tidy up any siblings in the queue */
     send_object_ptr(tidy, (void *)&c->c_frame);
     c->c_frame = NULL;
     send_object_ptr(writer, (void *)&c);
     return true;
   }
 
-  assertv(c->c_status==SNAPSHOT_WAITING, "Received chunk c:%04hx has unexpected state %s\n", c->c_name, snapshot_status(c->c_status));
+  assertv(is_chunk_status(c, SNAPSHOT_WAITING), "Received chunk c:%04hx has unexpected state %s\n", c->c_name, snapshot_status(c->c_status));
 
   /* Add the chunk to the READER chunk queue in order of increasing *last* sample */
   queue *pos = &ReaderChunkQ;
@@ -370,28 +411,11 @@ private int process_queue_message(void *s) {
 
 /*
  * Abort the chunk which is at the head of the ReaderChunkQ, i.e. it is
- * queue_next(&ReaderChunkQ).  This means we must scan for its
- * siblings in the queue, remove them and set their status to
- * SNAPSHOT_ERROR, and return them to the WRITER.  We assume that the
- * caller has set the c_error strbuf.
+ * queue_next(&ReaderChunkQ).
  */
 
 private void abort_queue_head_chunk() {
-  snapfile_t *parent = rq2chunk(queue_next(&ReaderChunkQ))->c_parent;
-  int         ret;
-  
-  for_nxt_in_Q(queue *p, queue_next(&ReaderChunkQ), &ReaderChunkQ);
-  chunk_t *c = rq2chunk(p);
-  if(c->c_parent == parent) {
-    de_queue(p);
-    c->c_status = SNAPSHOT_ERROR;
-
-    send_object_ptr(tidy, (void *)&c->c_frame);
-    c->c_frame = NULL;
-    send_object_ptr(writer, (void *)&c);
-  }
-  end_for_nxt;
-  rq_head = queue_singleton(&ReaderChunkQ) ? NULL : rq2chunk(queue_next(&ReaderChunkQ));
+  abort_reader_chunk(rq2chunk(queue_next(&ReaderChunkQ)));
 }
 
 /*
@@ -403,12 +427,13 @@ private void abort_queue_head_chunk() {
  */
 
 private void complete_queue_head_chunk() {
+  import int is_dead_snapfile(snapfile_t *);
   int      ret;
   chunk_t *c = rq_head;
 
   fprintf(stderr, "Calling complete on chunk %04hx\n", c->c_name);
 
-  if(c->c_first < adc_ring_tail(reader_adc)) { /* Oops, we are too late */
+  if(c->c_first < adc_ring_tail(reader_adc) || is_dead_snapfile(c->c_parent)) { /* Oops, we are too late */
     abort_queue_head_chunk();
     return;
   }
@@ -428,11 +453,11 @@ private void complete_queue_head_chunk() {
  * Any snapshots in progress are aborted.
  */
 
-private void drain_reader_chunk_queue() {
+private void drain_reader_chunk_queue(const char *err) {
 
   while( !queue_singleton(&ReaderChunkQ) ) {
     chunk_t *c = rq2chunk(queue_next(&ReaderChunkQ));
-    strbuf_appendf(c->c_error, "aborted because of READER ADC shutdown");
+    strbuf_appendf(c->c_error, "aborted because %s", err);
     abort_queue_head_chunk();
   }
 }
@@ -472,8 +497,6 @@ private void drain_reader_chunk_queue() {
  * Furthermore, if the main loop is executed for too long without any
  * data being captured, we shut down the ADC and enter error state.
  */
-
-#define ADC_DRY_PERIOD_MAX 1000	/* Initial default is 10 [s] */
 
 private int buf_hwm_samples = 0;
 private int buf_window_samples = 0;
@@ -518,6 +541,7 @@ private void reader_thread_msg_loop() {    /* Read and process messages */
       if( nb ) {			/* There was some new data, adc_ring_head has advanced */
 	//	fprintf(stderr, "Got %d samples\n", nb/2);
 	adc_dry_period = adc_dry_period_max;
+	rp_state = READER_RUN;
 	/* Once the ADC head pointer has advanced past the READER queue head's end, a chunk is ready */
 	while( rq_head && rq_head->c_last <= adc_ring_head(reader_adc) ) {
 	  complete_queue_head_chunk();      
@@ -540,7 +564,11 @@ private void reader_thread_msg_loop() {    /* Read and process messages */
 	}
       }
       if(adc_dry_period <= 0) { /* Data capture interrupted or failed to start... */
-
+	rp_state = READER_ERROR;
+	adc_stop_data_transfer(reader_adc);
+	drain_reader_chunk_queue("READER ADC ran dry");
+	adc_destroy(reader_adc);
+	reader_adc = NULL;
       }
     }
     
@@ -621,7 +649,7 @@ public void *reader_main(void *arg) {
     adc_destroy(reader_adc);
   }
 
-  zh_put_msg(tidy, 0, 0, NULL);	/* Tell TIDY thread to finish */
+  send_object_ptr(tidy, NULL);	/* Tell TIDY thread to finish */
 
   zh_put_multi(log, 1, "READER thread terminates by return");
 
@@ -659,7 +687,7 @@ public int verify_reader_params(rparams *rp, strbuf e) {
   if( adc_set_chan_frequency(reader_adc, e, &rp->r_frequency) < 0 )
     return -1;
   
-  if(rp->r_window < 1 || rp->r_window > 30) {
+  if(rp->r_window < READER_MIN_WINDOW || rp->r_window > READER_MAX_WINDOW) {
     strbuf_appendf(e, "Min. capture window %d seconds outwith compiled-in range [%d,%d] seconds",
 		   rp->r_window, 1, 30);
     return -1;
@@ -672,7 +700,7 @@ public int verify_reader_params(rparams *rp, strbuf e) {
   rbw_samples = (rbw_samples*sizeof(sampl_t) + pagesize - 1) / pagesize;
   rbw_samples *= pagesize / sizeof(sampl_t);
   
-  if(rp->r_buf_hwm_fraction < 0.5 || rp->r_buf_hwm_fraction > 0.95) {
+  if(rp->r_buf_hwm_fraction < READER_MIN_RBHWMF || rp->r_buf_hwm_fraction > READER_MAX_RBHWMF) {
     strbuf_appendf(e, "Ring buffer high-water mark fraction %g outwith compiled-in range [%g,%g] seconds",
 		   rp->r_buf_hwm_fraction, 0.5, 0.95);
     return -1;
@@ -697,9 +725,9 @@ public int verify_reader_params(rparams *rp, strbuf e) {
 		     rbw_samples*sizeof(sampl_t)/1024, chunksize*sizeof(sampl_t)/1024);
       return -1;
     }
-    if(bhwm_samples+2*chunksize > rp->r_bufsz*1024*1024/sizeof(sampl_t)) {
-      strbuf_appendf(e, "Ring overflow region %d [kiB] is smaller than twice the chunk size %d[kiB]",
-		     (rp->r_bufsz*1024*1024-bhwm_samples*sizeof(sampl_t))/1024, chunksize*sizeof(sampl_t)/1024);
+    if(bhwm_samples+READER_RB_HEADROOM_CHUNKS*chunksize > rp->r_bufsz*1024*1024/sizeof(sampl_t)) {
+      strbuf_appendf(e, "Ring overflow region %d [kiB] is smaller than %d times the chunk size %d[kiB]",
+		     (rp->r_bufsz*1024*1024-bhwm_samples*sizeof(sampl_t))/1024, READER_RB_HEADROOM_CHUNKS, chunksize*sizeof(sampl_t)/1024);
       return -1;
     }
   }
@@ -714,7 +742,7 @@ public int verify_reader_params(rparams *rp, strbuf e) {
   
   /* Determine the READER main loop poll delay from the chunk duration */
   double d = 1e-6 * chunksize * adc_ns_per_sample(reader_adc); /* Length of a chunk in [ms] */
-  reader_poll_delay = ((d+2.5)/5 > 100)? 100.0 : (d+2.5)/5; /* One fifth of a chunk or 100[ms] */
+  reader_poll_delay = ((d+2.5)/5 > READER_MAX_POLL_DELAY)? READER_MAX_POLL_DELAY : (d+2.5)/5; /* One fifth of a chunk or 100[ms] */
 
   /* Set the tail policy variables */
   buf_hwm_samples = bhwm_samples;

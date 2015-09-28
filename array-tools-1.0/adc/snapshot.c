@@ -470,8 +470,7 @@ private int process_reply(void *s) {
   char   *b = &reply_buffer[0];
   int     used;
   
-  size = zh_get_msg(s, 0, sizeof(strbuf), (void *)&err);
-  assertv(size==sizeof(err), "Reply message of wrong size %d\n", size);
+  recv_object_ptr(s, (void **)&err);
 
   /* Establish invariants */
   *b = '\0';  used = 0;
@@ -536,10 +535,8 @@ private int process_snapshot_command() {
   switch(buf[0]) {
   case 'q':
   case 'Q':			/* Deal specially with Quit command, to close down nicely... */
-    ret = zh_put_msg(reader, 0, 0, NULL); /* Forward zero length message to the READER thread */
-    assertv(ret == 0, "Quit to READER failed, %d\n", ret);
-    ret = zh_put_msg(writer, 0, 0, NULL); /* Forward zero length message to the WRITER thread */
-    assertv(ret == 0, "Quit to WRITER failed, %d\n", ret);
+    send_object_ptr(reader, NULL); /* Forward zero length message to the READER thread */
+    send_object_ptr(writer, NULL); /* Forward zero length message to the WRITER thread */
     ret = zh_put_msg(command, 0, 7, "OK Quit"); /* Reply to Quit here */
     assertv(ret == 7, "Quit reply failed, %d\n", ret);
     break;
@@ -553,8 +550,7 @@ private int process_snapshot_command() {
   case 'p':
   case 'P':
     /* Forward these commands to the READER thread */
-    ret = zh_put_msg(reader, 0, sizeof(strbuf), (void *)&c);
-    assertv(ret == sizeof(c), "Forward to READER failed, %d\n", ret);
+    send_object_ptr(reader, (void *)&c);
     fwd++;
     break;
 
@@ -565,8 +561,7 @@ private int process_snapshot_command() {
   case 'z':
   case 'Z':
     /* Forward snapshot and dir commands to WRITER */
-    ret = zh_put_msg(writer, 0, sizeof(strbuf), (void *)&c);
-    assertv(ret == sizeof(c), "Forward to WRITER failed, %d\n", ret);
+    send_object_ptr(writer, (void *)&c);
     fwd++;
     break;
 
@@ -710,7 +705,8 @@ public int main(int argc, char *argv[], char *envp[]) {
     exit(2);
   }
 
-  /* Compute the UID and GID for unprivileged operation.
+  /*
+   * Compute the UID and GID for unprivileged operation.
    *
    * If the GID parameter is set, use that for the group; if not, but
    * the UID parameter is set, get the group from that user and set

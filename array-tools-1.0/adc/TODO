@@ -3,12 +3,18 @@ Known bugs, things to do:  random order.
 1. Fix error reporting on success of a snapshot: currently no-one
    writes the OK message to the error strbuf.
 
+   [maybe this is working...]
+
 2. Improve status return; fix removal of completed snapshots from the
    snapshot queue (currently doesn't work).
+
+   [tidied up status and owner management for chunks]
 
 3. Better logging/debug information everywhere.
 
 4. Change READER numerical parameter bounds to #defines
+
+   **DONE**
 
 5. Add in code for data exhaustion in the READER: notice when data
    stops coming and do something about it (halt the ADC and go to ERROR
@@ -18,6 +24,9 @@ Known bugs, things to do:  random order.
    groups of a chosen user as well as the primary group; allow
    multiple --group arguments and take all listed groups when dropping
    privileges.
+
+   [use initgroups() when only a user is given; use setgroups() when a
+   set of groups/GIDs are given instead]
 
 7. Add in energy computaitons into the READER thread data acquisition
    loop, so that average energy over the last interval is always

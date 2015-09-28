@@ -169,15 +169,23 @@ public int zh_put_multi(void *socket, int n, ...) {
  */
 
 public void send_object_ptr(void *s, void *o) {
-  int ret = zh_put_msg(s, 0, sizeof(void *), o);
-  assertv(ret==sizeof(void *), "Object Message sent with wrong size %d (not %d)\n", ret, sizeof(void *));
+  if(o == NULL) {
+    int ret = zh_put_msg(s, 0, 0, NULL);
+    assertv(ret==0, "Object Message sent with wrong size %d (not %d)\n", ret, sizeof(void *));
+  }
+  else {
+    int ret = zh_put_msg(s, 0, sizeof(void *), o);
+    assertv(ret==sizeof(void *), "Object Message sent with wrong size %d (not %d)\n", ret, sizeof(void *));
+  }
 }
 
 /*
  * Receive an object (pointer) via a ZMQ socket.
  */
 
-public void recv_object_ptr(void *s, void **op) {
+public int recv_object_ptr(void *s, void **op) {
   int ret = zh_get_msg(s, 0, sizeof(void *), (void *)op);
-  assertv(ret==sizeof(void *), "Object Message received with with wrong size %d (not %d)\n", ret, sizeof(void *));
+  if(ret != 0)
+    assertv(ret==sizeof(void *), "Object Message received with with wrong size %d (not %d)\n", ret, sizeof(void *));
+  return ret;
 }

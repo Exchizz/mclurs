@@ -52,7 +52,7 @@ import adc reader_adc;
 
 /* Snapshot Descriptor Structure */
 
-typedef struct {		/* Private snapshot descriptor structure used by writer */
+typedef struct {		/* Private snapshot descriptor structure used by WRITER */
   queue	      s_xQ[2];		/* Queue headers -- must be first member */
 #define s_Q	     s_xQ[0]	/* Active snapshot queue header */
 #define s_fileQhdr   s_xQ[1]	/* Header for the queue of file descriptor structures */
@@ -93,7 +93,7 @@ typedef struct _sfile {
   int	      f_nchunks;		/* Number of chunks allocated for this file transfer */
   int	      f_written;		/* Number of chunks actually written so far */
   int	      f_pending;		/* Number of chunks controlled by the READER thread */
-  chunk_t    *f_chunkQ;			/* Pointer to this file's writer chunk queue */
+  chunk_t    *f_chunkQ;			/* Pointer to this file's WRITER chunk queue */
   int	      f_status;			/* Status flags for this file */
   strbuf      f_error;			/* The strbuf to write error text into */
   uint16_t    f_name;			/* Unique number for debugging */
@@ -184,11 +184,11 @@ private void close_writer_comms() {
 /*
  * Copy the necessary capabilities from permitted to effective set (failure is fatal).
  *
- * The writer needs:
+ * The WRITER needs:
  *
  * CAP_IPC_LOCK -- ability to mmap and mlock pages.
  * CAP_SYS_NICE -- ability to set RT scheduling priorities
- * CAP_SYS_ADMIN (Writer) -- ability to set RT IO scheduling priorities (unused at present)
+ * CAP_SYS_ADMIN (WRITER) -- ability to set RT IO scheduling priorities (unused at present)
  *
  * These capabilities should be in the CAP_PERMITTED set, but not in CAP_EFFECTIVE which was cleared
  * when the main thread dropped privileges by changing to the desired non-root uid/gid.
@@ -221,7 +221,7 @@ private int set_writer_rt_scheduling() {
 }
 
 /*
- * Debug writer parameters
+ * Debug WRITER parameters
  */
 
 private void debug_writer_params() {
@@ -295,7 +295,7 @@ private param_t snapwd_params[] ={
 private const int n_snapwd_params =  (sizeof(snapwd_params)/sizeof(param_t));
 
 /*
- * Manage the writer's 'working directory':  clear the old, resetting to snapdir;
+ * Manage the WRITER's 'working directory':  clear the old, resetting to snapdir;
  * find/create and set a new one, clearing an old if necessary.
  */
 
@@ -412,10 +412,10 @@ private const int n_snapshot_params = (sizeof(snapshot_params)/sizeof(param_t));
  * --------------------------------------------------------------------------------
  * FUNCTIONS ETC. TO MANAGE SNAPSHOT DESCRIPTORS
  *
- * The writer maintains a list of "active" snapshot descriptors.  A descriptor
+ * The WRITER maintains a list of "active" snapshot descriptors.  A descriptor
  * is created in response to an S command and is "active" until it has been both
  * (a) completely processed and also (b) reported back in response to a Z
- * command.  These data structures are entirely private to the writer.
+ * command.  These data structures are entirely private to the WRITER.
  *
  * --------------------------------------------------------------------------------
  */
@@ -458,20 +458,7 @@ uint16_t snapshot_name(snap_t *s) {
 }
 
 /*
- * Display snapshot status codes
- */
-
-const char *snapshot_status(int st) {
-  private const char *stab[] = {
-    "INI", "ERR", "PRP", "RDY", "...", ">>>", "+++", "DON", "FIN",
-  };
-  if(st>=0 && st<sizeof(stab)/sizeof(char *))
-    return stab[st];
-  return "???";
-}
-
-/*
- * Manage the writer snapshot queue:
+ * Manage the WRITER snapshot queue:
  *
  * - Check the parameters in an S command
  */
@@ -1015,7 +1002,8 @@ private int setup_snapfile(snapfile_t *f, snap_t *s) {
   for_nxt_in_Q(queue *p, chunk2qp(f->f_chunkQ), chunk2qp(f->f_chunkQ))
     chunk_t *c = qp2chunk(p);
     /* Determine chunk parameters */
-    c->c_status  = SNAPSHOT_READY;
+    set_chunk_status(c, SNAPSHOT_READY);
+    set_chunk_owner(c, CHUNK_OWNER_WRITER);
     c->c_parent  = f;
     c->c_error   = f->f_error;
     c->c_fd	 = f->f_fd;
@@ -1053,7 +1041,7 @@ private int setup_snapfile(snapfile_t *f, snap_t *s) {
 
 /*
  * Completed file descriptor -- called when file acquisition ends,
- * both normally and exeptionally.
+ * both normally and exceptionally.
  *
  *  We assume that the READER has cleared up any assigned frames when
  * deleting the file chunks in the READER queue.  Therefore, at this
@@ -1094,12 +1082,16 @@ private void completed_snapfile(snapfile_t *f) {
 
 /*
  * Abort a file from the WRITER thread's viewpoint: remove all chunks
- * from the WRITER's chunk queue and mark the file in ERROR state.
+ * from the WRITER's chunk queue and mark the file and all not yet
+ * written chunks in ERROR state.
  *
  * N.B. The READER AND WRITER both use the rq chunk linkage, and keep
- * track of who has it by means of exchanged messages.
+ * track of who has it by means of exchanged messages and the owner
+ * status field.
  *
- * Adjust the w_totxfrsamples parameter to match new situation.
+ * Adjust the w_totxfrsamples parameter for any chunks marked in ERROR
+ * state; the WRITTEN chunks were accounted for when received from the
+ * READER.
  */
 
 private void abort_snapfile(snapfile_t *f) {
@@ -1111,18 +1103,26 @@ private void abort_snapfile(snapfile_t *f) {
 
   for_nxt_in_Q(queue *p, chunk2qp(f->f_chunkQ), chunk2qp(f->f_chunkQ))
     chunk_t *c = qp2chunk(p);
+
     fprintf(stderr, "Aborting chunk %04hx\n", c->c_name);
-    if(queue_singleton(chunk2rq(c))) {	    /* These were chunks in the READER queue */
-      if(c->c_status == SNAPSHOT_WAITING) { /* These were pending chunks in transit from WRITER to READER */
-	c->c_status = SNAPSHOT_ERROR;
-	wp_totxfrsamples += c->c_samples;
+    if( chunk_in_writer(c) ) {
+      de_queue(chunk2rq(c));		    /* Remove from WRITER chunk queue */
+      if( !is_chunk_status(c, SNAPSHOT_WRITTEN) ) {
+	if( !is_chunk_status(c, SNAPSHOT_ERROR) ) {
+	  wp_totxfrsamples += c->c_samples;
+	}
+	set_chunk_status(c, SNAPSHOT_ERROR);
       }
-      continue;
     }
-    de_queue(chunk2rq(c));		    /* Remove from WRITER chunk queue */
-    if(c->c_status == SNAPSHOT_ERROR)       /* Release the write commitment for this chunk */
-      wp_totxfrsamples += c->c_samples;
   end_for_nxt;
+}
+
+/*
+ * Check whether a snapfile is alive or not.
+ */
+
+public int is_dead_snapfile(snapfile_t *f) {
+  return (f->f_status&SNAPSHOT_STATUS_MASK) == SNAPSHOT_ERROR;
 }
 
 /*
@@ -1196,7 +1196,7 @@ private uint64_t writer_service_queue(uint64_t start) {
     chunk_t *c = rq2chunk(queue_next(&WriterChunkQ));
     
     if( map_chunk_to_frame(c) < 0 ) {
-      if(c->c_status == SNAPSHOT_ERROR) { /* Something nasty went wrong! */
+      if(is_chunk_status(c, SNAPSHOT_ERROR)) { /* Something nasty went wrong! */
 	abort_snapfile(c->c_parent);
 	//	debug_snapfile(c->c_parent);
 	completed_snapfile(c->c_parent);
@@ -1206,8 +1206,9 @@ private uint64_t writer_service_queue(uint64_t start) {
     }
     else {			/* We succeeded */
       de_queue(chunk2rq(c));	/* Hand the chunk over to the READER thread */
-      c->c_status = SNAPSHOT_WAITING;
+      set_chunk_status(c, SNAPSHOT_WAITING);
       c->c_parent->f_pending++;
+      set_chunk_owner(c, CHUNK_OWNER_READER);
       send_object_ptr(reader, (void *)&c);
       fprintf(stderr, "WRITER service queue transfers chunk %04hx to READER\n", c->c_name);
     }
@@ -1232,8 +1233,8 @@ private uint64_t writer_service_queue(uint64_t start) {
  *
  * In this case the READER will have released all chunks in its queue
  * and marked them in SNAPSHOT_ERROR state so that the abort_snapfile
- * routine can clean them up.  Chunks in transit between WRITER and
- * READER will still be in SNAPSHOT_WAITING state and are tidied by
+ * routine can clean them up.  Chunks owned by the READER will be
+ * moved into ERROR state by the READER, so are not tidied by
  * abort_snapfile which runs for the first erroneous chunk.  The
  * snapfile structure is tidied by completed_snapfile which runs when
  * the last pending chunk is returned.
@@ -1247,22 +1248,24 @@ private int process_reader_message(void *s) {
   /* We are expecting a chunk pointer message */
   recv_object_ptr(s, (void **)&c);
   assertv(c != NULL, "Queue message from READER was NULL pointer\n");
-
-  f= c->c_parent;
-  f->f_pending--;
   
-  if(c->c_status == SNAPSHOT_WRITTEN) {
+  f = c->c_parent;
+  f->f_pending--;
+  wp_totxfrsamples += c->c_samples;
+  
+  if(is_chunk_status(c, SNAPSHOT_WRITTEN)) {
+    set_chunk_owner(c, CHUNK_OWNER_WRITER);
     f->f_written++;
-    wp_totxfrsamples += c->c_samples;
     if(f->f_written == f->f_nchunks) {
       f->f_status = SNAPSHOT_WRITTEN;
       completed_snapfile(f);	/* This file is finished -- all chunks were written */
     }
     return true;      
   }
-  if(c->c_status == SNAPSHOT_ERROR) {
+  if(is_chunk_status(c, SNAPSHOT_ERROR)) {
     if(f->f_status != SNAPSHOT_ERROR)
-      abort_snapfile(f);	/* Tidy the chunk list, marking all into SNAPSHOT_ERROR state */
+      abort_snapfile(f);	/* Tidy the chunk list, marking all WRITER-owned chunks into SNAPSHOT_ERROR state */
+    set_chunk_owner(c, CHUNK_OWNER_WRITER); /* Needs to be after the abort_snapfile() to avoid dual counting */
     if(f->f_pending == 0)
       completed_snapfile(f);	/* This file is finished -- no pending chunks in transit */
     return true;
@@ -1274,15 +1277,14 @@ private int process_reader_message(void *s) {
 /* ================================ Process Command Messages ================================ */
 
 private int process_writer_command(void *s) {
-  int     used;
   int     ret;
   char   *p;
   strbuf  cmd;
   char   *cmd_buf;
   strbuf  err;
 
-  used = zh_get_msg(s, 0, sizeof(strbuf), &cmd);
-  if( !used ) {			/* Quit */
+  ret = recv_object_ptr(s, (void **)&cmd);
+  if( !ret ) {			/* Quit */
     return false;
   }
 
@@ -1330,7 +1332,7 @@ private int process_writer_command(void *s) {
     break;
 
   default:
-    strbuf_printf(err, "NO: WRITER -- unexpected writer command");
+    strbuf_printf(err, "NO: WRITER -- unexpected WRITER command");
     ret = -1;
     break;
   }
@@ -1340,7 +1342,7 @@ private int process_writer_command(void *s) {
     zh_put_multi(log, 4, strbuf_string(err), "\n > '", &cmd_buf[0], "'"); /* Error occurred, log the problem */
     strbuf_clear(cmd);
   }
-  zh_put_msg(s, 0, sizeof(strbuf), (void *)&err);
+  send_object_ptr(s, (void *)&err);
   return true;
 }
 
@@ -1386,6 +1388,11 @@ private void writer_thread_msg_loop() {    /* Read and process messages */
     if(delay >= 0)		/* We did some waiting, we owe no time */
       borrowedtime = 0;
 
+    /*
+     * Delays may occur in the message service routines because of
+     * page faults when responding to commands: hence the mechanism
+     * with borrowedtime.
+     */
     uint64_t tick = monotonic_ns_clock();
     
     for(n=0; n<N_POLL_ITEMS; n++) {
