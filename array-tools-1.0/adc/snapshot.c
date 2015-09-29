@@ -266,8 +266,6 @@ private void *writer;
 private void *command;
 
 private int create_main_comms() {
-  int ret;
-
   /* Create and initialise the sockets: reader and writer command sockets */
   reader = zh_connect_new_socket(snapshot_zmq_ctx, ZMQ_REQ, READER_CMD_ADDR);
   if( reader == NULL ) {
@@ -465,7 +463,6 @@ private int process_log_message(void *s) {
 private char reply_buffer[REPLY_BUFSIZE];
 
 private int process_reply(void *s) {
-  int     size;
   strbuf  err;
   char   *b = &reply_buffer[0];
   int     used;
@@ -606,7 +603,7 @@ private void main_thread_msg_loop() {    /* Read and process messages */
       process_reply,
     };
 
-  fprintf(stderr, "Log: starting MAIN thread polling loop with %d items\n", N_POLL_ITEMS);
+  fprintf(stderr, "Log: starting MAIN thread polling loop with %d items\n", (int)N_POLL_ITEMS);
   running = true;
   poll_delay = MAIN_LOOP_POLL_INTERVAL;
   while(running) {
@@ -638,9 +635,7 @@ private void main_thread_msg_loop() {    /* Read and process messages */
 
 public int main(int argc, char *argv[], char *envp[]) {
   char *thread_return = NULL;
-  int ret, running, poll_delay;
-  char *cmd_addr;
-  param_t *p;
+  int ret;
 
   program = argv[0];
 

@@ -113,7 +113,7 @@ char	  *snapshot_addr;	/* The URL of the snapshotter */
  * Print a reply message to stdout
  */
 
-int print_message(char *msg, int size) {
+void print_message(char *msg, int size) {
   if( msg[size-1] != '\n') {
     msg[size] = '\n';
     fwrite(msg, size+1, 1, stdout);
@@ -147,7 +147,6 @@ int main(int argc, char *argv[], char *envp[]) {
   const char *prefix = NULL;
   char        buf[LOGBUF_SIZE];
   void       *snapshot;
-  param_t    *p;
   int         ret, n;
 
   program = argv[0];

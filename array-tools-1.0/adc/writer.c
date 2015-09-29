@@ -1117,6 +1117,7 @@ private void abort_snapfile(snapfile_t *f) {
       }
     }
   end_for_nxt;
+  /* Need to do something with the snapshot */
 }
 
 /*
@@ -1244,7 +1245,6 @@ private uint64_t writer_service_queue(uint64_t start) {
 
 private int process_reader_message(void *s) {
   chunk_t    *c;
-  int         ret;
   snapfile_t *f;
   
   /* We are expecting a chunk pointer message */
@@ -1280,7 +1280,6 @@ private int process_reader_message(void *s) {
 
 private int process_writer_command(void *s) {
   int     ret;
-  char   *p;
   strbuf  cmd;
   char   *cmd_buf;
   strbuf  err;
@@ -1354,7 +1353,6 @@ private int process_writer_command(void *s) {
 
 private void writer_thread_msg_loop() {    /* Read and process messages */
   int borrowedtime;
-  int ret;
   int running;
   int n;
 

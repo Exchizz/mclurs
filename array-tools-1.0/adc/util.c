@@ -108,7 +108,7 @@ public int zh_collect_multi(void *socket, char *buf, int bufsz, char *spc) {
      nspc = strlen(spc);
 
   do {
-    int ret, sz;
+    int sz;
 
     sz = zh_get_msg(socket, 0, left-nspc, &buf[used]);
     assertv(sz >= 0, "Get message error\n");

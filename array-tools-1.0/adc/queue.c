@@ -56,9 +56,10 @@ public queue *splice_queue(queue *q, queue *p) {
  * Unsplice a queue: cut the ring at start and end and relink.  Also
  * join start and end.
  */
-
+/*
 public queue *unsplice_queue(queue *start, queue *end) {
 }
+*/
 
 /*
  * Apply a function to each queue member in [start,end).  The function

@@ -334,7 +334,6 @@ private chunk_t *rq_head = NULL;
 
 private void abort_reader_chunk(chunk_t *ac) {
   snapfile_t *parent = ac->c_parent;
-  int         ret;
   
   for_nxt_in_Q(queue *p, queue_next(&ReaderChunkQ), &ReaderChunkQ);
   chunk_t *c = rq2chunk(p);
@@ -361,9 +360,7 @@ private void abort_reader_chunk(chunk_t *ac) {
 
 private int process_queue_message(void *s) {
   import int is_dead_snapfile(snapfile_t *);
-  rparams *rp = &reader_parameters;
   chunk_t *c;
-  int      ret;
 
   recv_object_ptr(s, (void **)&c);
   
@@ -429,7 +426,6 @@ private void abort_queue_head_chunk() {
 
 private void complete_queue_head_chunk() {
   import int is_dead_snapfile(snapfile_t *);
-  int      ret;
   chunk_t *c = rq_head;
 
   fprintf(stderr, "Calling complete on chunk %04hx\n", c->c_name);
@@ -507,7 +503,6 @@ private int reader_poll_delay = 100; /* Poll wait time [ms] */
 private void reader_thread_msg_loop() {    /* Read and process messages */
   uint64_t high_water_mark;
   int      adc_dry_period;
-  int      ret;
   int      running;
 
   /* Main loop:  read messages and process messages */
@@ -533,7 +528,6 @@ private void reader_thread_msg_loop() {    /* Read and process messages */
   while( running && !die_die_die_now ) {
     int ret; 
     int nb;
-    int delay;
     int n;
 
     if(adc_is_running(reader_adc)) {

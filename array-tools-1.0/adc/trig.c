@@ -349,9 +349,7 @@ char *make_path_value(char buf[], int size, const char *snapname, uint64_t trigg
 int main(int argc, char *argv[], char *envp[]) {
   char     buf[LOGBUF_SIZE];
   void    *snapshot;
-  param_t *p;
-  char    *v;
-  int      ret, n;
+  int      ret;
   int      used, left;
   uint64_t trigger;
   struct timespec now;
@@ -499,7 +497,7 @@ int main(int argc, char *argv[], char *envp[]) {
 
   /* Look at the parameters to construct the snap command */
   if(window_pre + window_pst > 8000) {
-    fprintf(stderr, "%s: Error -- maximum allowed capture window is 8000 [ms]\n");
+    fprintf(stderr, "%s: Error -- maximum allowed capture window is 8000 [ms]\n", program);
     exit(3);
   }
 

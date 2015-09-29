@@ -204,7 +204,7 @@ int main(int argc, char *argv[]) {
     exit(2);
   }
 
-  fprintf(stderr, "%s $s\n\n", program, PROGRAM_VERSION);
+  fprintf(stderr, "%s %s\n\n", program, PROGRAM_VERSION);
   fprintf(stderr, "Total sample rate requested = %g [Hz]\n", sr_total);
   fprintf(stderr, "Using ADC range +/-%s [mV] full-scale\n", range? "500" : "750");
 
@@ -269,6 +269,7 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "%s: Error -- failed to map Comedi buffer to RAM: %s\n", program, strerror(errno));
     exit(3);
   }
+  start = (sampl_t *) map;
 
   if(verbose)
     fprintf(stderr, "%s: Comedi buffer (size %u bytes) mapped at 0x%p\n", program, bufsz, start);
@@ -288,7 +289,6 @@ int main(int argc, char *argv[]) {
   if(verbose)
     fprintf(stderr, "%s: Total sample rate allocated = %g Hz\n", program, 1e9 / cmd->convert_arg);
 
-  start = (sampl_t *) map;
   head=tail=0;
   data_coming = 1000;		/* Is data arriving? After this many pauses with no data, exit... */
   while( 1 ) {

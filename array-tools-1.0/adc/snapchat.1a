@@ -87,6 +87,10 @@ string is used, i.e. any reply is satisfactory.
 code 2 for errors in establishing the necessary ZeroMQ messaging
 environment.  In verbose mode, debugging output sent to standard error
 contains the constructed message sent to \fBsnapshot\fP.
+.PP
+While \fBsnapchat\fP is generally silent unless a \fIverbose\fP mode
+is chosen, it nevertheless reports error responses sent by
+\fBsnapshot\fP (replies that begin "\fBNo:\fP".
 .SH ENVIRONMENT
 The \fB\-\-snapshot\fP option available on the command line has a
 matching environment variable through which it can also be set.

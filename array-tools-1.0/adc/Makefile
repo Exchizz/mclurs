@@ -1,5 +1,6 @@
 #
 
+CFLAGS	    = -Wall -Wno-format
 TARGETS     = grab trig snapchat snapshot
 OFILES      = snapshot.o reader.o writer.o tidy.o
 LIBOBJS     = util.o lut.o mman.o param.o queue.o rtprio.o strbuf.o chunk.o adc.o

@@ -350,7 +350,6 @@ private param_t *arg_param_match(const char *a, param_t ps[], int nps) {
 
 public int arg_defaults_from_params(void **argtable, int nargs, param_t ps[], int nps) {
   struct arg_hdr **ate = (struct arg_hdr **)&argtable[nargs-1];	/* The arg_end structure slot */
-  param_t *endp = &ps[nps];
 
   if( !((*ate)->flag & ARG_TERMINATOR) ) {
     errno = EINVAL;
@@ -399,7 +398,6 @@ public int arg_defaults_from_params(void **argtable, int nargs, param_t ps[], in
 
 public int arg_results_to_params(void **argtable, param_t ps[], int nps) {
   struct arg_hdr **ate =  (struct arg_hdr **)argtable;
-  param_t *endp = &ps[nps];
 
   while( (*ate) && !((*ate)->flag & ARG_TERMINATOR) ) ate++; /* Find the end */
   if( !(*ate) || !((*ate)->flag & ARG_TERMINATOR) ) {
@@ -484,7 +482,6 @@ public void param_brief_usage(char *buf, int sz, param_t ps[], int nps) {
 
   for(i=0; i<nps && rest > 0; i++) {
     param_t *p = &ps[i];
-    char *type = "NULL";
     int n;
     if( !(p->p_source & PARAM_SRC_ARG) )
       continue;
