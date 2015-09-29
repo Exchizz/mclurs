@@ -48,6 +48,7 @@ typedef struct {
 export chunk_t *alloc_chunk(int);
 export void release_chunk(chunk_t *);
 export int map_chunk_to_frame(chunk_t *);
+export void copy_chunk_data(chunk_t *);
 
 export int debug_chunk(char [], int, chunk_t *);
 

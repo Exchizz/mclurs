@@ -16,7 +16,7 @@ typedef struct _adc *adc;
 export adc  adc_new(strbuf);
 export void adc_destroy(adc);
 
-export int  adc_set_frequency(adc, strbuf, double *);
+export int  adc_set_chan_frequency(adc, strbuf, double *);
 export int  adc_set_bufsz(adc, strbuf, int);
 export int  adc_set_range(adc, strbuf, int);
 export int  adc_set_device(adc, const char *);
@@ -39,5 +39,7 @@ export uint64_t adc_ring_tail(adc);
 
 export int adc_data_collect(adc);
 export int adc_data_purge(adc,int);
+
+export int adc_is_running(adc);
 
 #endif /* _ADC_H */

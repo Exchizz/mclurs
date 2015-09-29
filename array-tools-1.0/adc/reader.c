@@ -32,6 +32,7 @@
 #include "tidy.h"
 #include "reader.h"
 #include "writer.h"
+#include "rtprio.h"
 
 /*
  * READER global data structures

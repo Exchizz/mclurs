@@ -4,7 +4,8 @@
 
 #define __GNU_SOURCE
 
-#include <syscall.h>
+#include <unistd.h>
+#include <sys/syscall.h>
 #include <sys/capability.h>
 #include <assert.h>
 #include <pthread.h>

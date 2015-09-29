@@ -436,6 +436,7 @@ public uint64_t adc_ring_tail(adc a) {
  */
 
 public int adc_data_collect(adc a) {
+  import uint64_t monotonic_ns_clock();
   uint64_t now;
   int      nb;
   int      ns;

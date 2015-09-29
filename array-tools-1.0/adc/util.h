@@ -27,6 +27,7 @@ export int zh_any_more(void *);
 
 export int zh_put_msg(void *, int, size_t, void *);
 export int zh_put_multi(void *, int, ...);
+export int zh_collect_multi(void *, char *, int, char *);
 
 export void *zh_bind_new_socket(void *, int, const char *);
 export void *zh_connect_new_socket(void *, int, const char *);
