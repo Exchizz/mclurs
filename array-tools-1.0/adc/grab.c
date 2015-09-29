@@ -138,7 +138,7 @@ int main(int argc, char *argv[]) {
 
   /* Try first syntax */
   int err_help = arg_parse(argc, argv, cmd_help);
-  if( !err_help ) {		/* Assume this was the desired command syntax */
+  if( !err_help && (vn1->count || h1->count) ) {		/* Assume this was the desired command syntax */
     if(vn1->count)
       print_version(stdout, v1->count);
     if(h1->count || !vn1->count) {
@@ -288,6 +288,7 @@ int main(int argc, char *argv[]) {
   if(verbose)
     fprintf(stderr, "%s: Total sample rate allocated = %g Hz\n", program, 1e9 / cmd->convert_arg);
 
+  start = (sampl_t *) map;
   head=tail=0;
   data_coming = 1000;		/* Is data arriving? After this many pauses with no data, exit... */
   while( 1 ) {
