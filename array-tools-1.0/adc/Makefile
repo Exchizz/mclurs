@@ -1,14 +1,15 @@
 #
 
-TARGETS=grab trig snapchat snapshot
-OFILES=snapshot.o reader.o writer.o tidy.o
-LIBOBJS=util.o lut.o mman.o param.o queue.o rtprio.o strbuf.o chunk.o adc.o
-XTRAS=grab.o snapchat.o trig.o
-LIBRARY=utilities.a
-ARGTAB_SRCS=argtab-int16.c argtab-int64.c
-ARGTAB_XTRA=argtab-helper.h
-ARGTAB_OBJS=${ARGTAB_SRCS:.c=.o}
-ARGTAB_HDRS=${ARGTAB_SRCS:.c=.h} ${ARGTAB_XTRA}
+CFLAGS	    = -Wall -Wno-format
+TARGETS     = grab trig snapchat snapshot
+OFILES      = snapshot.o reader.o writer.o tidy.o
+LIBOBJS     = util.o lut.o mman.o param.o queue.o rtprio.o strbuf.o chunk.o adc.o
+XTRAS       = grab.o snapchat.o trig.o
+LIBRARY     = utilities.a
+ARGTAB_SRCS = argtab-int16.c argtab-int64.c
+ARGTAB_XTRA = argtab-helper.h
+ARGTAB_OBJS = ${ARGTAB_SRCS:.c=.o}
+ARGTAB_HDRS = ${ARGTAB_SRCS:.c=.h} ${ARGTAB_XTRA}
 
 build:	${TARGETS}
 .PHONY:	build
@@ -23,7 +24,7 @@ trig:	trig.o ${LIBRARY}
 	gcc -o trig trig.o ${LIBRARY} -lzmq -largtable2
 
 grab:		grab.o ${LIBRARY}
-	gcc -o grab grab.o ${LIBRARY} -lcomedi -largtable2
+	gcc -o grab grab.o ${LIBRARY} -lcomedi -largtable2 -lm
 
 snapshot.o:	snapshot.c snapshot.h reader.h writer.h util.h param.h argtab.h general.h
 

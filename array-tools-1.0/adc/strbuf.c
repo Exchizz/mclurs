@@ -63,9 +63,11 @@ public strbuf alloc_strbuf(int nr) {
   return (strbuf)ret;
 }
 
+/*
 private void free_strbuf(strbuf s) {
   free( (void *)s );
 }
+*/
 
 public void release_strbuf(strbuf s) {
   queue *p;

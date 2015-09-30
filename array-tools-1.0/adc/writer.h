@@ -36,15 +36,4 @@ export void *writer_main(void *);
 
 #define FILE_NAME_SIZE		32
 
-#define	SNAPSHOT_INIT		0 /* Structure just created */
-#define SNAPSHOT_ERROR		1 /* Error found during checking or execution */
-#define SNAPSHOT_PREPARE	2 /* Structure filled in, but files/chunks not done yet */
-#define SNAPSHOT_READY		3 /* Snapshot etc. is ready, but waiting for READER queue space */
-#define SNAPSHOT_WAITING	4 /* Snapshot etc. is ready, but waiting for data */
-#define SNAPSHOT_WRITING	5 /* Snapshot file's chunks are being written */
-#define SNAPSHOT_WRITTEN	6 /* Snapshot's chunk has been successfully written */
-#define SNAPSHOT_COMPLETE	7 /* Snapshot written correctly (off queue) */
-#define SNAPSHOT_DONE		8 /* Structure is finished with */
-
-export const char *snapshot_status(int);
 

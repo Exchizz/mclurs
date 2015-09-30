@@ -4,6 +4,7 @@
 #define _MMAN_H
 
 #include "general.h"
+#include <sys/mman.h>
 
 /* Memory mapping and locking utilities */
 

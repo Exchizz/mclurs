@@ -138,7 +138,7 @@ int main(int argc, char *argv[]) {
 
   /* Try first syntax */
   int err_help = arg_parse(argc, argv, cmd_help);
-  if( !err_help ) {		/* Assume this was the desired command syntax */
+  if( !err_help && (vn1->count || h1->count) ) {		/* Assume this was the desired command syntax */
     if(vn1->count)
       print_version(stdout, v1->count);
     if(h1->count || !vn1->count) {
@@ -204,7 +204,7 @@ int main(int argc, char *argv[]) {
     exit(2);
   }
 
-  fprintf(stderr, "%s $s\n\n", program, PROGRAM_VERSION);
+  fprintf(stderr, "%s %s\n\n", program, PROGRAM_VERSION);
   fprintf(stderr, "Total sample rate requested = %g [Hz]\n", sr_total);
   fprintf(stderr, "Using ADC range +/-%s [mV] full-scale\n", range? "500" : "750");
 
@@ -269,6 +269,7 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "%s: Error -- failed to map Comedi buffer to RAM: %s\n", program, strerror(errno));
     exit(3);
   }
+  start = (sampl_t *) map;
 
   if(verbose)
     fprintf(stderr, "%s: Comedi buffer (size %u bytes) mapped at 0x%p\n", program, bufsz, start);

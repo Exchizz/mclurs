@@ -78,7 +78,6 @@ public void *mmap_and_lock_fixed(int fd, off_t offset, size_t length, int flags,
 
 public void *mmap_and_lock(int fd, off_t offset, size_t length, int flags) {
   void *map;
-  void *ms;
 
   map = mmap_locate(length, flags);
   if( !map )

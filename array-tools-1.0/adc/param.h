@@ -17,7 +17,7 @@ typedef const struct {
   param_type;
 
 #define PARAM_TYPE(name) param_type_ ## name
-#define PARAM_TYPE_DECL(name,size,scan,show) param_type PARAM_TYPE(name)[] = { "<" #name ">" , sizeof(size), scan, show, }
+#define PARAM_TYPE_DECL(name,size,scan,show) param_type PARAM_TYPE(name)[] = { { "<" #name ">" , sizeof(size), scan, show, }, }
 #define PARAM_TYPE_EXPORT(name) export param_type PARAM_TYPE(name)[];
 
 PARAM_TYPE_EXPORT(bool);
