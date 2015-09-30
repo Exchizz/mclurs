@@ -42,7 +42,7 @@
 #define N_USBDUX_CHANS	16
 
 #define MIN_SAMPLING_FREQUENCY	6e4	/* Minimum sampling frequency per channel [Hz] */
-#define MAX_SAMPLING_FREQUENCY  3.75e5	/* Maximum sampling frequency per channel [Hz] */
+#define MAX_SAMPLING_FREQUENCY  3.76e5	/* Maximum sampling frequency per channel [Hz] */
 #define MIN_COMEDI_BUF_SIZE	8      	/* Minimum Comedi Buffer size [MiB] */
 #define MAX_COMEDI_BUF_SIZE	256    	/* Maximum Comedi Buffer size [MiB] */
 
