@@ -46,13 +46,14 @@ typedef struct {
 #define rq2chunk(q)	((chunk_t *)&((q)[-1]))
 
 export chunk_t *alloc_chunk(int);
-export void release_chunk(chunk_t *);
-export int map_chunk_to_frame(chunk_t *);
-export void copy_chunk_data(chunk_t *);
+export void     release_chunk(chunk_t *);
+export int      map_chunk_to_frame(chunk_t *);
+export void     copy_chunk_data(chunk_t *);
 
-export int debug_chunk(char [], int, chunk_t *);
+export int      debug_chunk(char [], int, chunk_t *);
 
-export void release_frame(frame *);
+export int      init_frame_system(strbuf, int, int, int);
+export void     release_frame(frame *);
 
 /*
  * Chunk, snapfile and snapshot status codes

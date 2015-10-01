@@ -637,7 +637,6 @@ private void setup_snapshot_samples(snap_t *s, param_t p[]) {
  */
 
 private snap_t *build_snapshot_descriptor(strbuf c) {
-  import int adc_is_running(adc);
   strbuf      e   = strbuf_next(c);
   param_t    *ps  = &snapshot_params[0]; 
   int         nps = n_snapshot_params;
@@ -911,7 +910,6 @@ private int process_status_command(strbuf c) {
  *
  * --------------------------------------------------------------------------------
  */
-
 
 /*
  * Allocate and free snapfile_t structures
@@ -1455,7 +1453,6 @@ public void *writer_main(void *arg) {
  */
 
 public int verify_writer_params(wparams *wp, strbuf e) {
-  import int init_frame_system(strbuf, int, int, int);
   import int tmpdir_dirfd;	/* Imported from snapshot.c */
   int ret;
 
