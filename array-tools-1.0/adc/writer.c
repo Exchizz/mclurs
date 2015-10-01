@@ -861,8 +861,8 @@ private int process_status_command(strbuf c) {
       return -1;
     }
     else {
-      strbuf_printf(c, " Files: %d, Xfr samples %d [Mi]\n",
-		    wp_nfiles, wp_totxfrsamples/(1024*1024));
+      strbuf_printf(c, " Files: %d, Xfr samples %d [ki]\n",
+		    wp_nfiles, wp_totxfrsamples/1024);
       return 0;
     }
   }
@@ -881,7 +881,7 @@ private int process_status_command(strbuf c) {
     /* ... we got one */
     strbuf_printf(c, "\n");
     snapshot_report_status(c, s);
-    if(s->s_status == SNAPSHOT_DONE)	 /* If completed, free it */
+    if(s->s_status == SNAPSHOT_DONE || s->s_status == SNAPSHOT_ERROR)	 /* If completed, free it */
       free_snapshot(s);
   }
   else {	/* Otherwise, look at all the snapshots in the queue */
@@ -891,11 +891,11 @@ private int process_status_command(strbuf c) {
      * since the loop macros have already determined whether the node
      * being worked is the last one or not.
      */
-    strbuf_printf(c, " Files: %d, Xfr space %d [MiB]\n", wp_nfiles, wp_totxfrsamples*sizeof(sampl_t)/(1024*1024));
+    strbuf_printf(c, " Files: %d, Xfr samples %d [ki]\n", wp_nfiles, wp_totxfrsamples/1024);
     for_nxt_in_Q(queue *p, queue_next(&snapQ), &snapQ)
       s = qp2snap(p);
       snapshot_report_status(c, s);	 /* Report the status of each one */
-      if(s->s_status == SNAPSHOT_DONE)	 /* If completed, free it */
+      if(s->s_status == SNAPSHOT_DONE || s->s_status == SNAPSHOT_ERROR)	 /* If completed, free it */
 	free_snapshot(s);
     end_for_nxt;
   }
@@ -1021,6 +1021,7 @@ private int setup_snapfile(snapfile_t *f, snap_t *s) {
     c->c_offset  = offset;
     offset += chunk*sizeof(sampl_t);
     first  += chunk;
+    rest   -= chunk;
 
     /* Add the chunk to the WRITER chunk queue */
     queue *pos = &WriterChunkQ;
@@ -1201,10 +1202,11 @@ private uint64_t writer_service_queue(uint64_t start) {
     
     if( map_chunk_to_frame(c) < 0 ) {
       if(is_chunk_status(c, SNAPSHOT_ERROR)) { /* Something nasty went wrong! */
+	wp_totxfrsamples += c->c_samples;
 	abort_snapfile(c->c_parent);
 	//	debug_snapfile(c->c_parent);
 	completed_snapfile(c->c_parent);
-	fprintf(stderr, "WRITER service queue aborts chunk %04hx: %s ", c->c_name, strbuf_string(c->c_error));
+	fprintf(stderr, "WRITER service queue aborts chunk %04hx: %s\n", c->c_name, strbuf_string(c->c_error));
       }
       max = 0;			/* Couldn't get a frame, so we are done */
     }

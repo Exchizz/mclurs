@@ -39,3 +39,5 @@ Known bugs, things to do:  random order.
 9. Update all the manual pages to reflect the final set of command
    lines and options for the four utilities.
 
+10. Add code to ensure that the locked memory resource limit is
+   sufficient for our needs.

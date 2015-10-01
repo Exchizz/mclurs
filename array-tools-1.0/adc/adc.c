@@ -174,6 +174,7 @@ public int adc_set_bufsz(adc a, strbuf e, int bufsz) {
     return -1;
   }
   a->a_req_bufsz_mib = bufsz;
+  fprintf(stderr, "Set ADC buffer size to %d [MiB]\n", bufsz);
   return 0;
 }
 
@@ -241,19 +242,20 @@ public int adc_init(adc a, strbuf e) {
 
   /* Initialise Comedi streaming buffer */
   int request = a->a_req_bufsz_mib * 1024 * 1024;
+  fprintf(stderr, "Requesting Comedi buffer %d [MiB] = %d bytes\n", a->a_req_bufsz_mib, request);
   ret = comedi_get_buffer_size(a->a_device, 0);
   if( request > ret ) {
     ret = comedi_get_max_buffer_size(a->a_device, 0);  
     if( request > ret ) {
       ret = comedi_set_max_buffer_size(a->a_device, 0, request);
       if( ret < 0 ) {
-	strbuf_appendf(e, "Comedi set max buffer to %dMiB failed: %C", a->a_req_bufsz_mib);
+	strbuf_appendf(e, "Comedi set max buffer to %d MiB failed: %C", a->a_req_bufsz_mib);
 	return -1;
       }
     }
     ret = comedi_set_buffer_size(a->a_device, 0, request);
     if( ret < 0 ) {
-      strbuf_appendf(e, "Comedi set streaming buffer to %dMiB failed: %C", a->a_req_bufsz_mib);
+      strbuf_appendf(e, "Comedi set streaming buffer to %d MiB failed: %C", a->a_req_bufsz_mib);
       return -1;
     }
   }
@@ -261,6 +263,7 @@ public int adc_init(adc a, strbuf e) {
   a->a_bufsz_bytes = comedi_get_buffer_size(a->a_device, 0);
   a->a_bufsz_samples = a->a_bufsz_bytes / sizeof(sampl_t);
   comedi_set_global_oor_behavior(COMEDI_OOR_NUMBER);
+  fprintf(stderr, "Using Comedi buffer %d byes = %d [MiB]\n", a->a_bufsz_bytes, a->a_bufsz_bytes/(1024*1024));
 
   /* Initialise the command structure */
   ret = comedi_get_cmd_generic_timed(a->a_device, 0, &a->a_command, N_USBDUX_CHANS, 0);
@@ -293,6 +296,7 @@ public int adc_init(adc a, strbuf e) {
   }
   
   /* Map the Comedi buffer into memory, duplicated */
+  fprintf(stderr, "Mapping Comedi Buffer size %d fd %d\n", a->a_bufsz_bytes, a->a_fd);
   void *map = mmap_and_lock(a->a_fd, 0, a->a_bufsz_bytes, PROT_RDONLY|PREFAULT_RDONLY|MAL_LOCKED|MAL_DOUBLED);
   if(map == NULL) {
     strbuf_appendf(e, "Unable to mmap Comedi streaming buffer: %m");

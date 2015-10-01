@@ -13,8 +13,6 @@
 #include "strbuf.h"
 #include "chunk.h"
 
-#define PRE_ALLOC
-
 struct _frame {
   queue f_Q;
   block f_map;
@@ -32,6 +30,8 @@ private QUEUE_HEADER(frameQ);
 
 public int init_frame_system(strbuf e, int nfr, int ram, int chunk) {
 
+  fprintf(stderr, "Init %d frames of size %d [kiB] in ram %d [MiB]\n", nfr, chunk, ram);
+
   framelist = (frame *)calloc(nfr, sizeof(frame));
   if( framelist ) {
     void *map = mmap_locate(ram*1024*1024, 0);
@@ -42,15 +42,9 @@ public int init_frame_system(strbuf e, int nfr, int ram, int chunk) {
       free((void *) framelist );
       return -1;
     }
-#ifndef PRE_ALLOC
     munmap(map, ram*1024*1024);
-#endif
     
     for(n=0; n<nfr; n++) { /* Initialise the frame memory pointers, leave sizes as 0 */
-#ifdef PRE_ALLOC
-      framelist[n].f_map.b_data = map;
-      map += chunk;
-#endif
       init_queue(&framelist[n].f_Q);
       queue_ins_before(&frameQ, &framelist[n].f_Q);
       n_frame_Q++;
@@ -217,21 +211,13 @@ public int map_chunk_to_frame(chunk_t *c) {
   fp->f_map.b_bytes = c->c_samples*sizeof(sampl_t);
 
   /* Would really like to do WRONLY here, but I *think* that will break */
-#ifdef PRE_ALLOC
-  map = mmap_and_lock_fixed(c->c_fd, c->c_offset, fp->f_map.b_bytes, PROT_RDWR|PREFAULT_RDWR|MAL_LOCKED, fp->f_map.b_data);
-#else
-    map = mmap_and_lock(c->c_fd, c->c_offset, fp->f_map.b_bytes, PROT_RDWR|PREFAULT_RDWR|MAL_LOCKED);
-#endif
+  map = mmap_and_lock(c->c_fd, c->c_offset, fp->f_map.b_bytes, PROT_RDWR|PREFAULT_RDWR|MAL_LOCKED);
 
-  fprintf(stderr, "Map chunk %04hx in frame %d with addr %p and size %d gives res %p\n",
-	  c->c_name, frame_nr(fp), fp->f_map.b_data, fp->f_map.b_bytes, map);
+  fprintf(stderr, "Map chunk %04hx in frame %d from fd %d offs %d with addr %p and size %d gives res %p\n",
+	  c->c_name, frame_nr(fp), c->c_fd, c->c_offset, fp->f_map.b_data, fp->f_map.b_bytes, map);
 
-#ifdef PRE_ALLOC
-  if(map != fp->f_map.b_data) {	/* A (fatal) mapping error occurred... */
-#else
   fp->f_map.b_data = map;
   if(map == NULL) {
-#endif
     strbuf_appendf(c->c_error, "Unable to map chunk c:%04hx to frame %d: %m", c->c_name, frame_nr(fp));
     set_chunk_status(c, SNAPSHOT_ERROR);
     fp->f_map.b_bytes = 0;	/* Mark frame as free */

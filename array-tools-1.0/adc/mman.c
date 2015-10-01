@@ -48,23 +48,30 @@ public void *mmap_locate(size_t length, int flags) {
 public void *mmap_and_lock_fixed(int fd, off_t offset, size_t length, int flags, void *fixed) {
   void *map;
   int   mflags = 0;
+  int   pflags = 0;
 
   if( flags&PROT_RDONLY )
-    mflags |= PROT_READ;
+    pflags |= PROT_READ;
   if( flags&PROT_WRONLY )
-    mflags |= PROT_WRITE;
+    pflags |= PROT_WRITE;
 
-  if( !mflags )
-    mflags = PROT_NONE;
+  if( !pflags )
+    pflags = PROT_NONE;
 
-  map = mmap(fixed, length, mflags, MAP_SHARED|MAP_FIXED, fd, offset);
+  mflags = MAP_SHARED;
+  if(fixed)
+    mflags |= MAP_FIXED;
+  if(flags&MAL_LOCKED)
+    mflags |= MAP_LOCKED;
+
+  fprintf(stderr, "MMLF called map %p fd %d offs %d size %d flags %x\n",
+	  fixed, fd, offset, length, flags);
+
+  map = mmap(fixed, length, pflags, mflags, fd, offset);
   if(map == NULL || map == (void *)-1 || map != fixed)
     return NULL;
 
-  if( (flags&MAL_LOCKED) && mlock(map, length) < 0 ) {
-    munmap(map, length);
-    return NULL;
-  }
+  fprintf(stderr, "MMLF map succeeded for %d bytes at %p\n", length, map);
 
   if( flags & PREFAULT_RDWR )
     prefault_pages(map, length / sysconf(_SC_PAGESIZE), (flags & PREFAULT_RDWR));
@@ -88,7 +95,7 @@ public void *mmap_and_lock(int fd, off_t offset, size_t length, int flags) {
 
   if( flags & MAL_DOUBLED ) {
     if( mmap_and_lock_fixed(fd, offset, length, flags, map+length) == NULL ) {
-      munmap(map, length);
+      munmap(map, 2*length);
       return NULL;
     }
   }
