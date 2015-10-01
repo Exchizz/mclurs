@@ -105,7 +105,8 @@ typedef struct _sfile {
 /* Forward declarations of snapshot file descriptor routines needed by snapshot */
 
 private snapfile_t *alloc_snapfile();
-private int setup_snapfile(snapfile_t *, snap_t *);
+private int  setup_snapfile(snapfile_t *, snap_t *);
+private void completed_snapfile(snapfile_t *);
 private void abort_snapfile(snapfile_t *);
 private void debug_snapfile(snapfile_t *);
 import  uint16_t snapfile_name(snapfile_t *);
@@ -743,12 +744,15 @@ private void refresh_snapshot(snap_t *s) {
     while(s->s_pending) {			/* There are files that have not got the message */
       assertv(!queue_singleton(snap2fq(s)),
 	      "Pending file count %d and file header Q mismatch in snapshot %p\n", s->s_pending, s);
-      abort_snapfile(qp2file(queue_next(snap2fq(s))));
+      snapfile_t *f = qp2file(queue_next(snap2fq(s)));
+      abort_snapfile(f);
+      completed_snapfile(f);
     }
     return;
   }
   else if(s->s_done == s->s_count) {	/* No files left to request */
     s->s_status = SNAPSHOT_COMPLETE;
+    strbuf_printf(s->s_error, "OK Snap %04hx: %s %d/%d files", snapshot_name(s), snapshot_status(s->s_status), s->s_done, s->s_count);
     return;
   }
   else if(s->s_done + s->s_pending == s->s_count) {  /* All required files are in progress */
@@ -1056,8 +1060,9 @@ private int setup_snapfile(snapfile_t *f, snap_t *s) {
  */
 
 private void completed_snapfile(snapfile_t *f) {
-  snap_t  *s = f->f_parent;
-  
+  snap_t *s      = f->f_parent;
+  int	  status = s->s_status;
+
   if(f->f_fd >= 0)
     close(f->f_fd);
 
@@ -1073,13 +1078,12 @@ private void completed_snapfile(snapfile_t *f) {
   }
   else {
     s->s_done++;		/* This file is done, it was pending before */
-    if(s->s_done == s->s_count) {
-      s->s_status = SNAPSHOT_COMPLETE;
-      strbuf_printf(s->s_error, "OK Snap %04hx: FIN %d/%d files", snapshot_name(s), s->s_done, s->s_count);
-    }
+    s->s_status = SNAPSHOT_WRITING;
   }
   de_queue(file2qp(f));		/* Remove this one from the snapshot */
   free_snapfile(f);		/* And free the structure */
+  if( status != SNAPSHOT_ERROR )
+    refresh_snapshot(s);
 }
 
 /*
@@ -1097,7 +1101,6 @@ private void completed_snapfile(snapfile_t *f) {
  */
 
 private void abort_snapfile(snapfile_t *f) {
-  snap_t  *s = f->f_parent;
 
   f->f_status = SNAPSHOT_ERROR;
 
