@@ -156,11 +156,14 @@ private void close_reader_comms() {
  */
 
 private int set_up_reader_capability() {
+  int   ret;
   cap_t c = cap_get_proc();
   const cap_value_t vs[] = { CAP_IPC_LOCK, CAP_SYS_NICE, CAP_SYS_ADMIN, };
 
   cap_set_flag(c, CAP_EFFECTIVE, sizeof(vs)/sizeof(cap_value_t), &vs[0], CAP_SET);
-  return cap_set_proc(c);
+  ret = cap_set_proc(c);
+  cap_free(c);
+  return ret;
 }
 
 /*
@@ -182,7 +185,7 @@ public uint64_t  monotonic_ns_clock() {
  * Returns true if processing messages should continue.
  */
 
-private int process_reader_command(void *s) {
+private void process_reader_command(void *s) {
   rparams *rp = &reader_parameters;
   int      ret;
   strbuf   cmd;
@@ -193,7 +196,8 @@ private int process_reader_command(void *s) {
   if( !ret ) {			/* It was a quit message */
     if(rp_state == READER_ARMED || rp_state == READER_RUN || rp_state == READER_RESTING)
       adc_stop_data_transfer(reader_adc);
-    return false;
+    rp->r_running = false;
+    return;
   }
 
   cmd_buf = strbuf_string(cmd);
@@ -301,7 +305,7 @@ private int process_reader_command(void *s) {
   }
   strbuf_clear(cmd);
   send_object_ptr(s, (void *)&err); /* return message */
-  return true;
+  return;
 }
 
 /*
@@ -358,7 +362,7 @@ private void abort_reader_chunk(chunk_t *ac) {
  * to the same file.
  */
 
-private int process_queue_message(void *s) {
+private void process_queue_message(void *s) {
   import int is_dead_snapfile(snapfile_t *);
   chunk_t *c;
 
@@ -384,27 +388,34 @@ private int process_queue_message(void *s) {
     send_object_ptr(tidy, (void *)&c->c_frame);
     c->c_frame = NULL;
     send_object_ptr(writer, (void *)&c);
-    return true;
+    return;
   }
 
   assertv(is_chunk_status(c, SNAPSHOT_WAITING), "Received chunk c:%04hx has unexpected state %s\n", c->c_name, snapshot_status(c->c_status));
+
+  c->c_convert = adc_convert_func(reader_adc);
+  fprintf(stderr, "Adding chunk %04hx, last %016llx to READER queue\n", c->c_name, c->c_last);
 
   /* Add the chunk to the READER chunk queue in order of increasing *last* sample */
   queue *pos = &ReaderChunkQ;
   if( !queue_singleton(&ReaderChunkQ) ) {
     for_nxt_in_Q(queue *p, queue_next(&ReaderChunkQ), &ReaderChunkQ);
     chunk_t *h = rq2chunk(p);
+
+    fprintf(stderr, "Looking at chunk %04hx at %p, last %016llx\n", h->c_name, h, h->c_last);
+
     if(h->c_last > c->c_last) {
       pos = p;
       break;
     }
     end_for_nxt;
   }
+  fprintf(stderr, "Inserting %04hx before %p\n", c->c_name, pos);
   queue_ins_before(pos, chunk2rq(c));
   if(pos == &ReaderChunkQ) {
     rq_head = c;		/* Points to the chunk at the head of the READER queue, when not NULL */
   }
-  return true;
+  return;
 }
 
 /*
@@ -431,6 +442,8 @@ private void complete_queue_head_chunk() {
   fprintf(stderr, "Calling complete on chunk %04hx\n", c->c_name);
 
   if(c->c_first < adc_ring_tail(reader_adc) || is_dead_snapfile(c->c_parent)) { /* Oops, we are too late */
+    fprintf(stderr, "Dead chunk: first %016llx tail %016llx dead? %d\n",
+	    c->c_first, adc_ring_tail(reader_adc), is_dead_snapfile(c->c_parent));
     abort_queue_head_chunk();
     return;
   }
@@ -503,7 +516,6 @@ private int reader_poll_delay = 100; /* Poll wait time [ms] */
 private void reader_thread_msg_loop() {    /* Read and process messages */
   uint64_t high_water_mark;
   int      adc_dry_period;
-  int      running;
 
   /* Main loop:  read messages and process messages */
   zmq_pollitem_t  poll_list[] =
@@ -511,7 +523,7 @@ private void reader_thread_msg_loop() {    /* Read and process messages */
       { command, 0, ZMQ_POLLIN, 0 },
     };
 #define	N_POLL_ITEMS	(sizeof(poll_list)/sizeof(zmq_pollitem_t))
-  int (*poll_responders[N_POLL_ITEMS])(void *) =
+  void (*poll_responders[N_POLL_ITEMS])(void *) =
     { process_queue_message,
       process_reader_command,
     };
@@ -523,9 +535,8 @@ private void reader_thread_msg_loop() {    /* Read and process messages */
   adc_dry_period  = adc_dry_period_max;
 
   reader_parameters.r_running = true;
-  running = true;
 
-  while( running && !die_die_die_now ) {
+  while( reader_parameters.r_running && !die_die_die_now ) {
     int ret; 
     int nb;
     int n;
@@ -577,7 +588,7 @@ private void reader_thread_msg_loop() {    /* Read and process messages */
 
     for(n=0; n<N_POLL_ITEMS; n++) {
       if( poll_list[n].revents & ZMQ_POLLIN ) {
-	running = running & (*poll_responders[n])(poll_list[n].socket); /* N.B. not && */
+	(*poll_responders[n])(poll_list[n].socket);
       }
     }
   }
@@ -618,6 +629,10 @@ public void *reader_main(void *arg) {
   
   if( set_up_reader_capability() < 0 ) {
     zh_put_multi(log, 1, "READER thread capabilities are deficient");
+  }
+
+  if( check_effective_capabilities_ok() < 0 ) {
+    zh_put_multi(log, 1, "READER thread fails to set effective capabilities");
   }
 
   ret = set_reader_rt_scheduling();

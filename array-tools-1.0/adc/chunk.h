@@ -67,7 +67,6 @@ export void     release_frame(frame *);
 #define SNAPSHOT_WRITING	5 /* Snapshot file's chunks are being written */
 #define SNAPSHOT_WRITTEN	6 /* Snapshot's chunk has been successfully written */
 #define SNAPSHOT_COMPLETE	7 /* Snapshot written correctly (off queue) */
-#define SNAPSHOT_DONE		8 /* Structure is finished with */
 
 #define SNAPSHOT_STATUS_MASK 0xff /* Mask for status values */
 
@@ -79,18 +78,21 @@ export const char *snapshot_status(int);
 
 /* "Functions" to set and check status and ownership */
 
-#define chunk_in_reader(c) (((c)->c_status&CHUNK_OWNER_MASK) == CHUNK_OWNER_READER)
-#define chunk_in_writer(c) (((c)->c_status&CHUNK_OWNER_MASK) == CHUNK_OWNER_WRITER)
+#define apply_status_mask(v) ((v)&SNAPSHOT_STATUS_MASK)
+#define apply_owner_mask(v)  ((v)&CHUNK_OWNER_MASK)
+
+#define chunk_in_reader(c) (apply_owner_mask((c)->c_status) == CHUNK_OWNER_READER)
+#define chunk_in_writer(c) (apply_owner_mask((c)->c_status) == CHUNK_OWNER_WRITER)
 
 #define set_chunk_owner(c,owner) do { chunk_t *__c = (c); \
-  __c->c_status = (__c->c_status&~CHUNK_OWNER_MASK)|((owner)&CHUNK_OWNER_MASK); \
+  __c->c_status = (__c->c_status&~CHUNK_OWNER_MASK)|apply_owner_mask(owner); \
   } while(0)
 
 #define set_chunk_status(c,status) do { chunk_t *__c = (c); \
-  __c->c_status = (__c->c_status&~SNAPSHOT_STATUS_MASK)|((status)&SNAPSHOT_STATUS_MASK); \
+  __c->c_status = (__c->c_status&~SNAPSHOT_STATUS_MASK)|apply_status_mask(status); \
   } while(0)
 
-#define is_chunk_status(c,status) (((c)->c_status&SNAPSHOT_STATUS_MASK) == (status))
+#define is_chunk_status(c,status) (apply_status_mask((c)->c_status) == (status))
 
 #endif /* _CHUNK_H */
 

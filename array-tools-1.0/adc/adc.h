@@ -41,5 +41,6 @@ export int adc_data_collect(adc);
 export int adc_data_purge(adc,int);
 
 export int adc_is_running(adc);
+public convertfn adc_convert_func(adc);
 
 #endif /* _ADC_H */

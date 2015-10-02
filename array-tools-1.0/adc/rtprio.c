@@ -117,4 +117,42 @@ public int check_permitted_capabilities_ok() {
   return 0;
 }
 
+public int check_effective_capabilities_ok() {
+  cap_t c = cap_get_proc();
+  cap_flag_value_t v = CAP_CLEAR;
+  
+  if( !c )			/* No memory? */
+    return -1;
 
+  if( cap_get_flag(c, CAP_IPC_LOCK,  CAP_EFFECTIVE, &v) < 0 || v == CAP_CLEAR ||
+      cap_get_flag(c, CAP_SYS_NICE,  CAP_EFFECTIVE, &v) < 0 || v == CAP_CLEAR ||
+      cap_get_flag(c, CAP_SYS_ADMIN, CAP_EFFECTIVE, &v) < 0 || v == CAP_CLEAR
+      ) {
+    cap_free(c);
+    errno = EPERM;
+    return -1;
+  }
+
+  cap_free(c);
+  return 0;
+}
+
+/*
+ * Return a capability structure describing the current thread.
+ */
+
+public cap_t cap_get_thread() {
+  pid_t me = gettid();
+  return cap_get_pid(me);
+}
+
+#if 0
+/*
+ * Set capability for the current thread from a cap_t structure.
+ */
+
+public int cap_set_thread(cap_t c) {
+  pid_t me = gettid();
+  return cap_set_pid(me,c);
+}
+#endif

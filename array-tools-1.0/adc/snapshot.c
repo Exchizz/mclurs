@@ -9,6 +9,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/capability.h>
+#include <sys/resource.h>
 #include <sys/prctl.h>
 #include <fcntl.h>
 #include <pwd.h>
@@ -331,7 +332,7 @@ private int snap_adjust_capabilities() {
   }
 
   if( !u ) {
-    const cap_value_t vs[] = { CAP_IPC_LOCK, CAP_SYS_NICE, CAP_SYS_ADMIN, CAP_SETUID, CAP_SETGID, };
+    const cap_value_t vs[] = { CAP_IPC_LOCK, CAP_SYS_NICE, CAP_SYS_ADMIN, CAP_SYS_RESOURCE, CAP_SETUID, CAP_SETGID, };
 
     /* So we are root and have the capabilities we need.  Prepare to drop the others... */
     /* Keep the EFFECTIVE capabilities as long as we stay root */
@@ -359,7 +360,7 @@ private int main_adjust_capabilities(uid_t uid, gid_t gid) {
   cap_t c = cap_get_proc();
   const cap_value_t vs[] = { CAP_SETUID, CAP_SETGID, };
   
-  /* Drop all capabilities except CAP_SETUID/GID from effective set */
+  /* Drop all capabilities except CAP_SETUID/GID and CAP_SYS_RESOURCE from effective set */
 
   if(c) {
     cap_clear_flag(c, CAP_EFFECTIVE);
@@ -765,7 +766,7 @@ public int main(int argc, char *argv[], char *envp[]) {
   strbuf e = alloc_strbuf(1);	/* Catch parameter error diagnostics */
 
   /* 5c. Verify and initialise parameters for the WRITER thread */
-  if( !writer_parameters.w_schedprio)
+  if( !writer_parameters.w_schedprio )
     writer_parameters.w_schedprio = schedprio;
   strbuf_printf(e, "%s: Error -- WRITER Params: ", program);
   ret = verify_writer_params(&writer_parameters, e);

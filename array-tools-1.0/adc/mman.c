@@ -64,14 +64,14 @@ public void *mmap_and_lock_fixed(int fd, off_t offset, size_t length, int flags,
   if(flags&MAL_LOCKED)
     mflags |= MAP_LOCKED;
 
-  fprintf(stderr, "MMLF called map %p fd %d offs %d size %d flags %x\n",
-	  fixed, fd, offset, length, flags);
+  //  fprintf(stderr, "MMLF called map %p fd %d offs %d size %d flags %x\n",
+  //	  fixed, fd, offset, length, flags);
 
   map = mmap(fixed, length, pflags, mflags, fd, offset);
   if(map == NULL || map == (void *)-1 || map != fixed)
     return NULL;
 
-  fprintf(stderr, "MMLF map succeeded for %d bytes at %p\n", length, map);
+  //  fprintf(stderr, "MMLF map succeeded for %d bytes at %p\n", length, map);
 
   if( flags & PREFAULT_RDWR )
     prefault_pages(map, length / sysconf(_SC_PAGESIZE), (flags & PREFAULT_RDWR));

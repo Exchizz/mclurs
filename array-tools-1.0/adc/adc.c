@@ -423,6 +423,10 @@ public uint64_t adc_ring_tail(adc a) {
   return a->a_tail;
 }
 
+public convertfn adc_convert_func(adc a) {
+  return a->a_convert;
+}
+
 /*
  * The buffer strategy implied below is an explicit one of
  * periodically advancing the tail to avoid buffer overrun.  The data

@@ -13,5 +13,6 @@
 
 export int set_rt_scheduling(int);
 export int check_permitted_capabilities_ok();
+export int check_effective_capabilities_ok();
 
 #endif /* _RTPRIO_H */

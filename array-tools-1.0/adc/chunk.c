@@ -213,8 +213,8 @@ public int map_chunk_to_frame(chunk_t *c) {
   /* Would really like to do WRONLY here, but I *think* that will break */
   map = mmap_and_lock(c->c_fd, c->c_offset, fp->f_map.b_bytes, PROT_RDWR|PREFAULT_RDWR|MAL_LOCKED);
 
-  fprintf(stderr, "Map chunk %04hx in frame %d from fd %d offs %d with addr %p and size %d gives res %p\n",
-	  c->c_name, frame_nr(fp), c->c_fd, c->c_offset, fp->f_map.b_data, fp->f_map.b_bytes, map);
+  // fprintf(stderr, "Map chunk %04hx in frame %d from fd %d offs %d with addr %p and size %d gives res %p\n",
+  //	  c->c_name, frame_nr(fp), c->c_fd, c->c_offset, fp->f_map.b_data, fp->f_map.b_bytes, map);
 
   fp->f_map.b_data = map;
   if(map == NULL) {
@@ -234,6 +234,9 @@ public int map_chunk_to_frame(chunk_t *c) {
 
 public void copy_chunk_data(chunk_t *c) {
   convertfn fn = c->c_convert;
+
+  //  fprintf(stderr, "Copy chunk %04hx using fn %p from %p to %p size %d spl\n", 
+  //	  c->c_name, fn, c->c_ring, c->c_frame->f_map.b_data, c->c_samples);
 
   (*fn)((sampl_t *)c->c_frame->f_map.b_data, (sampl_t *)c->c_ring, c->c_samples);
   set_chunk_status(c, SNAPSHOT_WRITTEN);
@@ -280,7 +283,7 @@ public int debug_chunk(char buf[], int space, chunk_t *c) {
 public const char *snapshot_status(int st) {
   private const char *stab[]
     = {
-    "INI", "ERR", "PRP", "RDY", "...", ">>>", "+++", "DON", "FIN",
+    "INI", "ERR", "PRP", "RDY", "...", ">>>", "+++", "FIN",
   };
   st &= SNAPSHOT_STATUS_MASK;
   if(st>=0 && st<sizeof(stab)/sizeof(char *))

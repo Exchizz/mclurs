@@ -197,11 +197,14 @@ private void close_writer_comms() {
  */
 
 private int set_up_writer_capability() {
+  int   ret;
   cap_t c = cap_get_proc();
   const cap_value_t vs[] = { CAP_IPC_LOCK, CAP_SYS_NICE, CAP_SYS_ADMIN, };
 
   cap_set_flag(c, CAP_EFFECTIVE, sizeof(vs)/sizeof(cap_value_t), &vs[0], CAP_SET);
-  return cap_set_proc(c) || check_permitted_capabilities_ok();
+  ret = cap_set_proc(c);
+  cap_free(c);
+  return ret;
 }
 
 /*
@@ -765,6 +768,14 @@ private void refresh_snapshot(snap_t *s) {
 }
 
 /*
+ * Determine whether a snapshot has completed, i.e. is no longer in progress
+ */
+
+private int snapshot_is_complete(snap_t *s) {
+  return s->s_status == SNAPSHOT_COMPLETE || s->s_status == SNAPSHOT_ERROR;
+}
+
+/*
  * Debugging function for snapshot descriptors...
  */
 
@@ -813,7 +824,7 @@ private const int n_status_params =  (sizeof(status_params)/sizeof(param_t));
 
 private void snapshot_report_status(strbuf x, snap_t *s) {
 
-  if(s->s_status == SNAPSHOT_DONE) {	 /* If completed, attach its error strbuf */
+  if(snapshot_is_complete(s)) {	 /* If completed, attach its error strbuf */
     queue_ins_after(strbuf2qp(x), strbuf2qp(s->s_error));
     s->s_error = (strbuf)NULL;
     return;
@@ -881,7 +892,7 @@ private int process_status_command(strbuf c) {
     /* ... we got one */
     strbuf_printf(c, "\n");
     snapshot_report_status(c, s);
-    if(s->s_status == SNAPSHOT_DONE || s->s_status == SNAPSHOT_ERROR)	 /* If completed, free it */
+    if(snapshot_is_complete(s))	 /* If completed, free it */
       free_snapshot(s);
   }
   else {	/* Otherwise, look at all the snapshots in the queue */
@@ -895,7 +906,7 @@ private int process_status_command(strbuf c) {
     for_nxt_in_Q(queue *p, queue_next(&snapQ), &snapQ)
       s = qp2snap(p);
       snapshot_report_status(c, s);	 /* Report the status of each one */
-      if(s->s_status == SNAPSHOT_DONE || s->s_status == SNAPSHOT_ERROR)	 /* If completed, free it */
+      if(snapshot_is_complete(s))	 /* If completed, free it */
 	free_snapshot(s);
     end_for_nxt;
   }
@@ -1001,6 +1012,7 @@ private int setup_snapfile(snapfile_t *f, snap_t *s) {
   uint64_t first  = s->s_first;
   uint64_t rest   = s->s_samples;
   uint32_t chunk  = wp_chunksamples;
+  uint32_t pagesz = sysconf(_SC_PAGESIZE)/sizeof(sampl_t);
   uint32_t offset = 0;
 
   for_nxt_in_Q(queue *p, chunk2qp(f->f_chunkQ), chunk2qp(f->f_chunkQ))
@@ -1014,11 +1026,22 @@ private int setup_snapfile(snapfile_t *f, snap_t *s) {
     c->c_ring    = NULL;	/* The ADC object computes this pointer */
     c->c_frame   = NULL;	/* The transfer frames are allocated elsewhere */
     c->c_first   = first;
-    if(rest > chunk && rest < 2*chunk) /* Deal with final partial chunk(s) */
-      chunk = rest / 2;
+
+    /* Deal with final partial chunks */
+    if(rest > chunk && rest < 2*chunk) {	/* The penultimate chunk has a partial final chunk */
+      chunk = rest / 2;				/* Split the total remaining data in two */
+      chunk = (chunk + pagesz - 1)/pagesz;
+      chunk *= pagesz;				/* Need to ensure file offset is page-aligned */
+    }
+    if(rest < chunk)		/* The last chunk */
+      chunk = rest;
+
+    /* Write in the chunk size and offset values */
     c->c_samples = chunk;
     c->c_last    = first + chunk;
     c->c_offset  = offset;
+
+    /* Compute the placement of the next chunk */
     offset += chunk*sizeof(sampl_t);
     first  += chunk;
     rest   -= chunk;
@@ -1421,8 +1444,12 @@ public void *writer_main(void *arg) {
 
   create_writer_comms();
 
-  if( set_up_writer_capability < 0 ) {
+  if( set_up_writer_capability() < 0 ) {
     zh_put_multi(log, 1, "WRITER thread capabilities are deficient");
+  }
+
+  if( check_effective_capabilities_ok() < 0 ) {
+    zh_put_multi(log, 1, "WRITER thread fails to set effective capabilities");
   }
 
   ret = set_writer_rt_scheduling();
