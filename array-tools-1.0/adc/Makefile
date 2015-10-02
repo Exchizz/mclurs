@@ -93,3 +93,13 @@ print.pdf:	*.c *.h
 	a2ps -1r -L99 -l198 -o print.ps *.[ch] 
 	ps2pdf print.ps
 	rm print.ps
+
+%.pdf:  %.1a
+	groff -Tps -man $< > xx.ps
+	ps2pdf xx.ps $@
+	@rm -f xx.ps
+
+snapshot.pdf:	snapshot.8a
+	groff -Tps -man $< > xx.ps
+	ps2pdf xx.ps $@
+	@rm -f xx.ps

@@ -41,7 +41,7 @@ instant and extending some time after it.
 .PP
 While \fBsnapshot\fP can be commanded to generate a sequence of
 snapshots that covers a long period of the input stream, for
-continuous data one should use the \fBadc\fP program, which is much
+continuous data one should use the \fBgrab\fP program, which is much
 simpler and less programmable but is specialised for streaming data
 from the analog hardware to its standard output.
 .SH COMMANDS
@@ -132,11 +132,32 @@ snapshot.
 The mandatory \fIpath\fP parameter gives the name of the snapshot,
 which is used when constructing the disk directory to hold the data.
 It may be a relative or absolute path.
+.TP
+.B Dir  \fIparameter list\fP
+instructs \fBsnapshot\fP to change working directory to that given by
+the \fIpath\fP parameter, which is mandatory.  \fBsnapshot\fP creates
+the new working directory; for relative paths the new directory is
+relative to the \fI\-\-snapdir\fP directory.  Only one level of tree may
+be created in one step.  Now samples are written to directories
+created in the new working directory.
+.TP
+.B Ztatus \fIparameter list\fP
+reports the status of snapshots finished or in progress.  It can be
+supplied with an optional \fIname\fP parameter to limit its attention
+to a single snapshot.  For in-progress snapshots a short status line
+is generated.  For completed snapshots the final status is that
+produced by the completion or termination (on error) of the operation.
+.br
+.sp 1
+Asking for the status of a completed snapshot frees up the resources
+it is holding.
 .SH SNAPSHOT STRUCTURE
 When requested by a \fBSnap\fP command, \fBsnapshot\fP writes out
 chunks of its ring buffer to disk in a sub-directory determined by the
 \fIpath\fP parameter.  If the given \fIpath\fP is relative, it is
-interpreted relative to the \fI\-\-snapdir\fP directory.
+interpreted relative to the current working directory recently set by
+a \fBDir\fP command, or to the \fI\-\-snapdir\fP directory itself if
+no working directory has been set.
 .PP
 Within the new sub-directory, snapshot data files are written.  If the
 \fIcount\fP parameter is set, \fIcount\fP distinct files are created
@@ -188,6 +209,11 @@ specifies the sampling frequency in [Hz] per channel.  The default is
 312.5 [kHz], i.e. a total sampling frequency of 2.5 [MHz] across the 8
 channels provided by the hardware.
 .TP
+.B \-\-range=\fI500|750\fP " (*)"
+sets the conversion range of the ADC hardware.  The default is 750[mV]
+peak.  A smaller range of 500[mV] peak is offered by the USBDUXfast
+hardware currently used.
+.TP
 .B \-\-bufsz=\fIsize\fP " (*)"
 specifies the \fIsize\fP of the Comedi streaming buffer in [MiB].  It
 requires root permission to increase the maximum buffer size beyond
@@ -195,10 +221,15 @@ that set for the device.  Maximum buffer size can be pre-set using
 \fBcomedi-config\fP to avoid this.  The default value is 32 [MiB].
 .TP
 .B \-\-window=\fIduration\fP " (*)"
-determines the size of the ring buffer into which data is copied.  The
-\fIduration\fP in [s] fixes the maximum size of a snapshot, since a
-single snapshot must fit within the ring buffer (currently).  The
-default value is 10 [s].
+determines the minimum duration of valid data present in the streaming
+buffer at any time.  The \fIduration\fP in [s] fixes the maximum size
+of a snapshot, since a single snapshot must fit within the ring buffer
+(currently).  The default value is 10 [s].
+.TP
+.B \-\-bufhwm=\fIfraction\fP " (*)"
+determines the proportion of the streaming buffer available for data.
+The remainder is used as a no-man's land between the newly arriving
+data from the hardware and the oldest valid data in the buffer.
 .TP
 .B \-\-rtprio=\fIpri\fP
 If this option is given, the program attempts to set real-time
@@ -222,22 +253,38 @@ argument must be a valid priority for a SCHED_FIFO process; see
 \fBsched_setscheduler(2)\fP for more information.  The default is not
 to request real-time treatment.
 .TP
-.B \-\-uid=\fInumber\fP
+.B \-\-user=\fIname\fP
 is used, when \fBsnapshot\fP is running as root, to set the user id
-for the files created when writing snapshots to disk.  The
+\fBsnapshot\fP will switch to when it drops privileges.  The
 \fIsnapdir\fP directory is given this owner if it is created by
-\fBsnapshot\fP.  Default is not set.
+\fBsnapshot\fP.  Default is not set.  If not specified the value is
+taken from the process owner.  Note that \fBsnapshot\fP can be started
+as root, if necessary to have the capabilities it needs, but it will
+not run as root.
 .TP
-.B \-\-gid=\fInumber\fP
-is used likewise to set the owning group.  Default is not set.  If
-\fI--uid\fP is given alone, that user's principal group is used.  If
-\fI--gid\fP is given alone, the process owner is used as file owner.
+.B \-\-group=\fIname\fP
+is used likewise to set the process group.  Default is not set.  If
+\fI--user\fP is given alone, that user's set of group memberships is
+used.  If \fI--group\fP is given alone, the process owner is used as
+the user.  If \fI--group\fP is given, the user's supplementary groups
+are not loaded.  Multiple \fI--group\fP arguments result in multiple
+groups being installed.
 .TP
-.B \-\-permu=\fInumber\fP
-sets the time to wait when no data is available from Comedit, using
-the proportion of the Comedi streaming buffer expected to be available
-for transfer after the wait time.  The value is in millionths, and the
-default is 500 (i.e. 0.05%).
+.B \-\-ram=\fIsize\fP
+sets the amount of RAM in [MiB] requested for handling data transfers.
+Up to this much RAM will be locked by \fBsnapshot\fP in the course of
+scheduling and executing capture requests. Default is 64 [MiB].
+.TP
+.B \-\-chunk=\fIsize\fP
+specifies the default size in [kiB] of an atomic chunk of data to
+transfer from the capture buffer to a snapshot file.  \fBsnapshot\fP
+will never transfer more than this, nor less than half this amount, in
+a single transfer.  Default is 1024 [kiB], i.e. 1 [MiB].
+.TP
+.B \-\-wof=\fI0-1\fP
+is the "write-overbooking fraction", between zero and one, which
+specifies how much extra data can be enqueued for writing beyond the
+size of the transfer RAM.  Default is 0.5.
 .SH EXIT STATUS
 \fBsnapshot\fP exits normally after receiving the Quit command.  It
 exits with code 1 for parameter errors and with code 2 for errors in
@@ -262,6 +309,24 @@ the data actually starts arriving in the kernel buffers and may be
 several millseconds late in the current implementation.  Very short
 capture windows may miss their intended wall-clock target because of
 this offset.
+.br
+.sp 1
+The parameters \fB\-\-chunk\fP, \fB\-\-freq\fP, \fB\-\-window\fP,
+\fB\-\-bufsz\fP and \fB\-\-bufhwm\fP are interdependent.  The code
+enforces the following constraints:
+.TP
+the product of \fB\-\-window\fP and \fB\-\-freq\fP, a number of
+samples, must fit inside the product of \fB\-\-bufsz\fP and
+\fB\-\-bufhwm\fP which is the active section of the buffer.
+.TP
+the part of the buffer outside the active section must be at least as
+big as two \fB\-\-chunk\fP blocks.
+.br
+.sp 1
+The quotient of \fB\-\-chunk\fP and \fB\-\-freq\fP, that is, the
+time it takes to receive a chunk from the ADC hardware, is used to
+determine the loop frequency of the thread that processes incoming
+data.
 .SH SEE ALSO
 .BR snapchat (1a) ,
 .BR adc (1a) ,
