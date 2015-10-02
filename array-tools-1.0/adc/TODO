@@ -3,12 +3,12 @@ Known bugs, things to do:  random order.
 1. Fix error reporting on success of a snapshot: currently no-one
    writes the OK message to the error strbuf.
 
-   [maybe this is working...]
+   **DONE**
 
 2. Improve status return; fix removal of completed snapshots from the
    snapshot queue (currently doesn't work).
 
-   [tidied up status and owner management for chunks]
+   **DONE**
 
 3. Better logging/debug information everywhere.
 
@@ -19,6 +19,8 @@ Known bugs, things to do:  random order.
 5. Add in code for data exhaustion in the READER: notice when data
    stops coming and do something about it (halt the ADC and go to ERROR
    state).
+
+   **DONE**
 
 6. Fix group handling so that the program takes all supplementary
    groups of a chosen user as well as the primary group; allow
@@ -32,6 +34,8 @@ Known bugs, things to do:  random order.
    loop, so that average energy over the last interval is always
    available.
 
+   [some code added to lut.c as start of this feature]
+
 8. Implement a PUBLISH socket through which the READER can
    periodically publish energy and sample number data; implement the
    publishing code.
@@ -41,3 +45,5 @@ Known bugs, things to do:  random order.
 
 10. Add code to ensure that the locked memory resource limit is
    sufficient for our needs.
+
+   [Need to retain/use CAP_SYS_RESOURCE to alter the limit]

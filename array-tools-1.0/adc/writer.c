@@ -201,7 +201,7 @@ private int set_up_writer_capability() {
   const cap_value_t vs[] = { CAP_IPC_LOCK, CAP_SYS_NICE, CAP_SYS_ADMIN, };
 
   cap_set_flag(c, CAP_EFFECTIVE, sizeof(vs)/sizeof(cap_value_t), &vs[0], CAP_SET);
-  return cap_set_proc(c);
+  return cap_set_proc(c) || check_permitted_capabilities_ok();
 }
 
 /*

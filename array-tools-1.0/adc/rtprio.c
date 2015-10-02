@@ -113,6 +113,7 @@ public int check_permitted_capabilities_ok() {
     return -1;
   }
 
+  cap_free(c);
   return 0;
 }
 
