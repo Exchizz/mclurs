@@ -378,6 +378,13 @@ private int main_adjust_capabilities(uid_t uid, gid_t gid) {
     fprintf(stderr, "%s: Error -- MAIN thread unable to change to gid %d: %s\n", program, gid, strerror(errno));
     return -1;
   }
+
+  /* Retrieve and initialise the subsidiary group memberships for the given user */
+  if( initgroups(snapshot_user, gid) < 0 ) {
+    fprintf(stderr, "%s: Error -- MAIN thread unable to set subsidiary groups for uid %d: %s\n", program, uid, strerror(errno));
+    return -1;
+  }
+  
   if( setresuid(uid, uid, uid) < 0 ) {
     fprintf(stderr, "%s: Error -- MAIN thread unable to change to uid %d: %s\n", program, uid, strerror(errno));
     return -1;
@@ -707,6 +714,10 @@ public int main(int argc, char *argv[], char *envp[]) {
    * the UID parameter is set, get the group from that user and set
    * the uid from there too.  If neither is set, use the real uid/gid
    * of the thread.
+   *
+   * We need the user's name to be able to load subsidiary groups, so
+   * if we are using the process owner's UID we retrieve the name and
+   * store it in a static buffer.
    */
 
   gid_t gid = -1;
@@ -734,8 +745,12 @@ public int main(int argc, char *argv[], char *envp[]) {
       gid = pwd->pw_gid;	/* Use this user's principal GID */
   }
   else {
+    private char user[64];
     uid = getuid();		/* Use the real UID of this thread */
     gid = getgid();		/* Use the real GID of this thread */
+    struct passwd *pwd = getpwuid(uid);
+    strncpy(&user[0], pwd->pw_name, 64);
+    snapshot_user = &user[0];	/* Establish the user's name, for loading groups */
   }
 
   /* 5b. Check capabilities and drop privileges */

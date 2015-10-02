@@ -25,8 +25,8 @@ Known bugs, things to do:  random order.
    multiple --group arguments and take all listed groups when dropping
    privileges.
 
-   [use initgroups() when only a user is given; use setgroups() when a
-   set of groups/GIDs are given instead]
+   [use initgroups() when only a user is given -- **DONE**;
+    use setgroups() when a set of groups/GIDs are given instead]
 
 7. Add in energy computaitons into the READER thread data acquisition
    loop, so that average energy over the last interval is always
