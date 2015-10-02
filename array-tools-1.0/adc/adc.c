@@ -431,7 +431,8 @@ public convertfn adc_convert_func(adc a) {
  * The buffer strategy implied below is an explicit one of
  * periodically advancing the tail to avoid buffer overrun.  The data
  * bounded by the tail and head pointers in the ring buffer is valid,
- * under this explicit stragety.
+ * under this explicit stragety.  The parameter set up ensures that
+ * this is at least the requested window in duration.
  */
 
 /*

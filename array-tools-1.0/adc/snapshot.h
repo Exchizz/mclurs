@@ -10,7 +10,6 @@ export param_t	   globals[];
 export const int   n_global_params;
 
 export int	   verbose;
-
 export int	   die_die_die_now;
 
 export int	   tmpdir_dirfd;

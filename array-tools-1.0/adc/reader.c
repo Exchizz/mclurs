@@ -167,20 +167,6 @@ private int set_up_reader_capability() {
 }
 
 /*
- * Get a value from the monotonic krnel clock and express in nanoseconds.
- */
-
-public uint64_t  monotonic_ns_clock() {
-  uint64_t ret;
-  struct timespec now;
-
-  clock_gettime(CLOCK_MONOTONIC, &now);		/* Timestamp for debugging */
-  ret = now.tv_sec;
-  ret = ret*1000000000 + now.tv_nsec;
-  return ret;
-}
-
-/*
  * Process a READER command from MAIN thread.  Generate replies as necessary.
  * Returns true if processing messages should continue.
  */

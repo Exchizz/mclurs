@@ -26,7 +26,7 @@ trig:	trig.o ${LIBRARY}
 grab:		grab.o ${LIBRARY}
 	gcc -o grab grab.o ${LIBRARY} -lcomedi -largtable2 -lm
 
-snapshot.o:	snapshot.c snapshot.h reader.h writer.h util.h param.h argtab.h general.h
+snapshot.o:	snapshot.c snapshot.h reader.h writer.h util.h param.h argtab.h general.h error.h
 
 snapchat.o:	snapchat.c snapshot.h argtab.h util.h param.h
 
@@ -34,21 +34,19 @@ grab.o:		grab.c mman.h lut.h argtab.h
 
 trig.o:		trig.c snapshot.h util.h param.h argtab.h
 
-reader.o:	reader.c reader.h snapshot.h util.h queue.h param.h adc.h mman.h tidy.h chunk.h general.h
+reader.o:	reader.c reader.h snapshot.h util.h queue.h param.h adc.h mman.h tidy.h chunk.h general.h error.h
 
 adc.o:		adc.c adc.h mman.h queue.h general.h
 
-writer.o:	writer.c writer.h snapshot.h util.h queue.h param.h mman.h chunk.h general.h
+writer.o:	writer.c writer.h snapshot.h util.h queue.h param.h mman.h chunk.h general.h error.h
 
-tidy.o:		tidy.c tidy.h chunk.h general.h
+tidy.o:		tidy.c tidy.h chunk.h general.h error.h
 
 rtprio.o:	rtprio.c rtprio.h general.h
 
 util.o:		util.c util.h general.h
 
 lut.o:		lut.c lut.h general.h
-
-ring.o:		ring.c ring.h mman.h general.h
 
 chunk.o:	chunk.c chunk.h mman.h queue.h general.h
 
@@ -59,8 +57,6 @@ strbuf.o:	strbuf.c queue.h strbuf.h general.h
 param.o:	param.c param.h argtab.h assert.h general.h
 
 queue.o:	queue.c queue.h general.h
-
-talloc.o:	talloc.c talloc.h queue.h general.h
 
 argtab-int64.o:	argtab-int64.c argtab-int64.h general.h
 

@@ -32,4 +32,4 @@ export rparams   reader_parameters;
 
 export int       verify_reader_params(rparams *, strbuf);
 export void     *reader_main(void *);
-export uint64_t  monotonic_ns_clock();
+

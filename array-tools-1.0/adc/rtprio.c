@@ -5,6 +5,8 @@
 #define __GNU_SOURCE
 
 #include <unistd.h>
+#include <time.h>
+#include <sys/time.h>
 #include <sys/syscall.h>
 #include <sys/capability.h>
 #include <assert.h>
@@ -138,21 +140,16 @@ public int check_effective_capabilities_ok() {
 }
 
 /*
- * Return a capability structure describing the current thread.
+ * Get a value from the monotonic krnel clock and express in nanoseconds.
  */
 
-public cap_t cap_get_thread() {
-  pid_t me = gettid();
-  return cap_get_pid(me);
+public uint64_t monotonic_ns_clock() {
+  uint64_t ret;
+  struct timespec now;
+
+  clock_gettime(CLOCK_MONOTONIC, &now);		/* Timestamp for debugging */
+  ret = now.tv_sec;
+  ret = ret*1000000000 + now.tv_nsec;
+  return ret;
 }
 
-#if 0
-/*
- * Set capability for the current thread from a cap_t structure.
- */
-
-public int cap_set_thread(cap_t c) {
-  pid_t me = gettid();
-  return cap_set_pid(me,c);
-}
-#endif

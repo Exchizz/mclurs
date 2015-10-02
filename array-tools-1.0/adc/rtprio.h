@@ -15,4 +15,6 @@ export int set_rt_scheduling(int);
 export int check_permitted_capabilities_ok();
 export int check_effective_capabilities_ok();
 
+export uint64_t monotonic_ns_clock();
+
 #endif /* _RTPRIO_H */
