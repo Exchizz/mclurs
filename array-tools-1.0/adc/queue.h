@@ -53,6 +53,8 @@ export void   map_queue_prv(queue *, queue *, qmapfn, void *);
  * list, the loop traverses the whole list exactly once visiting each
  * node exactly once.
  *
+ * The strict versions do nothing if start==end.
+ *
  * Note that it is also possible to remove node __p during the USER
  * CODE because it is neither the node we are about to work on nor the
  * end point node.  It may be the start node, however: the user should
@@ -68,11 +70,31 @@ do { queue *__s = (start), *__e = (end);                \
        var = __p;  __p = __n;                           \
        /* USER CODE GOES HERE */
 
+#define for_nxt_in_strict_Q(var,start,end)              \
+do { queue *__s = (start), *__e = (end);                \
+     if(__s == __e) break;                              \
+     queue *__p = __s;					\
+     int    __done = 0;                                 \
+     while(!__done) { queue *__n = queue_next(__p);     \
+       __done = (__n == __s || __n == __e);             \
+       var = __p;  __p = __n;                           \
+       /* USER CODE GOES HERE */
+
 #define end_for_nxt                                     \
      } } while(0)
 
 #define for_prv_in_Q(var,start,end)                     \
 do { queue *__s = (start), *__e = (end);                \
+     queue *__p = __s;                                  \
+     int    __done = 0;                                 \
+     while(!__done) { queue *__n = queue_prev(__p);     \
+       __done = (__n == __s || __n == __e);             \
+       var = __p;  __p = __n;
+       /* USER CODE GOES HERE */
+
+#define for_prv_in_strict_Q(var,start,end)              \
+do { queue *__s = (start), *__e = (end);                \
+     if(__s == __e) break;                              \
      queue *__p = __s;                                  \
      int    __done = 0;                                 \
      while(!__done) { queue *__n = queue_prev(__p);     \

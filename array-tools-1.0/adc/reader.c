@@ -381,28 +381,32 @@ private void process_queue_message(void *s) {
 
   c->c_convert = adc_convert_func(reader_adc);
 
-  LOG(READER, 2, "Adding chunk %04hx, last %016llx to READER queue\n", c->c_name, c->c_last);
+  LOG(READER, 2, "Adding chunk c:%04hx with last %016llx to READER queue\n", c->c_name, c->c_last);
 
   /* Add the chunk to the READER chunk queue in order of increasing *last* sample */
   queue *pos = &ReaderChunkQ;
   if( !queue_singleton(&ReaderChunkQ) ) {
-    for_nxt_in_Q(queue *p, queue_next(&ReaderChunkQ), &ReaderChunkQ);
+    for_nxt_in_strict_Q(queue *p, queue_next(&ReaderChunkQ), &ReaderChunkQ);
     chunk_t *h = rq2chunk(p);
 
-    LOG(READER, 3, "Looking at chunk %04hx at %p, last %016llx\n", h->c_name, h, h->c_last);
-
+    LOG(READER, 3, "Looking at chunk c:%04hx with last %016llx\n", h->c_name, h, h->c_last);
     if(h->c_last > c->c_last) {
       pos = p;
       break;
     }
     end_for_nxt;
   }
-  
-  LOG(READER, 2, "Inserting %04hx before %p\n", c->c_name, pos);
   queue_ins_before(pos, chunk2rq(c));
+
   if(pos == &ReaderChunkQ) {
-    rq_head = c;                /* Points to the chunk at the head of the READER queue, when not NULL */
+    LOG(READER, 2, "Inserted c:%04hx at end of RQ\n", c->c_name);
   }
+  else {
+    LOG(READER, 2, "Inserted c:%04hx before c:%04hx\n", c->c_name, rq2chunk(pos)->c_name);
+  }
+
+  /* rq_head points to the chunk at the head of the READER queue */
+  rq_head = rq2chunk(queue_next(&ReaderChunkQ));
   return;
 }
 

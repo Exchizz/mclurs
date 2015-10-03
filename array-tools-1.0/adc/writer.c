@@ -869,7 +869,7 @@ private int process_status_command(strbuf c) {
       return -1;
     }
     else {
-      strbuf_printf(c, " Files: %d, Xfr samples %d [ki]\n",
+      strbuf_printf(c, " Files: %d, Xfr space %d[ki] samples\n",
                     wp_nfiles, wp_totxfrsamples/1024);
       return 0;
     }
@@ -899,7 +899,9 @@ private int process_status_command(strbuf c) {
      * since the loop macros have already determined whether the node
      * being worked is the last one or not.
      */
-    strbuf_printf(c, " Files: %d, Xfr samples %d [ki]\n", wp_nfiles, wp_totxfrsamples/1024);
+    strbuf_printf(c, " Files: %d, Xfr space %d[ki] samples\n",
+		  wp_nfiles, wp_totxfrsamples/1024);
+
     for_nxt_in_Q(queue *p, queue_next(&snapQ), &snapQ)
       s = qp2snap(p);
       snapshot_report_status(c, s);      /* Report the status of each one */
@@ -1046,7 +1048,7 @@ private int setup_snapfile(snapfile_t *f, snap_t *s) {
     /* Add the chunk to the WRITER chunk queue */
     queue *pos = &WriterChunkQ;
     if( !queue_singleton(&WriterChunkQ) ) {
-      for_nxt_in_Q(queue *p, queue_next(&WriterChunkQ), &WriterChunkQ);
+      for_nxt_in_strict_Q(queue *p, queue_next(&WriterChunkQ), &WriterChunkQ);
         chunk_t *h = rq2chunk(p);
         if(h->c_first > c->c_first) {
           pos = p;
