@@ -73,87 +73,87 @@ public param_t globals[] ={
   { "tmpdir",   "/tmp",
     &tmpdir_path,
     PARAM_TYPE(string), PARAM_SRC_ENV|PARAM_SRC_ARG,
-    "directory for creation of temporary files"
+    "directory for creation of temporary files; default '/tmp'"
   },
   { "freq",     "312.5e3",
     &reader_parameters.r_frequency,
     PARAM_TYPE(double), PARAM_SRC_ENV|PARAM_SRC_ARG|PARAM_SRC_CMD,
-    "sampling frequency (divided by 8) of the ADC [Hz]"
+    "sampling frequency (divided by 8) of the ADC [Hz]; default 312.5[kHz]"
   },
   { "snapshot", "ipc://snapshot-CMD",
     &snapshot_addr,
     PARAM_TYPE(string), PARAM_SRC_ENV|PARAM_SRC_ARG,
-    "address of snapshot command socket"
+    "address of snapshot command socket; default 'ipc://snapshot-CMD'"
   },
   { "snapdir",  "snap",
     &writer_parameters.w_snapdir,
     PARAM_TYPE(string), PARAM_SRC_ENV|PARAM_SRC_ARG,
-    "directory where samples are written"
+    "directory where samples are written; default 'snap'"
   },
   { "dev",      "/dev/comedi0",
     &reader_parameters.r_device,
     PARAM_TYPE(string), PARAM_SRC_ENV|PARAM_SRC_ARG,
-    "the Comedi device to open"
+    "the Comedi device to open; default '/dev/comedi0'"
   },
   { "range",    "750",
     &reader_parameters.r_range,
     PARAM_TYPE(int32), PARAM_SRC_ENV|PARAM_SRC_ARG|PARAM_SRC_CMD,
-    "the ADC converter full-scale range [mV]"
+    "the ADC converter full-scale range [mV]; default 750[mV]"
   },
   { "bufsz",    "56",
     &reader_parameters.r_bufsz,
     PARAM_TYPE(int32),  PARAM_SRC_ENV|PARAM_SRC_ARG|PARAM_SRC_CMD,
-    "size of the Comedi buffer [MiB]"
+    "size of the Comedi buffer [MiB]; default 56[MiB]"
   },
   { "window",   "10",
     &reader_parameters.r_window,
     PARAM_TYPE(double),  PARAM_SRC_ENV|PARAM_SRC_ARG|PARAM_SRC_CMD,
-    "guaranteed window in the ring buffer [s]"
+    "guaranteed window in the ring buffer [s]; default 10[s]"
   },
   { "bufhwm",   "0.9",
     &reader_parameters.r_buf_hwm_fraction,
     PARAM_TYPE(double), PARAM_SRC_ENV|PARAM_SRC_ARG|PARAM_SRC_CMD,
-    "ring buffer high-water mark fraction"
+    "ring buffer high-water mark fraction; default 0.9"
   }, 
   { "rtprio",   NULL,
     &schedprio,
     PARAM_TYPE(int32),  PARAM_SRC_ENV|PARAM_SRC_ARG,
-    "priority of real-time threads [0-99]"
+    "priority of real-time threads [0-99]; default unset"
   },
   { "rdprio",   NULL,
     &reader_parameters.r_schedprio,
     PARAM_TYPE(int32),  PARAM_SRC_ENV|PARAM_SRC_ARG,
-    "priority of real-time reader thread [0-99]"
+    "priority of real-time reader thread [0-99]; default unset"
   },
   { "wrprio",   NULL,
     &writer_parameters.w_schedprio,
     PARAM_TYPE(int32),  PARAM_SRC_ENV|PARAM_SRC_ARG,
-    "priority of real-time writer thread [0-99]"
+    "priority of real-time writer thread [0-99]; default unset"
   },
   { "user",     NULL,
     &snapshot_user,
     PARAM_TYPE(string), PARAM_SRC_ENV|PARAM_SRC_ARG,
-    "user/UID for file system access and creation"
+    "user for file system access and creation; default unset"
   },
   { "group",    NULL,
     &snapshot_group,
     PARAM_TYPE(string), PARAM_SRC_ENV|PARAM_SRC_ARG,
-    "group/GID for file system access and creation"
+    "group for file system access and creation; default unset"
   },
   { "ram",      "64",
     &writer_parameters.w_lockedram,
     PARAM_TYPE(int32), PARAM_SRC_ENV|PARAM_SRC_ARG,
-    "amount of data RAM to lock [MiB]"
+    "amount of data RAM to lock [MiB]; default 64[MiB]"
   },
   { "wof",      "0.5",
     &writer_parameters.w_writeahead,
     PARAM_TYPE(double), PARAM_SRC_ENV|PARAM_SRC_ARG,
-    "write overbooking fraction"
+    "write overbooking fraction; default 0.5"
   },
   { "chunk",    "1024",
     &writer_parameters.w_chunksize,
     PARAM_TYPE(int32), PARAM_SRC_ENV|PARAM_SRC_ARG,
-    "size of a transfer chunk [kiB]"
+    "size of a transfer chunk [kiB]; default 1[MiB]"
   },
 };
 
@@ -193,23 +193,23 @@ private struct arg_end *e2;
 BEGIN_CMD_SYNTAX(main) {
   v2  = arg_litn("v",  "verbose", 0, 3,       "Increase verbosity"),
   q2  = arg_lit0("q",  "quiet",               "Decrease verbosity"),
-        arg_str0("s",  "snapshot", "<url>",   "URL of snapshotter command socket"),
-        arg_str0(NULL, "tmpdir", "<path>",    "Path to temporary directory"),
-        arg_str0("S",  "snapdir", "<path>",   "Path to samples directory"),
-        arg_dbl0("f",  "freq", "<real>",      "Per-channel sampling frequency [Hz]"),
-        arg_dbl0("w",  "window", "<real>",    "Min. capture window length [s]"),
-        arg_dbl0("B",  "bufhwm", "<real>",    "Ring buffer High-water mark fraction"),
-        arg_str0("d",  "dev", "<path>",       "Comedi device to use"),
-        arg_int0("P",  "rtprio", "<1-99>",    "Common thread RT priority"),
-        arg_int0("R",  "rdprio", "<1-99>",    "Reader thread RT priority"),
-        arg_int0("W",  "wrprio", "<1-99>",    "Writer thread RT priority"),
-        arg_str0("u",  "user", "<name>",      "User to run as"),
-  g2 =  arg_strn("g",  "group", "<name>", 0, MAX_GROUPS, "Group(s) to run as"),
-        arg_int0("b",  "bufsz", "<int>",      "Comedi ring buffer Size [MiB]"),
-        arg_int0("m",  "ram", "<int>",        "Data Transfer RAM size [MiB]"),
-        arg_int0("r",  "range", "<int>",      "ADC full-scale range [mV]"),
-        arg_int0("c",  "chunk", "<int>",      "File transfer chunk size [kiB]"),
-        arg_dbl0("o",  "wof", "<real>",       "Write Overbooking Fraction"),
+        arg_str0("s",  "snapshot", "<url>",   "URL of snapshotter command socket; default 'ipc://snapshot-CMD'"),
+        arg_str0(NULL, "tmpdir", "<path>",    "Path to temporary directory; default '/tmp'"),
+        arg_str0("S",  "snapdir", "<path>",   "Path to samples directory; default 'snap'"),
+        arg_dbl0("f",  "freq", "<real>",      "Per-channel sampling frequency [Hz]; default 312.5[kHz]"),
+        arg_dbl0("w",  "window", "<real>",    "Min. capture window length [s]; default 10[s]"),
+        arg_dbl0("B",  "bufhwm", "<real>",    "Ring buffer High-water mark fraction; default 0.9"),
+        arg_str0("d",  "dev", "<path>",       "Comedi device to use; default '/dev/comedi0'"),
+        arg_int0("P",  "rtprio", "<1-99>",    "Common thread RT priority; default unset"),
+        arg_int0("R",  "rdprio", "<1-99>",    "Reader thread RT priority; default unset"),
+        arg_int0("W",  "wrprio", "<1-99>",    "Writer thread RT priority; default unset"),
+        arg_str0("u",  "user", "<name>",      "User to run as; default unset"),
+  g2 =  arg_strn("g",  "group", "<name>", 0, MAX_GROUPS, "Group(s) to run as; default unset"),
+        arg_int0("b",  "bufsz", "<int>",      "Comedi ring buffer Size [MiB]; default 56[MiB]"),
+        arg_int0("m",  "ram", "<int>",        "Data Transfer RAM size [MiB]; default 64[MiB]"),
+        arg_int0("r",  "range", "<int>",      "ADC full-scale range [mV]; default 750[mV]"),
+        arg_int0("c",  "chunk", "<int>",      "File transfer chunk size [kiB]; default 1[MiB]"),
+        arg_dbl0("o",  "wof", "<real>",       "Write Overbooking Fraction; default 0.5"),
   e2  = arg_end(20)
 } APPLY_CMD_DEFAULTS(main) {
   INCLUDE_PARAM_DEFAULTS(globals, n_global_params);
