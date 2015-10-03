@@ -13,7 +13,8 @@
 
 struct _strbuf {
   queue   s_Q;				/* Queue header to avoid malloc() calls */
-  int	  s_used;			/* Pointer to next free space in buffer */
+  short	  s_used;			/* Pointer to next free space in buffer */
+  short   s_space;			/* Size of the string space in the strbuf */
   char    s_buffer[MAX_STRBUF_SIZE];	/* Buffer space when in use */
 };
 
@@ -22,7 +23,7 @@ struct _strbuf {
  */
 
 public int strbuf_space(strbuf s) {
-  return MAX_STRBUF_SIZE;
+  return s->s_space;
 }
 
 /*
@@ -56,18 +57,13 @@ public strbuf alloc_strbuf(int nr) {
     queue *p = de_queue(queue_next(&sbufQ));
 
     init_queue(p);
-    ((strbuf)p)->s_used = 0;
-    ((strbuf)p)->s_buffer[0] = '\0';
+    qp2strbuf(p)->s_used = 0;
+    qp2strbuf(p)->s_space = MAX_STRBUF_SIZE;
+    qp2strbuf(p)->s_buffer[0] = '\0';
     queue_ins_before(ret, p);
   }
   return (strbuf)ret;
 }
-
-/*
-private void free_strbuf(strbuf s) {
-  free( (void *)s );
-}
-*/
 
 public void release_strbuf(strbuf s) {
   queue *p;
@@ -79,6 +75,14 @@ public void release_strbuf(strbuf s) {
   }
   queue_ins_before(&sbufQ, &s->s_Q);
   N_in_Q++;
+}
+
+/* Create a big one:  it's up to user to keep track of these.  They should not be released. */
+public strbuf alloc_big_strbuf(int space) {
+  strbuf s = (strbuf)calloc(1, space);
+  if(s)
+    s->s_space = space+MAX_STRBUF_SIZE-sizeof(struct _strbuf);
+  return s;
 }
 
 /*
@@ -106,7 +110,7 @@ public int strbuf_setpos(strbuf s, int pos) {
     errno = EINVAL;
     return -1;
   }
-  if(pos < 0 || pos > MAX_STRBUF_SIZE) {
+  if(pos < 0 || pos > s->s_space) {
     errno = ERANGE;
     return -1;
   }
@@ -127,13 +131,13 @@ private int strbuf_vprintf(strbuf s, int pos, const char *fmt, va_list ap) {
   if(pos < 0)			/* Position one character back from end (i.e. skip NULL) or at start */
     pos = s->s_used ? s->s_used : 0;
   buf  = &s->s_buffer[pos];
-  rest = MAX_STRBUF_SIZE - pos;	/* There should be this much space remaining */
+  rest = s->s_space - pos;	/* There should be this much space remaining */
   if(rest < 0) {
     errno = EINVAL;
     return -1;
   }
   used = vsnprintf(buf, rest, fmt, ap);
-  s->s_used = used>=rest? MAX_STRBUF_SIZE : s->s_used + used;
+  s->s_used = used>=rest? s->s_space : s->s_used + used;
   return used;
 }
 
@@ -261,7 +265,7 @@ public void strbuf_revert(strbuf s) {
 
   for(n=0; n<s->s_used; n++,p++)
     if( !*p ) *p = ' ';
-  n = (n == MAX_STRBUF_SIZE)? n-1 : n;
+  n = (n == s->s_space)? n-1 : n;
   s->s_buffer[n] = '\0';
 }
 

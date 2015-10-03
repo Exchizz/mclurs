@@ -14,6 +14,13 @@ Known bugs, things to do:  random order.
    logging (via log socket) from debug functionality (to stderr
    directly).
 
+   [Added large strbufs for thread logging; added generic macros for
+    FATAL_ERROR, WARNING and LOG that work in the different threads.
+
+    Still need to make reporting levels consistent and fix some
+    debugging dumps.
+   ]
+
 4. Change READER numerical parameter bounds to #defines
 
    **DONE**

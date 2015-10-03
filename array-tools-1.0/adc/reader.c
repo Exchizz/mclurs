@@ -21,6 +21,7 @@
 #include <errno.h>
 #include <string.h>
 
+#include "error.h"
 #include "util.h"
 #include "param.h"
 #include "queue.h"
@@ -189,8 +190,7 @@ private void process_reader_command(void *s) {
   cmd_buf = strbuf_string(cmd);
   err = strbuf_next(cmd);
 
-  if(verbose > 1)
-    zh_put_multi(log, 3, "READER cmd: '", &cmd_buf[0], "'");
+  LOG(READER, 2, "command: '%s'", &cmd_buf[0]);
 
   ret = 0;
   switch(cmd_buf[0]) {
@@ -240,11 +240,8 @@ private void process_reader_command(void *s) {
       rp_state = READER_ERROR;
       break;
     }
-    if(verbose > 0) {		/* Borrow the err buffer */
-      strbuf_printf(err, "READER Init with dev %s, freq %g [Hz], isp %d [ns] and buf %d [MiB]",
+    LOG(READER, 1, "Init with dev %s, freq %g [Hz], isp %d [ns] and buf %d [MiB]",
 		    rp->r_device, rp->r_frequency, adc_ns_per_sample(reader_adc), rp->r_bufsz);
-      zh_put_multi(log, 1, strbuf_string(err)); 
-    }
     strbuf_printf(err, "OK Init -- nchan %d isp %d [ns]", NCHANNELS, adc_ns_per_sample(reader_adc));
     rp_state = READER_RESTING;
     break;
@@ -287,7 +284,7 @@ private void process_reader_command(void *s) {
   }
   if( ret < 0 ) {
     strbuf_revert(cmd);
-    zh_put_multi(log, 4, strbuf_string(err), "\n > '", &cmd_buf[0], "'"); /* Error occurred, log it */
+    WARNING(READER, "%s\n > '%s'\n", strbuf_string(err), &cmd_buf[0]); /* Error occurred, log it */
   }
   strbuf_clear(cmd);
   send_object_ptr(s, (void *)&err); /* return message */
@@ -380,7 +377,8 @@ private void process_queue_message(void *s) {
   assertv(is_chunk_status(c, SNAPSHOT_WAITING), "Received chunk c:%04hx has unexpected state %s\n", c->c_name, snapshot_status(c->c_status));
 
   c->c_convert = adc_convert_func(reader_adc);
-  fprintf(stderr, "Adding chunk %04hx, last %016llx to READER queue\n", c->c_name, c->c_last);
+
+  LOG(READER, 2, "Adding chunk %04hx, last %016llx to READER queue\n", c->c_name, c->c_last);
 
   /* Add the chunk to the READER chunk queue in order of increasing *last* sample */
   queue *pos = &ReaderChunkQ;
@@ -388,7 +386,7 @@ private void process_queue_message(void *s) {
     for_nxt_in_Q(queue *p, queue_next(&ReaderChunkQ), &ReaderChunkQ);
     chunk_t *h = rq2chunk(p);
 
-    fprintf(stderr, "Looking at chunk %04hx at %p, last %016llx\n", h->c_name, h, h->c_last);
+    LOG(READER, 3, "Looking at chunk %04hx at %p, last %016llx\n", h->c_name, h, h->c_last);
 
     if(h->c_last > c->c_last) {
       pos = p;
@@ -396,7 +394,8 @@ private void process_queue_message(void *s) {
     }
     end_for_nxt;
   }
-  fprintf(stderr, "Inserting %04hx before %p\n", c->c_name, pos);
+  
+  LOG(READER, 2, "Inserting %04hx before %p\n", c->c_name, pos);
   queue_ins_before(pos, chunk2rq(c));
   if(pos == &ReaderChunkQ) {
     rq_head = c;		/* Points to the chunk at the head of the READER queue, when not NULL */
@@ -425,11 +424,11 @@ private void complete_queue_head_chunk() {
   import int is_dead_snapfile(snapfile_t *);
   chunk_t *c = rq_head;
 
-  fprintf(stderr, "Calling complete on chunk %04hx\n", c->c_name);
+  LOG(READER, 2, "Calling complete on chunk %04hx\n", c->c_name);
 
   if(c->c_first < adc_ring_tail(reader_adc) || is_dead_snapfile(c->c_parent)) { /* Oops, we are too late */
-    fprintf(stderr, "Dead chunk: first %016llx tail %016llx dead? %d\n",
-	    c->c_first, adc_ring_tail(reader_adc), is_dead_snapfile(c->c_parent));
+    LOG(READER, 1, "Dead chunk: first %016llx tail %016llx dead? %d\n",
+	c->c_first, adc_ring_tail(reader_adc), is_dead_snapfile(c->c_parent));
     abort_queue_head_chunk();
     return;
   }
@@ -514,7 +513,7 @@ private void reader_thread_msg_loop() {    /* Read and process messages */
       process_reader_command,
     };
 
-  zh_put_multi(log, 1, "READER thread is initialised");
+  LOG(READER, 1, "READER thread is initialised");
   rp_state = READER_PARAM;
 
   high_water_mark = adc_ring_tail(reader_adc) + buf_hwm_samples;
@@ -531,7 +530,7 @@ private void reader_thread_msg_loop() {    /* Read and process messages */
       adc_dry_period--;
       nb = adc_data_collect(reader_adc);
       if( nb ) {			/* There was some new data, adc_ring_head has advanced */
-	//	fprintf(stderr, "Got %d samples\n", nb/2);
+
 	adc_dry_period = adc_dry_period_max;
 	rp_state = READER_RUN;
 	/* Once the ADC head pointer has advanced past the READER queue head's end, a chunk is ready */
@@ -545,8 +544,7 @@ private void reader_thread_msg_loop() {    /* Read and process messages */
 	  uint64_t lwm  = head - buf_window_samples;
 	  uint64_t tail = adc_ring_tail(reader_adc);
 
-	  if(verbose > 1)
-	    fprintf(stderr, "Head %lld HWM %lld LWM %lld Tail %lld\n", head, high_water_mark, lwm, tail);
+	  LOG(READER, 2, "Head %lld HWM %lld LWM %lld Tail %lld\n", head, high_water_mark, lwm, tail);
 
 	  if(lwm > tail) {
 	    ret = adc_data_purge(reader_adc, (int)(lwm-tail));
@@ -556,6 +554,7 @@ private void reader_thread_msg_loop() {    /* Read and process messages */
 	}
       }
       if(adc_dry_period <= 0) { /* Data capture interrupted or failed to start... */
+	WARNING(READER, "ADC data flow interruption at head %016llx\n", adc_ring_head(reader_adc));
 	rp_state = READER_ERROR;
 	adc_stop_data_transfer(reader_adc);
 	drain_reader_chunk_queue("READER ADC ran dry");
@@ -566,7 +565,7 @@ private void reader_thread_msg_loop() {    /* Read and process messages */
     
     ret = zmq_poll(&poll_list[0], N_POLL_ITEMS, reader_poll_delay);	/* Look for commands here */
     if( ret < 0 && errno == EINTR ) { /* Interrupted */
-      zh_put_multi(log, 1, "READER loop interrupted");
+      WARNING(READER, "READER loop interrupted");
       break;
     }
     if(ret < 0)
@@ -585,7 +584,6 @@ private void reader_thread_msg_loop() {    /* Read and process messages */
  */
 
 private void debug_reader_params() {
-  char buf[MSGBUFSIZE];
   rparams *rp = &reader_parameters;
 
   if(verbose<1)
@@ -594,9 +592,9 @@ private void debug_reader_params() {
   int bufsz_samples = rp->r_bufsz*1024*1024/sizeof(sampl_t);
   int headroom = 1e-6 * (bufsz_samples - buf_hwm_samples) * adc_ns_per_sample(reader_adc) + 0.5;
 
-  snprintf(buf, MSGBUFSIZE, "READER: High-water Mark %d [spl], Window %d [spl], Bufsz %d [spl], Poll Delay %d [ms], Headroom %d [ms]\n",
-	   buf_hwm_samples, buf_window_samples, bufsz_samples, reader_poll_delay, headroom);
-  zh_put_multi(log, 1, buf);
+  LOG(READER, 1, "High-water Mark %d [spl], Window %d [spl], Bufsz %d [spl],"
+      "Poll Delay %d [ms], Headroom %d [ms]\n",
+      buf_hwm_samples, buf_window_samples, bufsz_samples, reader_poll_delay, headroom);
 }
 
 /*
@@ -609,34 +607,29 @@ private void debug_reader_params() {
 
 public void *reader_main(void *arg) {
   int ret;
-  char *thread_msg = "normal exit";
 
   create_reader_comms();
   
   if( set_up_reader_capability() < 0 ) {
-    zh_put_multi(log, 1, "READER thread capabilities are deficient");
+    WARNING(READER, "thread capabilities are deficient");
   }
 
   if( check_effective_capabilities_ok() < 0 ) {
-    zh_put_multi(log, 1, "READER thread fails to set effective capabilities");
+    WARNING(READER, "thread fails to set effective capabilities");
   }
 
   ret = set_reader_rt_scheduling();
   switch(ret) {
   case 1:
-    zh_put_multi(log, 1, "READER RT scheduling succeeded");
+    LOG(READER, 1, "RT scheduling succeeded");
     break;
   case 0:
-    zh_put_multi(log, 1, "READER using normal scheduling: RTPRIO unset");
+    LOG(READER, 1, "using normal scheduling: RTPRIO unset");
     break;
   default:
-    zh_put_multi(log, 2, "READER RT scheduling setup failed: ", strerror(errno));
+    WARNING(READER, "RT scheduling setup failed: %s", strerror(errno));
     break;
   }
-
-  struct timespec test_stamp;
-  ret = clock_gettime(CLOCK_MONOTONIC, &test_stamp);
-  assertv(ret == 0, "Test failed to get monotonic clock time\n");  
 
   debug_reader_params();
   reader_thread_msg_loop();
@@ -647,12 +640,12 @@ public void *reader_main(void *arg) {
 
   send_object_ptr(tidy, NULL);	/* Tell TIDY thread to finish */
 
-  zh_put_multi(log, 1, "READER thread terminates by return");
+  LOG(READER, 1, "thread terminates by return");
 
   /* Clean up our ZeroMQ sockets */
   close_reader_comms();
   reader_parameters.r_running = false;
-  return (void *) thread_msg;
+  return (void *)NULL;
 }
 
 /*

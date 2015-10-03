@@ -25,6 +25,7 @@
 #include <errno.h>
 #include <string.h>
 
+#include "error.h"
 #include "util.h"
 #include "param.h"
 #include "queue.h"
@@ -230,16 +231,12 @@ private int set_writer_rt_scheduling() {
  */
 
 private void debug_writer_params() {
-  char buf[MSGBUFSIZE];
   wparams *wp = &writer_parameters;
 
-  if(verbose<1)
-    return;
-
-  snprintf(buf, MSGBUFSIZE, "WRITER: TMPDIR=%s, SNAPDIR=%s, RTprio=%d;  WOF=%g;  FrameRAM = %d[MiB], ChunkSize = %d[kiB], nFrames = %d, xfrSampleQ = %d[kiB]\n",
-	   tmpdir_path, wp->w_snapdir, wp->w_schedprio, wp->w_writeahead,
-	   wp->w_lockedram, wp->w_chunksize, wp_nframes, wp_totxfrsamples*sizeof(sampl_t)/1024);
-  zh_put_multi(log, 1, buf);
+  LOG(WRITER, 1, "TMPDIR=%s, SNAPDIR=%s, RTprio=%d;  WOF=%g;"
+      "FrameRAM = %d[MiB], ChunkSize = %d[kiB], nFrames = %d, xfrSampleQ = %d[kiB]\n",
+      tmpdir_path, wp->w_snapdir, wp->w_schedprio, wp->w_writeahead,
+      wp->w_lockedram, wp->w_chunksize, wp_nframes, wp_totxfrsamples*sizeof(sampl_t)/1024);
 }
 
 /*
@@ -780,20 +777,17 @@ private int snapshot_is_complete(snap_t *s) {
  */
 
 private void debug_snapshot_descriptor(snap_t *s) {
-  char buf[MSGBUFSIZE];
-
-  snprintf(buf, MSGBUFSIZE,
-	   "Snap %04hx at %p: path '%s' fd %d status %s "
-	   "sQ[s:%04hx,s:%04hx] "
-	   "fQ[f:%04hx,f:%04hx] "
-	   "files %d/%d/%d "
-	   "S:%08lx B:%08lx F:%016llx L:%016llx\n",
-	   s->s_name, s, s->s_path, s->s_dirfd, snapshot_status(s->s_status),
-	   qp2sname(queue_prev(&s->s_Q)), qp2sname(queue_next(&s->s_Q)),
-	   qp2fname(queue_prev(&s->s_fileQhdr)), qp2fname(queue_next(&s->s_fileQhdr)),
-	   s->s_done, s->s_pending, s->s_count, 
-	   s->s_samples, s->s_bytes, s->s_first, s->s_last);
-  zh_put_multi(log, 1, &buf[0]);
+  LOG(WRITER, 1,
+      "Snap %04hx at %p: path '%s' fd %d status %s "
+      "sQ[s:%04hx,s:%04hx] "
+      "fQ[f:%04hx,f:%04hx] "
+      "files %d/%d/%d "
+      "S:%08lx B:%08lx F:%016llx L:%016llx\n",
+      s->s_name, s, s->s_path, s->s_dirfd, snapshot_status(s->s_status),
+      qp2sname(queue_prev(&s->s_Q)), qp2sname(queue_next(&s->s_Q)),
+      qp2fname(queue_prev(&s->s_fileQhdr)), qp2fname(queue_next(&s->s_fileQhdr)),
+      s->s_done, s->s_pending, s->s_count, 
+      s->s_samples, s->s_bytes, s->s_first, s->s_last);
 }
 
 /* ================================ Handle a Z(Status) Command ================================ */
@@ -1131,7 +1125,6 @@ private void abort_snapfile(snapfile_t *f) {
   for_nxt_in_Q(queue *p, chunk2qp(f->f_chunkQ), chunk2qp(f->f_chunkQ))
     chunk_t *c = qp2chunk(p);
 
-    fprintf(stderr, "Aborting chunk %04hx\n", c->c_name);
     if( chunk_in_writer(c) ) {
       de_queue(chunk2rq(c));		    /* Remove from WRITER chunk queue */
       if( !is_chunk_status(c, SNAPSHOT_WRITTEN) ) {
@@ -1229,7 +1222,7 @@ private uint64_t writer_service_queue(uint64_t start) {
 	abort_snapfile(c->c_parent);
 	//	debug_snapfile(c->c_parent);
 	completed_snapfile(c->c_parent);
-	fprintf(stderr, "WRITER service queue aborts chunk %04hx: %s\n", c->c_name, strbuf_string(c->c_error));
+	WARNING(WRITER, "service queue aborts chunk %04hx: %s\n", c->c_name, strbuf_string(c->c_error));
       }
       max = 0;			/* Couldn't get a frame, so we are done */
     }
@@ -1239,7 +1232,7 @@ private uint64_t writer_service_queue(uint64_t start) {
       c->c_parent->f_pending++;
       set_chunk_owner(c, CHUNK_OWNER_READER);
       send_object_ptr(reader, (void *)&c);
-      fprintf(stderr, "WRITER service queue transfers chunk %04hx to READER\n", c->c_name);
+      LOG(WRITER, 2, "service queue transfers chunk %04hx to READER\n", c->c_name);
     }
     now = monotonic_ns_clock();
   }
@@ -1349,8 +1342,7 @@ private int process_writer_command(void *s) {
       strbuf_printf(err, "OK Snap %04hx ", s->s_name);
       s->s_error = (strbuf)de_queue((queue *)cmd);
       strbuf_clear(cmd);
-      if(verbose > 0)
-	debug_snapshot_descriptor(s);
+      debug_snapshot_descriptor(s);
       refresh_snapshot(s);
     }
     else {
@@ -1366,7 +1358,7 @@ private int process_writer_command(void *s) {
 
   if(ret < 0) {
     strbuf_revert(cmd);
-    zh_put_multi(log, 4, strbuf_string(err), "\n > '", &cmd_buf[0], "'"); /* Error occurred, log the problem */
+    LOG(WRITER, 1, "%s\n > '%s'\n", strbuf_string(err), &cmd_buf[0]); /* Error occurred, log the problem */
     strbuf_clear(cmd);
   }
   send_object_ptr(s, (void *)&err);
@@ -1394,7 +1386,7 @@ private void writer_thread_msg_loop() {    /* Read and process messages */
 
   /* WRITER initialisation is complete */
   writer_parameters.w_running = !die_die_die_now;
-  zh_put_multi(log, 1, "WRITER thread is initialised");
+  LOG(WRITER, 1, "thread is initialised");
 
   running = writer_parameters.w_running;
   borrowedtime = 0;		/* Keeps track of the number of [ms] we owe */
@@ -1405,7 +1397,7 @@ private void writer_thread_msg_loop() {    /* Read and process messages */
     int ret = zmq_poll(&poll_list[0], N_POLL_ITEMS, (delay<=0? 0 : delay));
 
     if( ret < 0 && errno == EINTR ) { /* Interrupted */
-      zh_put_multi(log, 1, "WRITER loop interrupted");
+      WARNING(WRITER, "thread message loop interrupted");
       break;
     }
     if(ret < 0)
@@ -1445,34 +1437,34 @@ public void *writer_main(void *arg) {
   create_writer_comms();
 
   if( set_up_writer_capability() < 0 ) {
-    zh_put_multi(log, 1, "WRITER thread capabilities are deficient");
+    WARNING(WRITER, "thread capabilities are deficient");
   }
 
   if( check_effective_capabilities_ok() < 0 ) {
-    zh_put_multi(log, 1, "WRITER thread fails to set effective capabilities");
+    WARNING(WRITER, "thread fails to set effective capabilities");
   }
 
   ret = set_writer_rt_scheduling();
   switch(ret) {
   case 1:
-    zh_put_multi(log, 1, "WRITER RT scheduling succeeded");
+    LOG(WRITER, 1, "RT scheduling succeeded");
     break;
   case 0:
-    zh_put_multi(log, 1, "WRITER using normal scheduling: RTPRIO unset");
+    LOG(WRITER, 1, "using normal scheduling: RTPRIO unset");
     break;
   default:
-    zh_put_multi(log, 2, "WRITER RT scheduling setup failed: ", strerror(errno));
+    WARNING(WRITER, "RT scheduling setup failed: %s", strerror(errno));
     break;
   }
 
   debug_writer_params();
   writer_thread_msg_loop();
-  zh_put_multi(log, 1, "WRITER thread terminates by return");
+  LOG(WRITER, 1, "thread terminates by return");
 
   /* Clean up our ZeroMQ sockets */
   close_writer_comms();
   writer_parameters.w_running = false;
-  return (void *)"normal exit";
+  return (void *)NULL;
 }
 
 /*

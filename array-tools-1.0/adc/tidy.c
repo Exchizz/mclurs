@@ -14,6 +14,7 @@
 #include <pthread.h>
 #include <zmq.h>
 
+#include "error.h"
 #include "util.h"
 #include "strbuf.h"
 #include "chunk.h"
@@ -84,16 +85,16 @@ public void *tidy_main(void *arg) {
     return (void *) err;
   }
 
-  zh_put_multi(log, 1, "TIDY   thread initialised");
+  LOG(TIDY, 1, "  thread initialised");
   
   while( (ret = recv_object_ptr(tidy, (void **)&f)) && !die_die_die_now ) {
     release_frame(f);
   }
 
-  zh_put_multi(log, 1, "TIDY   thread terminates by return");
+  LOG(TIDY, 1, "  thread terminates by return");
   
   /* Clean up our ZeroMQ sockets */
   close_tidy_comms();
-  return (void *) "normal exit";
+  return (void *) NULL;
 }
 

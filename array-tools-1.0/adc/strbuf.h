@@ -12,6 +12,7 @@
 typedef struct _strbuf *strbuf;	/* Opaque object */
 
 export strbuf alloc_strbuf();
+export strbuf alloc_big_strbuf(int);
 export void   release_strbuf(strbuf);
 export char  *strbuf_string(strbuf);
 export int    strbuf_space(strbuf);
