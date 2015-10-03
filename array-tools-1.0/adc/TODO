@@ -36,8 +36,7 @@ Known bugs, things to do:  random order.
    multiple --group arguments and take all listed groups when dropping
    privileges.
 
-   [use initgroups() when only a user is given -- **DONE**;
-    use setgroups() when a set of groups/GIDs are given instead]
+   ** DONE ** -- up to MAX_GROUPS allowed
 
 7. Add in energy computations into the READER thread data acquisition
    loop, so that average energy over the last interval is always
@@ -51,4 +50,14 @@ Known bugs, things to do:  random order.
 
 9. Update all the manual pages to reflect the final set of command
    lines and options for the four utilities.
+
+   snapshot -- **DONE**
+
+10. Remove requirement for the three capabilities in the situation
+    where the user limits are sufficiently relaxed to allow snapshot to
+    operate correctly without them.
+
+    CAP_SYS_ADMIN is not needed if the Comedi buffer limit is already sufficient.
+    CAP_IPC_LOCK  is not needed if the RLIMIT_MEMLOCK value is big enough.
+    CAP_SYS_NICE  is not required if the RLIMIT_RTPRIO value is sufficient.
 

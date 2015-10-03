@@ -56,6 +56,8 @@
  * Global parameters for the snapshot program
  */
 
+#define MAX_GROUPS	10
+
 public int die_die_die_now = 0;
 
 import  rparams     reader_parameters;
@@ -64,6 +66,7 @@ import  const char *tmpdir_path;
 private const char *snapshot_addr;
 private const char *snapshot_user;
 private const char *snapshot_group;
+private gid_t       snapshot_gid_list[MAX_GROUPS];
 private int	    schedprio;
 
 public param_t globals[] ={
@@ -184,6 +187,7 @@ BEGIN_CMD_SYNTAX(help) {
 } END_CMD_SYNTAX(help)
 
 private struct arg_lit *v2, *q2;
+private struct arg_str *g2;
 private struct arg_end *e2;
 
 BEGIN_CMD_SYNTAX(main) {
@@ -199,13 +203,13 @@ BEGIN_CMD_SYNTAX(main) {
         arg_int0("P",  "rtprio", "<1-99>",    "Common thread RT priority"),
         arg_int0("R",  "rdprio", "<1-99>",    "Reader thread RT priority"),
         arg_int0("W",  "wrprio", "<1-99>",    "Writer thread RT priority"),
-        arg_str0("u",  "user", "<uid/name>",  "User to run as"),
-        arg_str0("g",  "group", "<gid/name>", "Group to run as"),
+        arg_str0("u",  "user", "<name>",      "User to run as"),
+  g2 =  arg_strn("g",  "group", "<name>", 0, MAX_GROUPS, "Group(s) to run as"),
         arg_int0("b",  "bufsz", "<int>",      "Comedi ring buffer Size [MiB]"),
         arg_int0("m",  "ram", "<int>",        "Data Transfer RAM size [MiB]"),
         arg_int0("r",  "range", "<int>",      "ADC full-scale range [mV]"),
         arg_int0("c",  "chunk", "<int>",      "File transfer chunk size [kiB]"),
-        arg_dbl0("W",  "wof", "<real>",       "Write Overbooking Fraction"),
+        arg_dbl0("o",  "wof", "<real>",       "Write Overbooking Fraction"),
   e2  = arg_end(20)
 } APPLY_CMD_DEFAULTS(main) {
   INCLUDE_PARAM_DEFAULTS(globals, n_global_params);
@@ -241,7 +245,7 @@ private void print_usage(FILE *fp, void **argtable, int verbosity, char *program
 
 private const char *snapshot_addr = NULL;  /* The address of the main command socket */
 private const char *snapshot_user = NULL;  /* The user we should run as, after startup */
-private const char *snapshot_group = NULL; /* The group to run as, after startup */
+private const char *snapshot_group = NULL; /* The group(s) to run as, after startup */
 private int	    schedprio;		   /* Real-time priority for reader and writer */
 
 /*
@@ -377,7 +381,7 @@ private int snap_adjust_capabilities() {
  * Drop privileges and capabilities when appropriate.
  */
 
-private int main_adjust_capabilities(uid_t uid, gid_t gid) {
+private int main_drop_privileges(uid_t uid, gid_t gid, int ngroups, const gid_t groups[]) {
   cap_t c = cap_get_proc();
   const cap_value_t vs[] = { CAP_SETUID, CAP_SETGID, };
   
@@ -402,7 +406,7 @@ private int main_adjust_capabilities(uid_t uid, gid_t gid) {
   }
 
   /* Retrieve and initialise the subsidiary group memberships for the given user */
-  if( initgroups(snapshot_user, gid) < 0 ) {
+  if( ngroups && setgroups(ngroups, &groups[0]) < 0 ) {
     FATAL_ERROR("MAIN thread unable to set subsidiary groups for uid %d: %s\n", uid, strerror(errno));
     return -1;
   }
@@ -741,14 +745,23 @@ public int main(int argc, char *argv[], char *envp[]) {
    */
 
   gid_t gid = -1;
+  int   ngroups = 0;
   if(snapshot_group) {
-    struct group *grp = getgrnam(snapshot_group);
-
-    if(grp == NULL) {		/* The group name was invalid  */
-      FATAL_ERROR("given group %s is not recognised\n", snapshot_group);
+    int i, err = 0;
+    for(i=0; i<g2->count; i++) {
+      struct group *grp = getgrnam(g2->sval[i]);
+      if(grp == NULL) {
+	FATAL_ERROR("given group %s is not recognised\n", g2->sval[i]);
+	err++;
+	continue;
+      }
+      snapshot_gid_list[i] =  grp->gr_gid;
+    }
+    if( err ) {
       exit(2);
     }
-    gid = grp->gr_gid;
+    ngroups = g2->count;
+    gid = snapshot_gid_list[0];
   }
 
   uid_t uid = -1;
@@ -761,16 +774,25 @@ public int main(int argc, char *argv[], char *envp[]) {
     }
 
     uid = pwd->pw_uid;	/* Use this user's UID */
-    if(gid == -1)
+    if(gid == -1) {
       gid = pwd->pw_gid;	/* Use this user's principal GID */
+      ngroups = MAX_GROUPS;
+      if( getgrouplist(snapshot_user, gid, &snapshot_gid_list[0], &ngroups) < 0 ) {
+	FATAL_ERROR("too many supplementary groups for user %s", snapshot_user);
+	exit(2);
+      }
+    }
   }
   else {
-    private char user[64];
     uid = getuid();		/* Use the real UID of this thread */
-    gid = getgid();		/* Use the real GID of this thread */
-    struct passwd *pwd = getpwuid(uid);
-    strncpy(&user[0], pwd->pw_name, 64);
-    snapshot_user = &user[0];	/* Establish the user's name, for loading groups */
+    if( gid == -1 ) {		/* Use the real GID of this thread */
+      gid = getgid();
+      ngroups = getgroups(MAX_GROUPS, &snapshot_gid_list[0]);
+      if( ngroups < 0 ) {
+	FATAL_ERROR("too many supplementary groups for uid %d", uid);
+	exit(2);
+      }
+    }
   }
 
   /* 5b. Check capabilities and drop privileges */
@@ -783,7 +805,7 @@ public int main(int argc, char *argv[], char *envp[]) {
   if( snap_adjust_capabilities() < 0 ) {
     exit(2);
   }
-  if( main_adjust_capabilities(uid, gid) < 0 ) {
+  if( main_drop_privileges(uid, gid, ngroups, &snapshot_gid_list[0]) < 0 ) {
     exit(2);
   }
 
@@ -831,10 +853,15 @@ public int main(int argc, char *argv[], char *envp[]) {
   }
 
   /* Wait here for log_socket */
-  while( !die_die_die_now && !log_socket ) {
+  int timeout;
+  for(timeout=250; timeout>0 && !die_die_die_now && !log_socket; timeout-- ) {
     usleep(10000);
   }
-
+  if( !log_socket ) {
+    FATAL_ERROR("TIDY   thread failed to produce the master logging socket\n");
+    exit(4);
+  }
+  
   if( !die_die_die_now ) {
     pthread_attr_init(&reader_thread_attr);    /* Create the READER thread */
     if( pthread_create(&reader_thread, &reader_thread_attr, reader_main, NULL) < 0 ) {
@@ -850,7 +877,6 @@ public int main(int argc, char *argv[], char *envp[]) {
   }
 
   /* Wait for the threads to establish comms etc. Don't wait too long. */
-  int timeout;
   for(timeout=250; timeout>0 && !die_die_die_now; timeout-- ) {
     usleep(10000);		/* Wait for 10ms */
     if(reader_parameters.r_running && writer_parameters.w_running)
