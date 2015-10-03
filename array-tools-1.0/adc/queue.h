@@ -73,7 +73,7 @@ do { queue *__s = (start), *__e = (end);                \
 #define for_nxt_in_strict_Q(var,start,end)              \
 do { queue *__s = (start), *__e = (end);                \
      if(__s == __e) break;                              \
-     queue *__p = __s;					\
+     queue *__p = __s;                                  \
      int    __done = 0;                                 \
      while(!__done) { queue *__n = queue_next(__p);     \
        __done = (__n == __s || __n == __e);             \
