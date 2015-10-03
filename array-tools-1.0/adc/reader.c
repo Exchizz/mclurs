@@ -516,7 +516,7 @@ private void reader_thread_msg_loop() {    /* Read and process messages */
       process_reader_command,
     };
 
-  LOG(READER, 1, "READER thread is initialised");
+  LOG(READER, 1, "thread is initialised");
   rp_state = READER_PARAM;
 
   high_water_mark = adc_ring_tail(reader_adc) + buf_hwm_samples;

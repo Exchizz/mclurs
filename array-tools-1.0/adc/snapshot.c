@@ -56,7 +56,7 @@
  * Global parameters for the snapshot program
  */
 
-#define MAX_GROUPS	10
+#define MAX_GROUPS	32
 
 public int die_die_die_now = 0;
 
@@ -628,7 +628,7 @@ private void main_thread_msg_loop() {    /* Read and process messages */
       process_reply,
     };
 
-  LOG(MAIN, 1, "starting MAIN thread polling loop with %d items\n", (int)N_POLL_ITEMS);
+  LOG(MAIN, 1, "  starting MAIN thread polling loop with %d items\n", (int)N_POLL_ITEMS);
   running = true;
   poll_delay = MAIN_LOOP_POLL_INTERVAL;
   while(running) {
@@ -809,6 +809,12 @@ public int main(int argc, char *argv[], char *envp[]) {
     exit(2);
   }
 
+  /* Create the thread log buffers -- needed before frame system init in WRITER verify */
+  if( create_thread_log_buffers() < 0 ) {
+    FATAL_ERROR("could not create log buffers for the threads\n");
+    exit(2);
+  }
+  
   /* Check the supplied parameters;  WRITER must come first as READER needs chunk size */
   strbuf e = alloc_strbuf(1);	/* Catch parameter error diagnostics */
 
@@ -839,12 +845,6 @@ public int main(int argc, char *argv[], char *envp[]) {
     exit(3);
   }
 
-  /* Create the thread log buffers */
-  if( create_thread_log_buffers() < 0 ) {
-    FATAL_ERROR("could not create log buffers for the threads\n");
-    exit(4);
-  }
-  
   /* Create the TIDY thread */
   pthread_attr_init(&tidy_thread_attr);
   if( pthread_create(&tidy_thread, &tidy_thread_attr, tidy_main, &log_socket) < 0 ) {

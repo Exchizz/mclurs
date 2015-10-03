@@ -9,12 +9,12 @@
 #include "queue.h"
 
 #define N_STRBUF_ALLOC	8			/* Allocate this many buffers at one go */
-#define MAX_STRBUF_SIZE (512-sizeof(queue))	/* Strbuf will hold 496 characters maximum */
+#define MAX_STRBUF_SIZE (512-sizeof(queue)-2*sizeof(int))	/* Strbuf will hold 496 characters maximum */
 
 struct _strbuf {
   queue   s_Q;				/* Queue header to avoid malloc() calls */
-  short	  s_used;			/* Pointer to next free space in buffer */
-  short   s_space;			/* Size of the string space in the strbuf */
+  int	  s_used;			/* Pointer to next free space in buffer */
+  int     s_space;			/* Size of the string space in the strbuf */
   char    s_buffer[MAX_STRBUF_SIZE];	/* Buffer space when in use */
 };
 
@@ -49,6 +49,7 @@ public strbuf alloc_strbuf(int nr) {
       }
       init_queue(q);
       queue_ins_after(&sbufQ, q);
+      qp2strbuf(q)->s_space = MAX_STRBUF_SIZE;
       N_in_Q++;
     }
   }
@@ -280,8 +281,8 @@ public void debug_strbuf(FILE *fp, strbuf s) {
   int   used;
   int   n;
 
-  used = snprintf(&buf[0], 64, "s=%p, n=%p, q=%p: data[0..%d]='",
-		  s, s->s_Q.q_next, s->s_Q.q_prev, s->s_used);
+  used = snprintf(&buf[0], 64, "s=%p, nxt=%p, prv=%p spc=%d: data[0..%d]='",
+		  s, s->s_Q.q_next, s->s_Q.q_prev, s->s_space, s->s_used);
   b = &buf[used];
   n = MAX_STRBUF_SIZE+64-used-1;
   if( n > s->s_used )

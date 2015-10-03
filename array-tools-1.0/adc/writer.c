@@ -1521,7 +1521,7 @@ public int verify_writer_params(wparams *wp, strbuf e) {
   }
   wp_nframes = nfr;
   wp_chunksamples = wp->w_chunksize * 1024 / sizeof(sampl_t);
-  
+
   /*
    * Check the writeahead fraction -- this is the proportion by which
    * the locked transfer RAM may be "overbooked".  Should be positive
