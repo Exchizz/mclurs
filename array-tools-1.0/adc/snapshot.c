@@ -460,15 +460,12 @@ private int set_intr_sig_handler() {
  */
 
 #define LOGBUF_SIZE	MSGBUFSIZE
-private char pfx[] = "Log: ";
 
 private int process_log_message(void *s) {
   char log_buffer[MSGBUFSIZE];
   int used;
   
-  memcpy(&log_buffer[0], &pfx[0], sizeof(pfx));
-  used = sizeof(pfx)-1;
-  used += zh_collect_multi(s, &log_buffer[used], LOGBUF_SIZE-1, "");
+  used = zh_collect_multi(s, &log_buffer[0], LOGBUF_SIZE-1, "");
   if( log_buffer[used-1] != '\n') {
     log_buffer[used] = '\n';
     fwrite(log_buffer, used+1, 1, stderr);

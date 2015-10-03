@@ -25,7 +25,7 @@
 import void *snapshot_zmq_ctx;
 
 private void *tidy;
-private void *log;
+public  void *logskt_TIDY;
 
 /*
  * Establish tidy comms:  this routine gets called first of all threads, so it
@@ -33,6 +33,8 @@ private void *log;
  */
 
 private char *create_tidy_comms(void **s) {
+  void *log;
+  
   if( !snapshot_zmq_ctx )
     snapshot_zmq_ctx = zmq_ctx_new();
   if( !snapshot_zmq_ctx ) {
@@ -57,6 +59,7 @@ private char *create_tidy_comms(void **s) {
   if(log == NULL)
     return "unable to create TIDY thread log socket";
 
+  logskt_TIDY = log;
   return NULL;
 }
 
@@ -64,7 +67,7 @@ private char *create_tidy_comms(void **s) {
 
 private void close_tidy_comms() {
   zmq_close(tidy);
-  zmq_close(log);
+  zmq_close(logskt_TIDY);
 }
 
 /*

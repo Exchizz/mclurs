@@ -7,7 +7,9 @@
 #include <errno.h>
 #include <comedilib.h>
 
+#include "error.h"
 #include "assert.h"
+#include "util.h"
 #include "queue.h"
 #include "mman.h"
 #include "strbuf.h"
@@ -30,7 +32,7 @@ private QUEUE_HEADER(frameQ);
 
 public int init_frame_system(strbuf e, int nfr, int ram, int chunk) {
 
-  fprintf(stderr, "Init %d frames of size %d [kiB] in ram %d [MiB]\n", nfr, chunk, ram);
+  LOG(WRITER, 1, "Init %d frames of size %d [kiB] in ram %d [MiB]\n", nfr, chunk, ram);
 
   framelist = (frame *)calloc(nfr, sizeof(frame));
   if( framelist ) {
@@ -213,8 +215,8 @@ public int map_chunk_to_frame(chunk_t *c) {
   /* Would really like to do WRONLY here, but I *think* that will break */
   map = mmap_and_lock(c->c_fd, c->c_offset, fp->f_map.b_bytes, PROT_RDWR|PREFAULT_RDWR|MAL_LOCKED);
 
-  // fprintf(stderr, "Map chunk %04hx in frame %d from fd %d offs %d with addr %p and size %d gives res %p\n",
-  //	  c->c_name, frame_nr(fp), c->c_fd, c->c_offset, fp->f_map.b_data, fp->f_map.b_bytes, map);
+  LOG(WRITER, 2, "Map chunk %04hx in frame %d from fd %d offs %d with addr %p and size %d gives res %p\n",
+      c->c_name, frame_nr(fp), c->c_fd, c->c_offset, fp->f_map.b_data, fp->f_map.b_bytes, map);
 
   fp->f_map.b_data = map;
   if(map == NULL) {
@@ -229,14 +231,14 @@ public int map_chunk_to_frame(chunk_t *c) {
 
 /*
  * Copy the data for a chunk from the ring buffer into the frame.
- * Apply the appropriate ADC conversion.
+ * Apply the appropriate ADC conversion.  Used by the READER thread.
  */
 
 public void copy_chunk_data(chunk_t *c) {
   convertfn fn = c->c_convert;
 
-  //  fprintf(stderr, "Copy chunk %04hx using fn %p from %p to %p size %d spl\n", 
-  //	  c->c_name, fn, c->c_ring, c->c_frame->f_map.b_data, c->c_samples);
+   LOG(READER, 2, "Copy chunk %04hx using fn %p from %p to %p size %d spl\n", 
+      c->c_name, fn, c->c_ring, c->c_frame->f_map.b_data, c->c_samples);
 
   (*fn)((sampl_t *)c->c_frame->f_map.b_data, (sampl_t *)c->c_ring, c->c_samples);
   set_chunk_status(c, SNAPSHOT_WRITTEN);

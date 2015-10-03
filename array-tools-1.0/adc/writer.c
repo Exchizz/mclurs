@@ -161,12 +161,14 @@ public int writer_chunksize_samples() {
  * Called after the process-wide ZMQ context is created (elsewhere).
  */
 
-private void *log;
 private void *reader;
 private void *command;
 
+public void  *logskt_WRITER;	/* Used by WARNING and LOG macros */
+
 private void create_writer_comms() {
   import void *snapshot_zmq_ctx;
+  void *log;
   /* Create necessary sockets */
   command  = zh_bind_new_socket(snapshot_zmq_ctx, ZMQ_REP, WRITER_CMD_ADDR);	/* Receive commands */
   assertv(command != NULL, "Failed to instantiate reader command socket\n");
@@ -174,12 +176,13 @@ private void create_writer_comms() {
   assertv(log != NULL,     "Failed to instantiate reader log socket\n");
   reader   = zh_connect_new_socket(snapshot_zmq_ctx, ZMQ_PAIR, READER_QUEUE_ADDR);
   assertv(reader != NULL,  "Failed to instantiate reader queue socket\n");
+  logskt_WRITER = log;
 }
 
 /* CLose everything created above */
 
 private void close_writer_comms() {
-  zmq_close(log);
+  zmq_close(logskt_WRITER);
   zmq_close(reader);
   zmq_close(command);
 }
@@ -1178,7 +1181,7 @@ private void debug_snapfile(snapfile_t *f) {
     used += u;
     left -= u;
   end_for_nxt;
-  zh_put_multi(log, 1, &buf[0]);
+  zh_put_multi(logskt_WRITER, 1, &buf[0]);
 }
 
 /*

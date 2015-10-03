@@ -118,11 +118,13 @@ private void drain_reader_chunk_queue();
 
 private void *writer;
 private void *tidy;
-private void *log;
 private void *command;
+
+public void *logskt_READER;	/* Used by the WARNING() and LOG() macros */
 
 private void create_reader_comms() {
   import void *snapshot_zmq_ctx;
+  void *log;
   /* Create necessary sockets */
   command  = zh_bind_new_socket(snapshot_zmq_ctx, ZMQ_REP, READER_CMD_ADDR);	/* Receive commands */
   assertv(command != NULL, "Failed to instantiate reader command socket\n");
@@ -132,13 +134,14 @@ private void create_reader_comms() {
   assertv(writer != NULL, "Failed to instantiate reader queue socket\n");
   tidy     = zh_connect_new_socket(snapshot_zmq_ctx, ZMQ_PAIR, TIDY_SOCKET);  /* Socket to TIDY thread */
   assertv(tidy != NULL, "Failed to instantiate reader->tidy socket\n");
+  logskt_READER = log;
 }
 
 /* Close everything created above. */
 
 private void close_reader_comms() {
   zmq_close(command);
-  zmq_close(log);
+  zmq_close(logskt_READER);
   zmq_close(writer);
   zmq_close(tidy);
 }
