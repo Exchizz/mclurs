@@ -75,7 +75,7 @@ typedef struct {                /* Private snapshot descriptor structure used by
 
 /* Forward declarations of snapshot descriptor routines */
 
-private uint16_t snapshot_name(snap_t *);
+private const char*snapshot_name(snap_t *);
 
 #define qp2snap(qp)  ((snap_t *)&(qp)[0])
 #define snap2qp(s)   (&((s)->s_xQ[0]))
@@ -110,7 +110,7 @@ private int  setup_snapfile(snapfile_t *, snap_t *);
 private void completed_snapfile(snapfile_t *);
 private void abort_snapfile(snapfile_t *);
 private void debug_snapfile(snapfile_t *);
-import  uint16_t snapfile_name(snapfile_t *);
+import  const char *snapfile_name(snapfile_t *);
 
 #define qp2file(p)      ((snapfile_t *)(p))
 #define file2qp(f)      (&(f)->f_Q)
@@ -120,7 +120,9 @@ import  uint16_t snapfile_name(snapfile_t *);
 /* Local queue headers etc. used by the WRITER thread */
 
 private QUEUE_HEADER(snapQ);            /* The list of active snapshots */
+public queue *ssQp = &snapQ;		/* For debugging */
 private QUEUE_HEADER(WriterChunkQ);     /* The list of chunks awaiting mapping, in order of first sample */
+public queue *wcQp = &WriterChunkQ;	/* For debugging */
 
 /*
  * --------------------------------------------------------------------------------
@@ -458,8 +460,17 @@ private void free_snapshot(snap_t *s) {
 }
 
 /* Debugging routine to return unique name */
-uint16_t snapshot_name(snap_t *s) {
-  return s->s_name;
+public const char *snapshot_name(snap_t *s) {
+  import  queue *ssQp;
+  private int ix = -1;
+  private char store[16][8];
+
+  if(snap2qp(s) == ssQp)
+    return "SQhead";
+  
+  ix = (ix+1)&0xf;
+  snprintf(&store[ix][0], 8, "s:%04hx", s->s_name);
+  return &store[ix][0];
 }
 
 /*
@@ -706,6 +717,7 @@ private snap_t *build_snapshot_descriptor(strbuf c) {
   for(i=0; i<nps; i++) reset_param(&ps[i]);
   
   /* All done, no errors */
+  LOG(WRITER, 1, "New snapshot %s prepared\n", snapshot_name(ret));
   ret->s_status = SNAPSHOT_PREPARE; /* Structure complete but no files/chunks yet... */
   return ret;
 
@@ -742,6 +754,7 @@ private void setup_snapshot(snap_t *s) {
 
 private void refresh_snapshot(snap_t *s) {
 
+  LOG(WRITER, 2, "Refresh of snapshot %s with status %s\n", snapshot_name(s), snapshot_status(s->s_status));
   if(s->s_status == SNAPSHOT_ERROR) {   /* Tidy up after an error */
     while(s->s_pending) {                       /* There are files that have not got the message */
       assertv(!queue_singleton(snap2fq(s)),
@@ -754,7 +767,7 @@ private void refresh_snapshot(snap_t *s) {
   }
   else if(s->s_done == s->s_count) {    /* No files left to request */
     s->s_status = SNAPSHOT_COMPLETE;
-    strbuf_printf(s->s_error, "OK Snap %04hx: %s %d/%d files", snapshot_name(s), snapshot_status(s->s_status), s->s_done, s->s_count);
+    strbuf_printf(s->s_error, "OK Snap %s: %s %d/%d files", snapshot_name(s), snapshot_status(s->s_status), s->s_done, s->s_count);
     return;
   }
   else if(s->s_done + s->s_pending == s->s_count) {  /* All required files are in progress */
@@ -780,10 +793,10 @@ private int snapshot_is_complete(snap_t *s) {
  */
 
 private void debug_snapshot_descriptor(snap_t *s) {
-  LOG(WRITER, 1,
+  LOG(WRITER, 2,
       "Snap s:%04hx at %p: path '%s' fd %d status %s "
-      "sQ[s:%04hx,s:%04hx] "
-      "fQ[f:%04hx,f:%04hx] "
+      "sQ[%s,%s] "
+      "fQ[%s,%s] "
       "files %d/%d/%d "
       "S:%08lx B:%08lx F:%016llx L:%016llx\n",
       s->s_name, s, s->s_path, s->s_dirfd, snapshot_status(s->s_status),
@@ -946,8 +959,13 @@ private void free_snapfile(snapfile_t *f) {
 }
 
 /* Debugging routine to return unique name */
-public uint16_t snapfile_name(snapfile_t *f) {
-  return f->f_name;
+public const char *snapfile_name(snapfile_t *f) {
+  private int ix = -1;
+  private char store[16][8];
+
+  ix = (ix+1)&0xf;
+  snprintf(&store[ix][0], 8, "f:%04hx", f->f_name);
+  return &store[ix][0];
 }
 
 /*
@@ -1063,6 +1081,7 @@ private int setup_snapfile(snapfile_t *f, snap_t *s) {
   f->f_status = SNAPSHOT_READY;
   s->s_pending++;
   wp_nfiles++;             /* One more file in progress */
+  LOG(WRITER, 2, "New file %s set up for snamshot %s\n", snapfile_name(f), snapshot_name(s));
   return 0;
 }
 
@@ -1125,7 +1144,7 @@ private void abort_snapfile(snapfile_t *f) {
 
   f->f_status = SNAPSHOT_ERROR;
 
-  assertv(f->f_chunkQ != NULL, "Aborted file f:%04hx at %p has an empty chunk queue\n", snapfile_name(f), f);
+  assertv(f->f_chunkQ != NULL, "Aborted file %s at %p has an empty chunk queue\n", snapfile_name(f), f);
 
   for_nxt_in_Q(queue *p, chunk2qp(f->f_chunkQ), chunk2qp(f->f_chunkQ))
     chunk_t *c = qp2chunk(p);
@@ -1227,7 +1246,7 @@ private uint64_t writer_service_queue(uint64_t start) {
         abort_snapfile(c->c_parent);
         //      debug_snapfile(c->c_parent);
         completed_snapfile(c->c_parent);
-        WARNING(WRITER, "service queue aborts chunk c:%04hx: %s\n", c->c_name, strbuf_string(c->c_error));
+        WARNING(WRITER, "service queue aborts chunk %s: %s\n", c_nstr(c), strbuf_string(c->c_error));
       }
       max = 0;                  /* Couldn't get a frame, so we are done */
     }
@@ -1237,7 +1256,7 @@ private uint64_t writer_service_queue(uint64_t start) {
       c->c_parent->f_pending++;
       set_chunk_owner(c, CHUNK_OWNER_READER);
       send_object_ptr(reader, (void *)&c);
-      LOG(WRITER, 2, "service queue transfers chunk c:%04hx to READER\n", c->c_name);
+      LOG(WRITER, 2, "service queue transfers chunk %s to READER\n", c_nstr(c));
     }
     now = monotonic_ns_clock();
   }
@@ -1297,7 +1316,7 @@ private int process_reader_message(void *s) {
     return true;
   }
   
-  assertv(false, "Chunk c:%04hx received in unexpected state %s\n", c->c_name, snapshot_status(c->c_status));
+  assertv(false, "Chunk %s received in unexpected state %s\n", c_nstr(c), snapshot_status(c->c_status));
 }
 
 /* ================================ Process Command Messages ================================ */

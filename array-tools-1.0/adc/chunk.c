@@ -215,12 +215,12 @@ public int map_chunk_to_frame(chunk_t *c) {
   /* Would really like to do WRONLY here, but I *think* that will break */
   map = mmap_and_lock(c->c_fd, c->c_offset, fp->f_map.b_bytes, PROT_RDWR|PREFAULT_RDWR|MAL_LOCKED);
 
-  LOG(WRITER, 3, "Map chunk %04hx in frame %d from fd %d offs %d with addr %p and size %d[B] gives res %p\n",
-      c->c_name, frame_nr(fp), c->c_fd, c->c_offset, fp->f_map.b_data, fp->f_map.b_bytes, map);
+  LOG(WRITER, 3, "Map chunk %s in frame %d from fd %d offs %d with addr %p and size %d[B] gives res %p\n",
+      c_nstr(c), frame_nr(fp), c->c_fd, c->c_offset, fp->f_map.b_data, fp->f_map.b_bytes, map);
 
   fp->f_map.b_data = map;
   if(map == NULL) {
-    strbuf_appendf(c->c_error, "Unable to map chunk c:%04hx to frame %d: %m", c->c_name, frame_nr(fp));
+    strbuf_appendf(c->c_error, "Unable to map chunk %s to frame %d: %m", c_nstr(c), frame_nr(fp));
     set_chunk_status(c, SNAPSHOT_ERROR);
     fp->f_map.b_bytes = 0;      /* Mark frame as free */
     return -1;
@@ -237,8 +237,8 @@ public int map_chunk_to_frame(chunk_t *c) {
 public void copy_chunk_data(chunk_t *c) {
   convertfn fn = c->c_convert;
 
-   LOG(READER, 3, "Copy chunk c:%04hx using fn %p from %p to %p size %d[spl]\n", 
-      c->c_name, fn, c->c_ring, c->c_frame->f_map.b_data, c->c_samples);
+   LOG(READER, 3, "Copy chunk %s using fn %p from %p to %p size %d[spl]\n", 
+       c_nstr(c), fn, c->c_ring, c->c_frame->f_map.b_data, c->c_samples);
 
   (*fn)((sampl_t *)c->c_frame->f_map.b_data, (sampl_t *)c->c_ring, c->c_samples);
   set_chunk_status(c, SNAPSHOT_WRITTEN);
@@ -249,21 +249,30 @@ public void copy_chunk_data(chunk_t *c) {
  * Return the actual size, no greater than the space available.
  */
 
-#define qp2cname(p)     (qp2chunk(p)->c_name)
-#define rq2cname(p)     (rq2chunk(p)->c_name)
+#define qp2cname(p)     (c_nstr(qp2chunk(p)))
+
+public const char *rq2cname(queue *p) {
+  import queue *rcQp, *wcQp;
+
+  if(p == rcQp)
+    return "RQhead";
+  if(p == wcQp)
+    return "WQhead";
+  return c_nstr(rq2chunk(p));
+}
 
 public int debug_chunk(char buf[], int space, chunk_t *c) {
   import const char *snapshot_status(int);
-  import uint16_t    snapfile_name(snapfile_t *);
+  import const char *snapfile_name(snapfile_t *);
   int used;
 
   used = snprintf(buf, space,
-                  "chunk c:%04hx at %p"
-                  "wQ[c:%04hx,c:%04hx] "
-                  "rQ[c:%04hx,c:%04hx] "
-                  "RG %p FR %p PF f:%04hx status %s "
+                  "chunk %s at %p"
+                  "wQ[%s,%s] "
+                  "rQ[%s,%s] "
+                  "RG %p FR %p PF %s status %s "
                   "S:%08lx F:%016llx L:%016llx\n",
-                  c->c_name, c,
+                  c_nstr(c), c,
                   qp2cname(queue_prev(&c->c_wQ)), qp2cname(queue_next(&c->c_wQ)),
                   rq2cname(queue_prev(&c->c_rQ)), rq2cname(queue_next(&c->c_rQ)),
                   c->c_ring, c->c_frame, snapfile_name(c->c_parent), snapshot_status(c->c_status),
@@ -293,3 +302,16 @@ public const char *snapshot_status(int st) {
   return "???";
 }
 
+/*
+ * Make string version of chunk name.
+ * Allow up to 16 simultaneous calls with distinct answers.
+ */
+
+public const char *c_nstr(chunk_t *c) {
+  private int ix = -1;
+  private char store[16][8];
+
+  ix = (ix+1)&0xf;
+  snprintf(&store[ix][0], 8, "c:%04hx", c->c_name);
+  return &store[ix][0];
+}

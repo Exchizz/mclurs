@@ -320,6 +320,7 @@ public int set_reader_rt_scheduling() {
  */
 
 private QUEUE_HEADER(ReaderChunkQ);
+public queue *rcQp = &ReaderChunkQ; /* For debugging */
 private chunk_t *rq_head = NULL;
 
 private void abort_reader_chunk(chunk_t *ac) {
@@ -377,11 +378,11 @@ private void process_queue_message(void *s) {
     return;
   }
 
-  assertv(is_chunk_status(c, SNAPSHOT_WAITING), "Received chunk c:%04hx has unexpected state %s\n", c->c_name, snapshot_status(c->c_status));
+  assertv(is_chunk_status(c, SNAPSHOT_WAITING), "Received chunk %s has unexpected state %s\n", c_nstr(c), snapshot_status(c->c_status));
 
   c->c_convert = adc_convert_func(reader_adc);
 
-  LOG(READER, 2, "Adding chunk c:%04hx with last %016llx to READER queue\n", c->c_name, c->c_last);
+  LOG(READER, 2, "Adding chunk %s with last %016llx to READER queue\n", c_nstr(c), c->c_last);
 
   /* Add the chunk to the READER chunk queue in order of increasing *last* sample */
   queue *pos = &ReaderChunkQ;
@@ -389,7 +390,7 @@ private void process_queue_message(void *s) {
     for_nxt_in_strict_Q(queue *p, queue_next(&ReaderChunkQ), &ReaderChunkQ);
     chunk_t *h = rq2chunk(p);
 
-    LOG(READER, 3, "Looking at chunk c:%04hx with last %016llx\n", h->c_name, h, h->c_last);
+    LOG(READER, 3, "Looking at chunk %s with last %016llx\n", c_nstr(h), h, h->c_last);
     if(h->c_last > c->c_last) {
       pos = p;
       break;
@@ -398,12 +399,7 @@ private void process_queue_message(void *s) {
   }
   queue_ins_before(pos, chunk2rq(c));
 
-  if(pos == &ReaderChunkQ) {
-    LOG(READER, 2, "Inserted c:%04hx at end of RQ\n", c->c_name);
-  }
-  else {
-    LOG(READER, 2, "Inserted c:%04hx before c:%04hx\n", c->c_name, rq2chunk(pos)->c_name);
-  }
+  LOG(READER, 2, "Inserted %s before $s\n", c_nstr(c), rq2cname(pos));
 
   /* rq_head points to the chunk at the head of the READER queue */
   rq_head = rq2chunk(queue_next(&ReaderChunkQ));
@@ -431,11 +427,11 @@ private void complete_queue_head_chunk() {
   import int is_dead_snapfile(snapfile_t *);
   chunk_t *c = rq_head;
 
-  LOG(READER, 2, "Calling complete on chunk c:%04hx\n", c->c_name);
+  LOG(READER, 2, "Calling complete on chunk %s\n", c_nstr(c));
 
   if(c->c_first < adc_ring_tail(reader_adc) || is_dead_snapfile(c->c_parent)) { /* Oops, we are too late */
-    LOG(READER, 1, "Dead chunk c:%04hx: first %016llx tail %016llx dead? %d\n",
-        c->c_name, c->c_first, adc_ring_tail(reader_adc), is_dead_snapfile(c->c_parent));
+    LOG(READER, 1, "Dead chunk %s: first %016llx tail %016llx dead? %d\n",
+        c_nstr(c), c->c_first, adc_ring_tail(reader_adc), is_dead_snapfile(c->c_parent));
     abort_queue_head_chunk();
     return;
   }

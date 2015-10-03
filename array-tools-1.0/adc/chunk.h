@@ -52,6 +52,9 @@ export void     copy_chunk_data(chunk_t *);
 
 export int      debug_chunk(char [], int, chunk_t *);
 
+export const char *c_nstr(chunk_t *);
+export const char *rq2cname(queue *);
+
 export int      init_frame_system(strbuf, int, int, int);
 export void     release_frame(frame *);
 
