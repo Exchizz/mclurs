@@ -21,7 +21,7 @@
 snapshot \- collect data snapshots from an ADC stream
 .SH SYNOPSIS
 .B snapshot
-.RI [ options ] " files" ...
+.RI [ options ] ...
 .br
 .SH DESCRIPTION
 The \fBsnapshot\fP program is responsible for reading data from the
