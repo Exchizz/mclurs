@@ -41,39 +41,39 @@
  * Private information for the ADC module.
  */
 
-#define N_USBDUX_CHANS	16
+#define N_USBDUX_CHANS  16
 
-#define MIN_SAMPLING_FREQUENCY	6e4	/* Minimum sampling frequency per channel [Hz] */
-#define MAX_SAMPLING_FREQUENCY  3.76e5	/* Maximum sampling frequency per channel [Hz] */
-#define MIN_COMEDI_BUF_SIZE	8      	/* Minimum Comedi Buffer size [MiB] */
-#define MAX_COMEDI_BUF_SIZE	256    	/* Maximum Comedi Buffer size [MiB] */
+#define MIN_SAMPLING_FREQUENCY  6e4     /* Minimum sampling frequency per channel [Hz] */
+#define MAX_SAMPLING_FREQUENCY  3.76e5  /* Maximum sampling frequency per channel [Hz] */
+#define MIN_COMEDI_BUF_SIZE     8       /* Minimum Comedi Buffer size [MiB] */
+#define MAX_COMEDI_BUF_SIZE     256     /* Maximum Comedi Buffer size [MiB] */
 
 struct _adc {
-  const char *a_path;			/* The path to the Comedi device (assumed permanent string) */
-  comedi_t   *a_device;			/* Comedi device handle */
-  int	      a_devflags;		/* Comedi device flags */
-  int	      a_fd;			/* Device file descriptor */
-  int	      a_req_bufsz_mib;		/* Requested buffer size [MiB] */
-  int	      a_bufsz_bytes;		/* Size of the buffer in bytes */
-  int	      a_bufsz_samples;		/* Size of the buffer in samples */
-  sampl_t    *a_comedi_ring;		/* Ring buffer for the device */
-  double      a_totfrequency;		/* Total sampling frequency */
-  int	      a_intersample_ns;		/* Time between samples [ns] */
-  int	      a_range;			/* Current conversion range */
-  int	      a_raw;			/* Don't convert the data, deliver it raw */
-  convertfn   a_convert;		/* Current conversion function */
-  comedi_cmd  a_command;		/* Comedi command descriptor structure */
-  unsigned    a_chans[N_USBDUX_CHANS];	/* Channel descriptors for hardware channels */
-  int	      a_running;		/* True when an ADC data conversion is running */
-  int	      a_live;			/* True when we have seen data, and a_start_time is set */
-  uint64_t    a_start_time;		/* Time the current data conversion stream started */
-  uint64_t    a_head_time;		/* Timestamp of latest buffer sample */
-  uint64_t    a_head;			/* Latest sample present in the ring buffer */
-  uint64_t    a_tail;			/* Earliest sample present in the ring buffer */
+  const char *a_path;                   /* The path to the Comedi device (assumed permanent string) */
+  comedi_t   *a_device;                 /* Comedi device handle */
+  int         a_devflags;               /* Comedi device flags */
+  int         a_fd;                     /* Device file descriptor */
+  int         a_req_bufsz_mib;          /* Requested buffer size [MiB] */
+  int         a_bufsz_bytes;            /* Size of the buffer in bytes */
+  int         a_bufsz_samples;          /* Size of the buffer in samples */
+  sampl_t    *a_comedi_ring;            /* Ring buffer for the device */
+  double      a_totfrequency;           /* Total sampling frequency */
+  int         a_intersample_ns;         /* Time between samples [ns] */
+  int         a_range;                  /* Current conversion range */
+  int         a_raw;                    /* Don't convert the data, deliver it raw */
+  convertfn   a_convert;                /* Current conversion function */
+  comedi_cmd  a_command;                /* Comedi command descriptor structure */
+  unsigned    a_chans[N_USBDUX_CHANS];  /* Channel descriptors for hardware channels */
+  int         a_running;                /* True when an ADC data conversion is running */
+  int         a_live;                   /* True when we have seen data, and a_start_time is set */
+  uint64_t    a_start_time;             /* Time the current data conversion stream started */
+  uint64_t    a_head_time;              /* Timestamp of latest buffer sample */
+  uint64_t    a_head;                   /* Latest sample present in the ring buffer */
+  uint64_t    a_tail;                   /* Earliest sample present in the ring buffer */
 };
 
-#define USBDUXFAST_COMEDI_500mV	1 /* Bit 3 control output is 0 iff the CR_RANGE is one */
-#define USBDUXFAST_COMEDI_750mV	0 /* Bit 3 control output is 1 iff the CR_RANGE is zero */
+#define USBDUXFAST_COMEDI_500mV 1 /* Bit 3 control output is 0 iff the CR_RANGE is one */
+#define USBDUXFAST_COMEDI_750mV 0 /* Bit 3 control output is 1 iff the CR_RANGE is zero */
 
 /*
  * ADC is a singleton class, so we can get away with defining a single private structure.
@@ -98,7 +98,7 @@ private const char *comedi_error() {
 public adc adc_new(strbuf e) {
   adc ret = &snapshot_adc;
 
-  if( !comedi_error_set_up++ ) {	/* Install the routine to interpolate %C strings */
+  if( !comedi_error_set_up++ ) {        /* Install the routine to interpolate %C strings */
     int ret = register_error_percent_handler('C', comedi_error);
     assertv(ret==0, "Failed to register handler for Comedi errors (%%C): %m\n");
   }
@@ -144,7 +144,7 @@ public int adc_set_chan_frequency(adc a, strbuf e, double *freq) {
   
   if(f < MIN_SAMPLING_FREQUENCY || f > MAX_SAMPLING_FREQUENCY) {
     strbuf_appendf(e, "Sampling frequency %g not within compiled-in ADC limits [%g,%g] Hz",
-		   f, MIN_SAMPLING_FREQUENCY, MAX_SAMPLING_FREQUENCY);
+                   f, MIN_SAMPLING_FREQUENCY, MAX_SAMPLING_FREQUENCY);
     return -1;
   }
 
@@ -172,7 +172,7 @@ public int adc_set_chan_frequency(adc a, strbuf e, double *freq) {
 public int adc_set_bufsz(adc a, strbuf e, int bufsz) {
   if(bufsz < MIN_COMEDI_BUF_SIZE || bufsz > MAX_COMEDI_BUF_SIZE) {
     strbuf_appendf(e, "Comedi buffer size %d MiB outwith compiled-in range [%d,%d] MiB",
-		   bufsz, MIN_COMEDI_BUF_SIZE, MAX_COMEDI_BUF_SIZE);
+                   bufsz, MIN_COMEDI_BUF_SIZE, MAX_COMEDI_BUF_SIZE);
     return -1;
   }
   a->a_req_bufsz_mib = bufsz;
@@ -187,12 +187,12 @@ public int adc_set_bufsz(adc a, strbuf e, int bufsz) {
 public int adc_set_range(adc a, strbuf e, int range) {
   /* Set up the conversion function:  500mV or 750mV FSD */
   switch(range) {
-  case 500:			/* Narrow FSD range */
+  case 500:                     /* Narrow FSD range */
     a->a_convert = a->a_raw? convert_raw_raw : convert_raw_500mV;
     a->a_range = USBDUXFAST_COMEDI_500mV;
     break;
 
-  case 750:			/* Wide FSD range */
+  case 750:                     /* Wide FSD range */
     a->a_convert = a->a_raw? convert_raw_raw : convert_raw_750mV;
     a->a_range = USBDUXFAST_COMEDI_750mV;
     break;
@@ -251,8 +251,8 @@ public int adc_init(adc a, strbuf e) {
     if( request > ret ) {
       ret = comedi_set_max_buffer_size(a->a_device, 0, request);
       if( ret < 0 ) {
-	strbuf_appendf(e, "Comedi set max buffer to %d MiB failed: %C", a->a_req_bufsz_mib);
-	return -1;
+        strbuf_appendf(e, "Comedi set max buffer to %d MiB failed: %C", a->a_req_bufsz_mib);
+        return -1;
       }
     }
     ret = comedi_set_buffer_size(a->a_device, 0, request);
@@ -368,7 +368,7 @@ private sampl_t *adc_sample_to_ring_ptr(adc a, uint64_t sample) {
  */
 
 public void adc_setup_chunk(adc a, chunk_t *c) {
-  if(c->c_first < a->a_tail) {	/* Too late */
+  if(c->c_first < a->a_tail) {  /* Too late */
     strbuf_appendf(c->c_error, "Chunk was %d [us] too late", (int)((a->a_tail - c->c_first)/1000));
     c->c_ring = NULL;
     return;
@@ -464,8 +464,8 @@ public int adc_data_collect(adc a) {
   if(nb) {
     ns  = nb / sizeof(sampl_t);
     a->a_head_time = now;
-    a->a_head = a->a_tail + ns;	/* Assume that nb accumulates if mark read not called */
-    if( !a->a_live ) {		/* Estimate the timestamp of sample index 0 */
+    a->a_head = a->a_tail + ns; /* Assume that nb accumulates if mark read not called */
+    if( !a->a_live ) {          /* Estimate the timestamp of sample index 0 */
       a->a_start_time = a->a_head_time - ns*a->a_intersample_ns;
       a->a_live++;
     }

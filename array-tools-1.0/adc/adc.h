@@ -9,7 +9,7 @@
  * Descriptor structure for Reader ADC interface.
  */
 
-#define NCHANNELS	8	/* Public number of channels offered */
+#define NCHANNELS       8       /* Public number of channels offered */
 
 typedef struct _adc *adc;
 

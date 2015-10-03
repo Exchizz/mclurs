@@ -24,35 +24,35 @@
 
 #define BEGIN_CMD_SYNTAX(name) void **arg_make_ ## name () { void **ret, *argtable[] =
 
-#define APPLY_CMD_DEFAULTS(name)	;				\
-									\
-  if( arg_nullcheck(argtable) ) {					\
-    arg_freetable(argtable, sizeof(argtable)/sizeof(void *));		\
-    return NULL;							\
-  }									\
-									\
-  ret = malloc(sizeof(argtable));					\
-  if( !ret ) {								\
-    arg_freetable(argtable, sizeof(argtable)/sizeof(void *));		\
-    return NULL;							\
-  }									\
+#define APPLY_CMD_DEFAULTS(name)        ;                               \
+                                                                        \
+  if( arg_nullcheck(argtable) ) {                                       \
+    arg_freetable(argtable, sizeof(argtable)/sizeof(void *));           \
+    return NULL;                                                        \
+  }                                                                     \
+                                                                        \
+  ret = malloc(sizeof(argtable));                                       \
+  if( !ret ) {                                                          \
+    arg_freetable(argtable, sizeof(argtable)/sizeof(void *));           \
+    return NULL;                                                        \
+  }                                                                     \
   do
 
-#define INCLUDE_PARAM_DEFAULTS(ps,nps)					\
-  int rv = arg_defaults_from_params(argtable,				\
-				    sizeof(argtable)/sizeof(void *),	\
-				    (ps), (nps));			\
+#define INCLUDE_PARAM_DEFAULTS(ps,nps)                                  \
+  int rv = arg_defaults_from_params(argtable,                           \
+                                    sizeof(argtable)/sizeof(void *),    \
+                                    (ps), (nps));                       \
   assertv(rv == 0, "Argtable has no end mark\n");
 
-#define END_CMD_SYNTAX(name)						\
-									\
-  while(0);								\
-									\
-  int n = sizeof(argtable)/sizeof(void *);				\
-  while( n-- > 0 ) {							\
-    ret[n] = argtable[n];						\
-  }									\
-  return ret;								\
+#define END_CMD_SYNTAX(name)                                            \
+                                                                        \
+  while(0);                                                             \
+                                                                        \
+  int n = sizeof(argtable)/sizeof(void *);                              \
+  while( n-- > 0 ) {                                                    \
+    ret[n] = argtable[n];                                               \
+  }                                                                     \
+  return ret;                                                           \
 }
 
 #endif /* _ARGTAB_HELPER_H */

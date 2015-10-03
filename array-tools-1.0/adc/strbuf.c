@@ -8,14 +8,14 @@
 #include "strbuf.h"
 #include "queue.h"
 
-#define N_STRBUF_ALLOC	8			/* Allocate this many buffers at one go */
-#define MAX_STRBUF_SIZE (512-sizeof(queue)-2*sizeof(int))	/* Strbuf will hold 496 characters maximum */
+#define N_STRBUF_ALLOC  8                       /* Allocate this many buffers at one go */
+#define MAX_STRBUF_SIZE (512-sizeof(queue)-2*sizeof(int))       /* Strbuf will hold 496 characters maximum */
 
 struct _strbuf {
-  queue   s_Q;				/* Queue header to avoid malloc() calls */
-  int	  s_used;			/* Pointer to next free space in buffer */
-  int     s_space;			/* Size of the string space in the strbuf */
-  char    s_buffer[MAX_STRBUF_SIZE];	/* Buffer space when in use */
+  queue   s_Q;                          /* Queue header to avoid malloc() calls */
+  int     s_used;                       /* Pointer to next free space in buffer */
+  int     s_space;                      /* Size of the string space in the strbuf */
+  char    s_buffer[MAX_STRBUF_SIZE];    /* Buffer space when in use */
 };
 
 /*
@@ -36,16 +36,16 @@ private int N_in_Q = 0;
 public strbuf alloc_strbuf(int nr) {
   queue *ret;
 
-  if( N_in_Q < nr ) {	/* The queue doesn't have enough */
+  if( N_in_Q < nr ) {   /* The queue doesn't have enough */
     int n;
 
     for(n=0; n<N_STRBUF_ALLOC; n++) {
       queue *q = (queue *)calloc(1, sizeof(struct _strbuf));
 
-      if( !q ) {			/* Allocation failed */
-	if( N_in_Q >= nr )
-	  break;			/* But we have enough now anyway */
-	return NULL;
+      if( !q ) {                        /* Allocation failed */
+        if( N_in_Q >= nr )
+          break;                        /* But we have enough now anyway */
+        return NULL;
       }
       init_queue(q);
       queue_ins_after(&sbufQ, q);
@@ -54,7 +54,7 @@ public strbuf alloc_strbuf(int nr) {
     }
   }
   ret = de_queue(queue_next(&sbufQ));
-  while(--nr > 0) {		/* Collect enough to satisfy request */
+  while(--nr > 0) {             /* Collect enough to satisfy request */
     queue *p = de_queue(queue_next(&sbufQ));
 
     init_queue(p);
@@ -129,10 +129,10 @@ private int strbuf_vprintf(strbuf s, int pos, const char *fmt, va_list ap) {
   int   used;
   char *buf;
 
-  if(pos < 0)			/* Position one character back from end (i.e. skip NULL) or at start */
+  if(pos < 0)                   /* Position one character back from end (i.e. skip NULL) or at start */
     pos = s->s_used ? s->s_used : 0;
   buf  = &s->s_buffer[pos];
-  rest = s->s_space - pos;	/* There should be this much space remaining */
+  rest = s->s_space - pos;      /* There should be this much space remaining */
   if(rest < 0) {
     errno = EINVAL;
     return -1;
@@ -152,8 +152,8 @@ private int strbuf_vprintf(strbuf s, int pos, const char *fmt, va_list ap) {
 typedef struct _percent *percent;
 struct _percent {
   percent       pc_link;
-  char          pc_flag;	/* If we see this flag ... */
-  const char *(*pc_func)();	/* ... then this function gives us the string */
+  char          pc_flag;        /* If we see this flag ... */
+  const char *(*pc_func)();     /* ... then this function gives us the string */
 };
 
 private percent percent_list = NULL;
@@ -175,19 +175,19 @@ private void do_extra_percents(char *buf, int size, const char *fmt) {
     if( (*buf++ = *fmt++) != '%' )
       continue;
 
-    size--;			    /* Count the previous % that was copied */
+    size--;                         /* Count the previous % that was copied */
     percent p = find_in_list(*buf++ = *fmt++);  /* Look up the next character */
 
-    if(p == NULL)		    /* Not an extension, keep copying */
+    if(p == NULL)                   /* Not an extension, keep copying */
       continue;
 
     int used = snprintf(buf-2, size, "%s", (*p->pc_func)()); /* Interpolate at most 'size' chars */
-    if(used >= size) {		    /* Output was truncated */
+    if(used >= size) {              /* Output was truncated */
       buf += size-1;
       break;
     }
-    buf  += used-2;		    /* We copied 'used' characters, overwriting 2 */
-    size -= used-3;		    /* The for loop will decerement one more...  */
+    buf  += used-2;                 /* We copied 'used' characters, overwriting 2 */
+    size -= used-3;                 /* The for loop will decerement one more...  */
   }
   *buf = '\0';
 }
@@ -282,7 +282,7 @@ public void debug_strbuf(FILE *fp, strbuf s) {
   int   n;
 
   used = snprintf(&buf[0], 64, "s=%p, nxt=%p, prv=%p spc=%d: data[0..%d]='",
-		  s, s->s_Q.q_next, s->s_Q.q_prev, s->s_space, s->s_used);
+                  s, s->s_Q.q_next, s->s_Q.q_prev, s->s_space, s->s_used);
   b = &buf[used];
   n = MAX_STRBUF_SIZE+64-used-1;
   if( n > s->s_used )

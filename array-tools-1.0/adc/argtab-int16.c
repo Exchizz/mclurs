@@ -98,7 +98,7 @@ private void errorfn(struct arg_int16 *parent, FILE *fp, int errorcode, const ch
 
 /* Generic constructor for an arg_int16 structure */
 struct arg_int16* arg_int16n(const char* shortopts, const char* longopts,
-			     const char *datatype,
+                             const char *datatype,
                              int mincount, int maxcount, const char *glossary) {
   int bytes;
   struct arg_int16 *ret;
@@ -126,14 +126,14 @@ struct arg_int16* arg_int16n(const char* shortopts, const char* longopts,
 
 /* Special case: 0 or 1 arguments */
 struct arg_int16* arg_int160(const char* shortopts, const char* longopts,
-			     const char *datatype,  const char *glossary) {
+                             const char *datatype,  const char *glossary) {
 
   return arg_int16n(shortopts, longopts, datatype, 0, 1, glossary);
 }
 
 /* Special case: exactly 1 argument */
 struct arg_int16* arg_int161(const char* shortopts, const char* longopts,
-			     const char *datatype,  const char *glossary) {
+                             const char *datatype,  const char *glossary) {
 
   return arg_int16n(shortopts, longopts, datatype, 1, 1, glossary);
 }

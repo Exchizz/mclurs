@@ -4,14 +4,14 @@
  * Program to grab data from USBDUXfast via Comedi.
  *
  * Arguments:
- * --verbose|-v		Increase reporting level
- * --freq|-f		Sampling frequency in [Hz], default 2.5 [MHz]
- * --range|-r		ADC range 'hi' (750 mVpk) or 'lo' (500 mVpk)
- * --raw		ADC output as raw data
- * --device|-d		Comedi device to use, default /dev/comedi0
- * --bufsz|-B		Comedi buffer size to request [MiB], default 40 [MiB]
- * --help|-h		Print usage message
- * --version		Print program version
+ * --verbose|-v         Increase reporting level
+ * --freq|-f            Sampling frequency in [Hz], default 2.5 [MHz]
+ * --range|-r           ADC range 'hi' (750 mVpk) or 'lo' (500 mVpk)
+ * --raw                ADC output as raw data
+ * --device|-d          Comedi device to use, default /dev/comedi0
+ * --bufsz|-B           Comedi buffer size to request [MiB], default 40 [MiB]
+ * --help|-h            Print usage message
+ * --version            Print program version
  */
 
 #include <stdio.h>
@@ -33,17 +33,17 @@
 
 #define N_CHANS      16
 #define BUFSZ      4096
-#define BUFSPSZ	   (BUFSZ/sizeof(sampl_t))
+#define BUFSPSZ    (BUFSZ/sizeof(sampl_t))
 
 char read_buf[BUFSZ];
 
-#define COMEDI_DEVICE	"/dev/comedi0"
+#define COMEDI_DEVICE   "/dev/comedi0"
 
 #define COMEDIBUFFERSIZE (*40)
 #define COMEDIBUFFERSPLS (COMEDIBUFFERSIZE/sizeof(sampl_t))
 
-#define PROGRAM_VERSION		"2.0"
-#define VERSION_VERBOSE_BANNER	"MCLURS ADC toolset...\n"
+#define PROGRAM_VERSION         "2.0"
+#define VERSION_VERBOSE_BANNER  "MCLURS ADC toolset...\n"
 
 /* Standard arguments + flags */
 int   verbose = 0;
@@ -55,9 +55,9 @@ struct arg_lit *h1, *vn1, *v1;
 struct arg_end *e1;
 
 BEGIN_CMD_SYNTAX(help) {
-  v1  = arg_litn("v",	"verbose", 0, 2,	"Increase verbosity"),
-  h1  = arg_lit0("h",	"help",			"Print usage help message"),
-  vn1 = arg_lit0(NULL,	"version",		"Print program version string"),
+  v1  = arg_litn("v",   "verbose", 0, 2,        "Increase verbosity"),
+  h1  = arg_lit0("h",   "help",                 "Print usage help message"),
+  vn1 = arg_lit0(NULL,  "version",              "Print program version string"),
   e1  = arg_end(20)
 } APPLY_CMD_DEFAULTS(help) {
   /* No defaults to apply here */
@@ -71,24 +71,24 @@ struct arg_rex *rn2;
 struct arg_end *e2;
 
 BEGIN_CMD_SYNTAX(main) {
-  v2  = arg_litn("v",	"verbose", 0, 2,		"Increase verbosity"),
-  f2  = arg_dbl0("f",	"freq", "<real>",		"Sampling frequency [Hz], default 2.5 [MHz]"),
-  b2  = arg_int0("B",	"bufsz", "<int>",		"Comedi buffer size [MiB], default 40 [MiB]"),
-  d2  = arg_str0("d",	"device", "<path>",		"Comedi device to open, default /dev/comedi0"),
-  rn2 = arg_rex0("r",	"range", "hi|lo", NULL, REG_EXTENDED,	"Specify range in {hi, lo}, default hi"),
-  rw2 = arg_lit0(NULL,	"raw",				"Emit raw ADC sample values"),
+  v2  = arg_litn("v",   "verbose", 0, 2,                "Increase verbosity"),
+  f2  = arg_dbl0("f",   "freq", "<real>",               "Sampling frequency [Hz], default 2.5 [MHz]"),
+  b2  = arg_int0("B",   "bufsz", "<int>",               "Comedi buffer size [MiB], default 40 [MiB]"),
+  d2  = arg_str0("d",   "device", "<path>",             "Comedi device to open, default /dev/comedi0"),
+  rn2 = arg_rex0("r",   "range", "hi|lo", NULL, REG_EXTENDED,   "Specify range in {hi, lo}, default hi"),
+  rw2 = arg_lit0(NULL,  "raw",                          "Emit raw ADC sample values"),
   e2  = arg_end(20)
 } APPLY_CMD_DEFAULTS(main) {
-  *f2->dval  = 2.5e6;		/* Default frequency 2.5 [MHz] */
-  *b2->ival  = 40;		/* Default buffer size 40 [MiB] */
-  *d2->sval  = COMEDI_DEVICE;	/* Default device for Comedi */
-  *rn2->sval = "hi";		/* Default ADC range (hi) */
+  *f2->dval  = 2.5e6;           /* Default frequency 2.5 [MHz] */
+  *b2->ival  = 40;              /* Default buffer size 40 [MiB] */
+  *d2->sval  = COMEDI_DEVICE;   /* Default device for Comedi */
+  *rn2->sval = "hi";            /* Default ADC range (hi) */
 } END_CMD_SYNTAX(main);
 
 /* Standard help routines: display the version banner */
 void print_version(FILE *fp, int verbosity) {
   fprintf(fp, "%s: Vn. %s\n", program, PROGRAM_VERSION);
-  if(verbosity > 0) {		/* Verbose requested... */
+  if(verbosity > 0) {           /* Verbose requested... */
     fprintf(fp, VERSION_VERBOSE_BANNER);
   }
 }
@@ -115,11 +115,11 @@ void print_usage(FILE *fp, void **argtable, int verbosity, char *program) {
 
 int main(int argc, char *argv[]) {
   float        sr_total;
-  int	       bufsz;
+  int          bufsz;
   char        *device;
-  int	       range = 0;	/* Default range is +/- 750mV */
+  int          range = 0;       /* Default range is +/- 750mV */
 
-  int	       buf_samples;
+  int          buf_samples;
   unsigned int convert_arg;
   comedi_t    *dev;
   int          errs, ret, i;
@@ -127,7 +127,7 @@ int main(int argc, char *argv[]) {
   void        *map;
   sampl_t     *start;
   uint64_t     head, tail;
-  int	       data_coming;
+  int          data_coming;
   void       (*convert)(sampl_t *, sampl_t *, int);
 
   program = argv[0];
@@ -138,7 +138,7 @@ int main(int argc, char *argv[]) {
 
   /* Try first syntax */
   int err_help = arg_parse(argc, argv, cmd_help);
-  if( !err_help && (vn1->count || h1->count) ) {		/* Assume this was the desired command syntax */
+  if( !err_help && (vn1->count || h1->count) ) {                /* Assume this was the desired command syntax */
     if(vn1->count)
       print_version(stdout, v1->count);
     if(h1->count || !vn1->count) {
@@ -150,7 +150,7 @@ int main(int argc, char *argv[]) {
 
   /* Try second syntax */
   int err_main = arg_parse(argc, argv, cmd_main);
-  if( err_main ) {		/* This is the default desired syntax; give full usage */
+  if( err_main ) {              /* This is the default desired syntax; give full usage */
     arg_print_errors(stderr, e2, program);
     print_usage(stderr, cmd_help, v2->count>0, program);
     print_usage(stderr, cmd_main, v2->count, program);
@@ -186,9 +186,9 @@ int main(int argc, char *argv[]) {
 
   /* Deal with specification of range and raw */
   range       = !strcmp(rn2->sval[0], "hi") ? 0 : 1;
-  if(rw2->count) { 		/* Requested raw */
+  if(rw2->count) {              /* Requested raw */
     convert   = convert_raw_raw;
-  } else {			/* Convert from specified range  */
+  } else {                      /* Convert from specified range  */
     convert   = range? convert_raw_500mV : convert_raw_750mV;
   }
 
@@ -290,7 +290,7 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "%s: Total sample rate allocated = %g Hz\n", program, 1e9 / cmd->convert_arg);
 
   head=tail=0;
-  data_coming = 1000;		/* Is data arriving? After this many pauses with no data, exit... */
+  data_coming = 1000;           /* Is data arriving? After this many pauses with no data, exit... */
   while( 1 ) {
     int nb  = comedi_get_buffer_contents(dev, 0); /* Find out how many new bytes there are */
     sampl_t *back = &start[ tail % buf_samples ];
@@ -302,17 +302,17 @@ int main(int argc, char *argv[]) {
       continue;
     }
 
-    data_coming = 100;		/* Some data has come, use a smaller value henceforth */
-    head += nb/sizeof(sampl_t);	/* This many new samples have arrived */
-    nb = head - tail;		/* And this is how many remain to process */
+    data_coming = 100;          /* Some data has come, use a smaller value henceforth */
+    head += nb/sizeof(sampl_t); /* This many new samples have arrived */
+    nb = head - tail;           /* And this is how many remain to process */
 
     while( nb >= BUFSPSZ ) {
       /* Convert and dump a buffer-full to stdout, repeat while possible */
       (*convert)((sampl_t *)read_buf, back, BUFSPSZ);
       ret  =  comedi_mark_buffer_read(dev, 0, BUFSZ);
       if(ret < 0) {
-	fprintf(stderr, "%s: Error -- comedi_mark_buffer_read during loop: %s\n", program, comedi_strerror(comedi_errno()));
-	break;
+        fprintf(stderr, "%s: Error -- comedi_mark_buffer_read during loop: %s\n", program, comedi_strerror(comedi_errno()));
+        break;
       }
       fwrite(read_buf, sizeof(sampl_t), BUFSPSZ, stdout);
       back += BUFSPSZ;

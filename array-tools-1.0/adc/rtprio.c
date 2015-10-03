@@ -17,7 +17,7 @@
 
 #ifdef __GNU_SOURCE
 
-#define  gettid()	(syscall(SYS_gettid)) /* No glibc interface, Linux-only call */
+#define  gettid()       (syscall(SYS_gettid)) /* No glibc interface, Linux-only call */
 
 /*
  * Routine(s) for establishing threads in RT FIFO scheduling mode using Linux tricks
@@ -31,17 +31,17 @@ public int set_rt_scheduling(int p) {
   /* Attempt the operation */
   pri.sched_priority = p;
   if( sched_setscheduler(me, SCHED_FIFO, &pri) < 0 ) {
-    return -1;		/* Failed for some reason */
+    return -1;          /* Failed for some reason */
   }
 
   /* Verify the operation */
   mode = sched_getscheduler(me);
-  if( mode != SCHED_FIFO ) {	/* Didn't work, despite no errors... */
+  if( mode != SCHED_FIFO ) {    /* Didn't work, despite no errors... */
     errno = ENOSYS;
     return -1;
   }
 
-  pri.sched_priority = -1;	/* Check correct priority was set... */
+  pri.sched_priority = -1;      /* Check correct priority was set... */
   if( sched_getparam(me, &pri) < 0
       || pri.sched_priority != p ) {
     errno = ENOSYS;
@@ -66,14 +66,14 @@ public int set_rt_scheduling(int p) {
   /* Attempt the operation */
   pri.sched_priority = p;
   if( pthread_setschedparam(me, SCHED_FIFO, &pri) < 0 ) {
-    return -1;		/* Failed for some reason */
+    return -1;          /* Failed for some reason */
   }
 
   /* Verify the operation */
   pri.sched_priority = -1;
   if( pthread_getschedparam(me, &mode, &pri) < 0
       || mode != SCHED_FIFO
-      || pri.sched_priority != p ) {	/* Didn't work, despite no errors... */
+      || pri.sched_priority != p ) {    /* Didn't work, despite no errors... */
     errno = ENOSYS;
     return -1;
   }
@@ -103,7 +103,7 @@ public int check_permitted_capabilities_ok() {
   cap_t c = cap_get_proc();
   cap_flag_value_t v = CAP_CLEAR;
   
-  if( !c )			/* No memory? */
+  if( !c )                      /* No memory? */
     return -1;
 
   if( cap_get_flag(c, CAP_IPC_LOCK,  CAP_PERMITTED, &v) < 0 || v == CAP_CLEAR ||
@@ -123,7 +123,7 @@ public int check_effective_capabilities_ok() {
   cap_t c = cap_get_proc();
   cap_flag_value_t v = CAP_CLEAR;
   
-  if( !c )			/* No memory? */
+  if( !c )                      /* No memory? */
     return -1;
 
   if( cap_get_flag(c, CAP_IPC_LOCK,  CAP_EFFECTIVE, &v) < 0 || v == CAP_CLEAR ||
@@ -147,7 +147,7 @@ public uint64_t monotonic_ns_clock() {
   uint64_t ret;
   struct timespec now;
 
-  clock_gettime(CLOCK_MONOTONIC, &now);		/* Timestamp for debugging */
+  clock_gettime(CLOCK_MONOTONIC, &now);         /* Timestamp for debugging */
   ret = now.tv_sec;
   ret = ret*1000000000 + now.tv_nsec;
   return ret;

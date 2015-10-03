@@ -54,22 +54,22 @@ import adc reader_adc;
 
 /* Snapshot Descriptor Structure */
 
-typedef struct {		/* Private snapshot descriptor structure used by WRITER */
-  queue	      s_xQ[2];		/* Queue headers -- must be first member */
-#define s_Q	     s_xQ[0]	/* Active snapshot queue header */
-#define s_fileQhdr   s_xQ[1]	/* Header for the queue of file descriptor structures */
-  uint16_t    s_name;		/* 'Name' for snapshot */
-  int         s_dirfd;		/* Dirfd of the samples directory */
-  uint64_t    s_first;		/* First sample to collect for the next repetition */
-  uint64_t    s_last;		/* Collect up to but not including this sample in the next repetition */
-  uint32_t    s_samples;	/* Number of samples to save */
-  int	      s_bytes;		/* Total size of one sample file */
-  uint32_t    s_count;		/* Repetition count for this snapshot */
-  int	      s_pending;	/* Count of pending repetitions */
-  int	      s_done;		/* Count of completed repetitions */
-  int	      s_status;		/* Status of this snapshot */
-  const char *s_path;		/* Directory path for this snapshot */
-  strbuf      s_error;		/* Error strbuf for asynchronous operation */
+typedef struct {                /* Private snapshot descriptor structure used by WRITER */
+  queue       s_xQ[2];          /* Queue headers -- must be first member */
+#define s_Q          s_xQ[0]    /* Active snapshot queue header */
+#define s_fileQhdr   s_xQ[1]    /* Header for the queue of file descriptor structures */
+  uint16_t    s_name;           /* 'Name' for snapshot */
+  int         s_dirfd;          /* Dirfd of the samples directory */
+  uint64_t    s_first;          /* First sample to collect for the next repetition */
+  uint64_t    s_last;           /* Collect up to but not including this sample in the next repetition */
+  uint32_t    s_samples;        /* Number of samples to save */
+  int         s_bytes;          /* Total size of one sample file */
+  uint32_t    s_count;          /* Repetition count for this snapshot */
+  int         s_pending;        /* Count of pending repetitions */
+  int         s_done;           /* Count of completed repetitions */
+  int         s_status;         /* Status of this snapshot */
+  const char *s_path;           /* Directory path for this snapshot */
+  strbuf      s_error;          /* Error strbuf for asynchronous operation */
 }
   snap_t;
 
@@ -88,18 +88,18 @@ private uint16_t snapshot_name(snap_t *);
 /* Snapshot File Descriptor Structure */
 
 typedef struct _sfile {
-  queue	      f_Q;			/* Queue header for file descriptor structures */
-  snap_t     *f_parent;			/* The snap_t structure that generated this file capture */
-  int         f_fd;			/* System file descriptor -- only needed while pages left to map */
-  int	      f_indexnr;		/* Index number of this file in the full set for the snapshot */
-  int	      f_nchunks;		/* Number of chunks allocated for this file transfer */
-  int	      f_written;		/* Number of chunks actually written so far */
-  int	      f_pending;		/* Number of chunks controlled by the READER thread */
-  chunk_t    *f_chunkQ;			/* Pointer to this file's WRITER chunk queue */
-  int	      f_status;			/* Status flags for this file */
-  strbuf      f_error;			/* The strbuf to write error text into */
-  uint16_t    f_name;			/* Unique number for debugging */
-  char        f_file[FILE_NAME_SIZE];	/* Name of this file:  the hexadecimal first sample number .s16 */
+  queue       f_Q;                      /* Queue header for file descriptor structures */
+  snap_t     *f_parent;                 /* The snap_t structure that generated this file capture */
+  int         f_fd;                     /* System file descriptor -- only needed while pages left to map */
+  int         f_indexnr;                /* Index number of this file in the full set for the snapshot */
+  int         f_nchunks;                /* Number of chunks allocated for this file transfer */
+  int         f_written;                /* Number of chunks actually written so far */
+  int         f_pending;                /* Number of chunks controlled by the READER thread */
+  chunk_t    *f_chunkQ;                 /* Pointer to this file's WRITER chunk queue */
+  int         f_status;                 /* Status flags for this file */
+  strbuf      f_error;                  /* The strbuf to write error text into */
+  uint16_t    f_name;                   /* Unique number for debugging */
+  char        f_file[FILE_NAME_SIZE];   /* Name of this file:  the hexadecimal first sample number .s16 */
 }
   snapfile_t;
 
@@ -112,15 +112,15 @@ private void abort_snapfile(snapfile_t *);
 private void debug_snapfile(snapfile_t *);
 import  uint16_t snapfile_name(snapfile_t *);
 
-#define qp2file(p)	((snapfile_t *)(p))
-#define file2qp(f)	(&(f)->f_Q)
+#define qp2file(p)      ((snapfile_t *)(p))
+#define file2qp(f)      (&(f)->f_Q)
 
-#define qp2fname(p)	snapfile_name(qp2file(p))
+#define qp2fname(p)     snapfile_name(qp2file(p))
 
 /* Local queue headers etc. used by the WRITER thread */
 
-private QUEUE_HEADER(snapQ);		/* The list of active snapshots */
-private QUEUE_HEADER(WriterChunkQ);	/* The list of chunks awaiting mapping, in order of first sample */
+private QUEUE_HEADER(snapQ);            /* The list of active snapshots */
+private QUEUE_HEADER(WriterChunkQ);     /* The list of chunks awaiting mapping, in order of first sample */
 
 /*
  * --------------------------------------------------------------------------------
@@ -142,12 +142,12 @@ public wparams writer_parameters;
 
 /* The values below are computed from writer_parameters by the verify() function */
 
-private int wp_nframes;		/* Number of transfer frames prepared */
-private int wp_chunksamples;	/* Number of samples in a chunk */
-private int wp_snap_dirfd;	/* Snapdir path fd */
-private int wp_snap_curfd;	/* Path fd of the 'working' directory */
-private int wp_totxfrsamples;	/* Total scheduled transfer samples remaining */
-private int wp_nfiles;		/* Number of files in progress */
+private int wp_nframes;         /* Number of transfer frames prepared */
+private int wp_chunksamples;    /* Number of samples in a chunk */
+private int wp_snap_dirfd;      /* Snapdir path fd */
+private int wp_snap_curfd;      /* Path fd of the 'working' directory */
+private int wp_totxfrsamples;   /* Total scheduled transfer samples remaining */
+private int wp_nfiles;          /* Number of files in progress */
 
 /* Read-only access to chunk size, needed by READER */
 
@@ -164,13 +164,13 @@ public int writer_chunksize_samples() {
 private void *reader;
 private void *command;
 
-public void  *logskt_WRITER;	/* Used by WARNING and LOG macros */
+public void  *logskt_WRITER;    /* Used by WARNING and LOG macros */
 
 private void create_writer_comms() {
   import void *snapshot_zmq_ctx;
   void *log;
   /* Create necessary sockets */
-  command  = zh_bind_new_socket(snapshot_zmq_ctx, ZMQ_REP, WRITER_CMD_ADDR);	/* Receive commands */
+  command  = zh_bind_new_socket(snapshot_zmq_ctx, ZMQ_REP, WRITER_CMD_ADDR);    /* Receive commands */
   assertv(command != NULL, "Failed to instantiate reader command socket\n");
   log      = zh_connect_new_socket(snapshot_zmq_ctx, ZMQ_PUSH, LOG_SOCKET);  /* Socket for log messages */
   assertv(log != NULL,     "Failed to instantiate reader log socket\n");
@@ -217,7 +217,7 @@ private int set_up_writer_capability() {
 
 private int set_writer_rt_scheduling() {
 
-  if( writer_parameters.w_schedprio > 0 ) {	/* Then there is RT priority scheduling to set up */
+  if( writer_parameters.w_schedprio > 0 ) {     /* Then there is RT priority scheduling to set up */
     if( set_rt_scheduling(writer_parameters.w_schedprio) < 0 )
       return -1;
 
@@ -269,15 +269,15 @@ private int test_directory(int dirfd, const char *name) {
 private int new_directory(int dirfd, const char *name) {
   int ret;
 
-  ret = test_directory(dirfd, name);	/* Try to open the directory */
+  ret = test_directory(dirfd, name);    /* Try to open the directory */
   if(ret < 0 ) {
-    if( errno != ENOENT )		/* OK if it doesn't exist, otherwise fail */
+    if( errno != ENOENT )               /* OK if it doesn't exist, otherwise fail */
       return -1;
-    ret = mkdirat(dirfd, name, 0750);	/* Didn't exist, try to create it */
+    ret = mkdirat(dirfd, name, 0750);   /* Didn't exist, try to create it */
     if( ret < 0 )
       return -1;
     ret = openat(dirfd, name, O_PATH|O_DIRECTORY); /* Try again */
-    if(ret < 0)					 /* Give up on failure */
+    if(ret < 0)                                  /* Give up on failure */
       return -1;
   }
   return ret;
@@ -349,7 +349,7 @@ private int process_dir_command(strbuf c) {
   assertv(err==0, "Dir PATH parameter assignment failed: %m");
   reset_param(&ps[SNAP_SETWD]);
 
-  if( !path ) {			/* No path supplied, reset to snapdir */
+  if( !path ) {                 /* No path supplied, reset to snapdir */
     clear_writer_wd();
     return 0;
   }
@@ -449,7 +449,7 @@ private void free_snapshot(snap_t *s) {
   if( !queue_singleton(snap2qp(s)) )
     de_queue(snap2qp(s));
   assertv(queue_singleton(snap2fq(s)),
-	  "Freeing snapshot %p with non-empty file queue %p", s, queue_next(snap2fq(s)));
+          "Freeing snapshot %p with non-empty file queue %p", s, queue_next(snap2fq(s)));
   if(s->s_dirfd >= 0)
     close(s->s_dirfd);
   if(s->s_path)
@@ -508,15 +508,15 @@ private int check_snapshot_params(param_t ps[], strbuf e) {
     if(ps[SNAP_END].p_str) {
       ret = assign_param(&ps[SNAP_END]); /* Error implies bad number */
       if(ret < 0) {
-	strbuf_appendf(e, "cannot assign END value %s: %m", ps[SNAP_END].p_str);
-	return -1;
+        strbuf_appendf(e, "cannot assign END value %s: %m", ps[SNAP_END].p_str);
+        return -1;
       }
     }
     if(ps[SNAP_LENGTH].p_str) {
       ret = assign_param(&ps[SNAP_LENGTH]); /* Error implies bad number */
       if(ret < 0) {
-	strbuf_appendf(e, "cannot assign LENGTH value %s: %m", ps[SNAP_LENGTH].p_str);
-	return -1;
+        strbuf_appendf(e, "cannot assign LENGTH value %s: %m", ps[SNAP_LENGTH].p_str);
+        return -1;
       }
     }
   }
@@ -543,15 +543,15 @@ private int check_snapshot_params(param_t ps[], strbuf e) {
     if(ps[SNAP_FINISH].p_str) {
       ret = assign_param(&ps[SNAP_FINISH]); /* Error implies bad number */
       if(ret < 0) {
-	strbuf_appendf(e, "cannot assign FINISH value %s: %m", ps[SNAP_FINISH].p_str);
-	return -1;
+        strbuf_appendf(e, "cannot assign FINISH value %s: %m", ps[SNAP_FINISH].p_str);
+        return -1;
       }
     }
     if(ps[SNAP_LENGTH].p_str) {
       ret = assign_param(&ps[SNAP_LENGTH]); /* Error implies bad number */
       if(ret < 0) {
-	strbuf_appendf(e, "cannot assign LENGTH value %s: %m", ps[SNAP_LENGTH].p_str);
-	return -1;
+        strbuf_appendf(e, "cannot assign LENGTH value %s: %m", ps[SNAP_LENGTH].p_str);
+        return -1;
       }
     }
   }
@@ -560,8 +560,8 @@ private int check_snapshot_params(param_t ps[], strbuf e) {
   if(ps[SNAP_COUNT].p_str) {
       ret = assign_param(&ps[SNAP_COUNT]); /* Error implies bad number */
       if(ret < 0) {
-	strbuf_appendf(e, "cannot assign COUNT value %s: %m", ps[SNAP_COUNT].p_str);
-	return -1;
+        strbuf_appendf(e, "cannot assign COUNT value %s: %m", ps[SNAP_COUNT].p_str);
+        return -1;
       }
     }
 
@@ -581,37 +581,37 @@ private int check_snapshot_params(param_t ps[], strbuf e) {
 private void setup_snapshot_samples(snap_t *s, param_t p[]) {
 
   /* Start with length= -- if present, no finish= or end= spec. needed */
-  if( p[SNAP_LENGTH].p_str ) {	/* Length was stored in s_samples, round up to integral number of pages */
+  if( p[SNAP_LENGTH].p_str ) {  /* Length was stored in s_samples, round up to integral number of pages */
     s->s_bytes = s->s_samples * sizeof(sampl_t);
     s->s_bytes += (sysconf(_SC_PAGE_SIZE) - (s->s_bytes % sysconf(_SC_PAGE_SIZE))) % sysconf(_SC_PAGE_SIZE);
     s->s_samples = s->s_bytes / sizeof(sampl_t);
   }
 
   /* Mandatory EITHER begin= OR start= -- it was begin= */
-  if( p[SNAP_BEGIN].p_str ) {	/* Begin time was stored in s_first */
+  if( p[SNAP_BEGIN].p_str ) {   /* Begin time was stored in s_first */
     s->s_first = adc_time_to_sample(reader_adc, s->s_first);
-    s->s_first = s->s_first - (s->s_first % NCHANNELS);	  /* Fix to NCHANNELS boundary */
-    if( !s->s_samples ) {				  /* No length given, need end from s_last */
+    s->s_first = s->s_first - (s->s_first % NCHANNELS);   /* Fix to NCHANNELS boundary */
+    if( !s->s_samples ) {                                 /* No length given, need end from s_last */
       s->s_last = adc_time_to_sample(reader_adc, s->s_last);
       s->s_last = s->s_last + ((NCHANNELS - (s->s_last % NCHANNELS)) % NCHANNELS); /* Round up to integral number of channel sweeps */
       s->s_samples = s->s_last - s->s_first;
       s->s_bytes = s->s_samples * sizeof(sampl_t);
       s->s_bytes += (sysconf(_SC_PAGE_SIZE) - (s->s_bytes % sysconf(_SC_PAGE_SIZE))) % sysconf(_SC_PAGE_SIZE);
-      s->s_samples = s->s_bytes / sizeof(sampl_t);	    /* Round up to integral number of system pages */
+      s->s_samples = s->s_bytes / sizeof(sampl_t);          /* Round up to integral number of system pages */
     }
-    s->s_last = s->s_first + s->s_samples;		    /* Calculate end point using rounded-up sample count */
+    s->s_last = s->s_first + s->s_samples;                  /* Calculate end point using rounded-up sample count */
   }
 
   /* Mandatory EITHER begin= OR start= -- it was start= */
-  if( p[SNAP_START].p_str ) {	/* Start sample was stored in s_first */
-    if( !s->s_samples ) {	/* No length given, need end from s_last */
+  if( p[SNAP_START].p_str ) {   /* Start sample was stored in s_first */
+    if( !s->s_samples ) {       /* No length given, need end from s_last */
       s->s_last += ((NCHANNELS - (s->s_last % NCHANNELS)) % NCHANNELS); /* Round up to integral number of channel sweeps */
-      s->s_samples = s->s_last - s->s_first;		    /* Compute requested length */
+      s->s_samples = s->s_last - s->s_first;                /* Compute requested length */
       s->s_bytes = s->s_samples * sizeof(sampl_t);
       s->s_bytes += (sysconf(_SC_PAGE_SIZE) - (s->s_bytes % sysconf(_SC_PAGE_SIZE))) % sysconf(_SC_PAGE_SIZE);
-      s->s_samples = s->s_bytes / sizeof(sampl_t);	    /* Round up to integral number of system pages */
+      s->s_samples = s->s_bytes / sizeof(sampl_t);          /* Round up to integral number of system pages */
     }
-    s->s_last = s->s_first + s->s_samples;		    /* Calculate end point using rounded-up sample count */
+    s->s_last = s->s_first + s->s_samples;                  /* Calculate end point using rounded-up sample count */
   }
 
   /* Optional count=, default is 1 */
@@ -645,8 +645,8 @@ private snap_t *build_snapshot_descriptor(strbuf c) {
   int         nps = n_snapshot_params;
   const char *path = NULL;
   snap_t     *ret;
-  int	      err;
-  int	      i;
+  int         err;
+  int         i;
     
   if( !(ret = alloc_snapshot()) ) { /* Allocation failed */
     strbuf_appendf(e, "unable to allocate snapshot descriptor: %m");
@@ -664,13 +664,13 @@ private snap_t *build_snapshot_descriptor(strbuf c) {
 
   /* Process the S command parameters */
   err = set_params_from_string(strbuf_string(c), ps, nps);
-  if(err < 0) {			/* Error parsing command string */
+  if(err < 0) {                 /* Error parsing command string */
     strbuf_appendf(e, "parameter parsing error at position %d", -err);
     goto FAIL;
   }
   /* Check the populated parameters and assign to values */
   err = check_snapshot_params(ps, e);
-  if(err < 0) {			/* Problems put into strbuf by check function */
+  if(err < 0) {                 /* Problems put into strbuf by check function */
     goto FAIL;
   }
 
@@ -681,7 +681,7 @@ private snap_t *build_snapshot_descriptor(strbuf c) {
   
   /* Path may not already exist */
   ret->s_dirfd = test_directory(wp_snap_curfd, path);
-  if(ret->s_dirfd >= 0) {	/* Then directory already exists */
+  if(ret->s_dirfd >= 0) {       /* Then directory already exists */
     strbuf_appendf(e, "requested dir path=%s already exists", path);
     goto FAIL;
   }
@@ -743,16 +743,16 @@ private void setup_snapshot(snap_t *s) {
 private void refresh_snapshot(snap_t *s) {
 
   if(s->s_status == SNAPSHOT_ERROR) {   /* Tidy up after an error */
-    while(s->s_pending) {			/* There are files that have not got the message */
+    while(s->s_pending) {                       /* There are files that have not got the message */
       assertv(!queue_singleton(snap2fq(s)),
-	      "Pending file count %d and file header Q mismatch in snapshot %p\n", s->s_pending, s);
+              "Pending file count %d and file header Q mismatch in snapshot %p\n", s->s_pending, s);
       snapfile_t *f = qp2file(queue_next(snap2fq(s)));
       abort_snapfile(f);
       completed_snapfile(f);
     }
     return;
   }
-  else if(s->s_done == s->s_count) {	/* No files left to request */
+  else if(s->s_done == s->s_count) {    /* No files left to request */
     s->s_status = SNAPSHOT_COMPLETE;
     strbuf_printf(s->s_error, "OK Snap %04hx: %s %d/%d files", snapshot_name(s), snapshot_status(s->s_status), s->s_done, s->s_count);
     return;
@@ -760,7 +760,7 @@ private void refresh_snapshot(snap_t *s) {
   else if(s->s_done + s->s_pending == s->s_count) {  /* All required files are in progress */
     return;
   }
-  else {	/* See if this snapshot should have another file */
+  else {        /* See if this snapshot should have another file */
     if(wp_nfiles < 2 || s->s_pending == 0) {
       setup_snapshot(s);
     }
@@ -821,15 +821,15 @@ private const int n_status_params =  (sizeof(status_params)/sizeof(param_t));
 
 private void snapshot_report_status(strbuf x, snap_t *s) {
 
-  if(snapshot_is_complete(s)) {	 /* If completed, attach its error strbuf */
+  if(snapshot_is_complete(s)) {  /* If completed, attach its error strbuf */
     queue_ins_after(strbuf2qp(x), strbuf2qp(s->s_error));
     s->s_error = (strbuf)NULL;
     return;
   }
   /* Snapshot is in progress:  append a status line to x */
   strbuf_appendf(x, "Snap %04hx: %s %d/%d/%d\n",
-		 s->s_name, snapshot_status(s->s_status),
-		 s->s_done, s->s_pending, s->s_count);
+                 s->s_name, snapshot_status(s->s_status),
+                 s->s_done, s->s_pending, s->s_count);
 }
 
 /*
@@ -863,23 +863,23 @@ private int process_status_command(strbuf c) {
   assertv(err==0, "Status NAME parameter assignment failed: %m");
   reset_param(&ps[SNAP_NAME]);
 
-  if(queue_singleton(&snapQ)) {	/* There are no snapshots in the queue */
+  if(queue_singleton(&snapQ)) { /* There are no snapshots in the queue */
     if(name) {
       strbuf_appendf(e, "Snapshot %hd not found: queue empty", name);
       return -1;
     }
     else {
       strbuf_printf(c, " Files: %d, Xfr samples %d [ki]\n",
-		    wp_nfiles, wp_totxfrsamples/1024);
+                    wp_nfiles, wp_totxfrsamples/1024);
       return 0;
     }
   }
   
-  if(name) {			/* A spcific snapshot is requested */
+  if(name) {                    /* A spcific snapshot is requested */
     for_nxt_in_Q(queue *p, queue_next(&snapQ), &snapQ)
       if(name == qp2snap(p)->s_name) {
-	s = qp2snap(p);
-	break;
+        s = qp2snap(p);
+        break;
       }
     end_for_nxt;
     if(s == NULL) {
@@ -889,10 +889,10 @@ private int process_status_command(strbuf c) {
     /* ... we got one */
     strbuf_printf(c, "\n");
     snapshot_report_status(c, s);
-    if(snapshot_is_complete(s))	 /* If completed, free it */
+    if(snapshot_is_complete(s))  /* If completed, free it */
       free_snapshot(s);
   }
-  else {	/* Otherwise, look at all the snapshots in the queue */
+  else {        /* Otherwise, look at all the snapshots in the queue */
     /*
      * Note that, the loop below, we alter the queue being traversed
      * since free_snapshot unlinks the current snapshot.  This is OK,
@@ -902,9 +902,9 @@ private int process_status_command(strbuf c) {
     strbuf_printf(c, " Files: %d, Xfr samples %d [ki]\n", wp_nfiles, wp_totxfrsamples/1024);
     for_nxt_in_Q(queue *p, queue_next(&snapQ), &snapQ)
       s = qp2snap(p);
-      snapshot_report_status(c, s);	 /* Report the status of each one */
-      if(snapshot_is_complete(s))	 /* If completed, free it */
-	free_snapshot(s);
+      snapshot_report_status(c, s);      /* Report the status of each one */
+      if(snapshot_is_complete(s))        /* If completed, free it */
+        free_snapshot(s);
     end_for_nxt;
   }
   return 0;
@@ -967,7 +967,7 @@ private int setup_snapfile(snapfile_t *f, snap_t *s) {
   }
 
   ret = ftruncate(fd, s->s_bytes); /* Pre-size the file */
-  if(ret < 0) {			   /* Try to tidy up... */
+  if(ret < 0) {                    /* Try to tidy up... */
     strbuf_appendf(s->s_error, "Unable to truncate sample file %s to size %d [B]: %m\n", &f->f_file[0], s->s_bytes);
     unlinkat(s->s_dirfd, &f->f_file[0], 0);
     close(fd);
@@ -1019,18 +1019,18 @@ private int setup_snapfile(snapfile_t *f, snap_t *s) {
     set_chunk_owner(c, CHUNK_OWNER_WRITER);
     c->c_parent  = f;
     c->c_error   = f->f_error;
-    c->c_fd	 = f->f_fd;
-    c->c_ring    = NULL;	/* The ADC object computes this pointer */
-    c->c_frame   = NULL;	/* The transfer frames are allocated elsewhere */
+    c->c_fd      = f->f_fd;
+    c->c_ring    = NULL;        /* The ADC object computes this pointer */
+    c->c_frame   = NULL;        /* The transfer frames are allocated elsewhere */
     c->c_first   = first;
 
     /* Deal with final partial chunks */
-    if(rest > chunk && rest < 2*chunk) {	/* The penultimate chunk has a partial final chunk */
-      chunk = rest / 2;				/* Split the total remaining data in two */
+    if(rest > chunk && rest < 2*chunk) {        /* The penultimate chunk has a partial final chunk */
+      chunk = rest / 2;                         /* Split the total remaining data in two */
       chunk = (chunk + pagesz - 1)/pagesz;
-      chunk *= pagesz;				/* Need to ensure file offset is page-aligned */
+      chunk *= pagesz;                          /* Need to ensure file offset is page-aligned */
     }
-    if(rest < chunk)		/* The last chunk */
+    if(rest < chunk)            /* The last chunk */
       chunk = rest;
 
     /* Write in the chunk size and offset values */
@@ -1049,9 +1049,9 @@ private int setup_snapfile(snapfile_t *f, snap_t *s) {
       for_nxt_in_Q(queue *p, queue_next(&WriterChunkQ), &WriterChunkQ);
         chunk_t *h = rq2chunk(p);
         if(h->c_first > c->c_first) {
-	  pos = p;
-	  break;
-	}
+          pos = p;
+          break;
+        }
       end_for_nxt;
     }
     queue_ins_before(pos, chunk2rq(c));
@@ -1060,7 +1060,7 @@ private int setup_snapfile(snapfile_t *f, snap_t *s) {
 
   f->f_status = SNAPSHOT_READY;
   s->s_pending++;
-  wp_nfiles++;		   /* One more file in progress */
+  wp_nfiles++;             /* One more file in progress */
   return 0;
 }
 
@@ -1080,15 +1080,15 @@ private int setup_snapfile(snapfile_t *f, snap_t *s) {
 
 private void completed_snapfile(snapfile_t *f) {
   snap_t *s      = f->f_parent;
-  int	  status = s->s_status;
+  int     status = s->s_status;
 
   if(f->f_fd >= 0)
     close(f->f_fd);
 
   s->s_pending--;
-  wp_nfiles--;		/* One less file in progress */
+  wp_nfiles--;          /* One less file in progress */
   
-  release_chunk(f->f_chunkQ);	/* Finished with these now */
+  release_chunk(f->f_chunkQ);   /* Finished with these now */
   f->f_chunkQ = NULL;
   
   if(f->f_status == SNAPSHOT_ERROR) {
@@ -1096,11 +1096,11 @@ private void completed_snapfile(snapfile_t *f) {
     unlinkat(s->s_dirfd, &f->f_file[0], 0);  /* If the file failed, remove it */
   }
   else {
-    s->s_done++;		/* This file is done, it was pending before */
+    s->s_done++;                /* This file is done, it was pending before */
     s->s_status = SNAPSHOT_WRITING;
   }
-  de_queue(file2qp(f));		/* Remove this one from the snapshot */
-  free_snapfile(f);		/* And free the structure */
+  de_queue(file2qp(f));         /* Remove this one from the snapshot */
+  free_snapfile(f);             /* And free the structure */
   if( status != SNAPSHOT_ERROR )
     refresh_snapshot(s);
 }
@@ -1129,12 +1129,12 @@ private void abort_snapfile(snapfile_t *f) {
     chunk_t *c = qp2chunk(p);
 
     if( chunk_in_writer(c) ) {
-      de_queue(chunk2rq(c));		    /* Remove from WRITER chunk queue */
+      de_queue(chunk2rq(c));                /* Remove from WRITER chunk queue */
       if( !is_chunk_status(c, SNAPSHOT_WRITTEN) ) {
-	if( !is_chunk_status(c, SNAPSHOT_ERROR) ) {
-	  wp_totxfrsamples += c->c_samples;
-	}
-	set_chunk_status(c, SNAPSHOT_ERROR);
+        if( !is_chunk_status(c, SNAPSHOT_ERROR) ) {
+          wp_totxfrsamples += c->c_samples;
+        }
+        set_chunk_status(c, SNAPSHOT_ERROR);
       }
     }
   end_for_nxt;
@@ -1156,24 +1156,24 @@ public int is_dead_snapfile(snapfile_t *f) {
 private void debug_snapfile(snapfile_t *f) {
   snap_t *s = f->f_parent;
   int     left = MSGBUFSIZE-1,
-	  used = 0;
+          used = 0;
   int     i;
   char    buf[MSGBUFSIZE];
 
   used = snprintf(&buf[used], left,
-		  "File %s (f:%04hx) of snapshot %04hx, at %p: "
-		  "Q [f:%04hx,f:%04hx] "
-		  "fd %d ix %d nc %d/%d st %s\n",
-		  &f->f_file[0], f->f_name, s->s_name, f,
-		  qp2fname(queue_prev(&f->f_Q)), qp2fname(queue_next(&f->f_Q)),
-		  f->f_fd, f->f_indexnr, f->f_written, f->f_nchunks, snapshot_status(f->f_status)
-		  );
+                  "File %s (f:%04hx) of snapshot %04hx, at %p: "
+                  "Q [f:%04hx,f:%04hx] "
+                  "fd %d ix %d nc %d/%d st %s\n",
+                  &f->f_file[0], f->f_name, s->s_name, f,
+                  qp2fname(queue_prev(&f->f_Q)), qp2fname(queue_next(&f->f_Q)),
+                  f->f_fd, f->f_indexnr, f->f_written, f->f_nchunks, snapshot_status(f->f_status)
+                  );
   if(used >= left) used = left;
   left -= used;
   i = 0;
   for_nxt_in_Q(queue *p, chunk2qp(f->f_chunkQ), chunk2qp(f->f_chunkQ))
     int u = snprintf(&buf[used], left,
-		     " > %03d: ", i++);
+                     " > %03d: ", i++);
     if(u >= left) u = left;
     used += u;
     left -= u;
@@ -1188,7 +1188,7 @@ private void debug_snapfile(snapfile_t *f) {
  * --------------------------------------------------------------------------------
  *
  * MAIN LOOP TASKS: deal with command and queue messages as they arrive and transfer
- *		    chunks to the READER when possible.
+ *                  chunks to the READER when possible.
  *
  *  --------------------------------------------------------------------------------
  */
@@ -1214,23 +1214,23 @@ private void debug_snapfile(snapfile_t *f) {
 private uint64_t writer_service_queue(uint64_t start) {
   uint64_t now  = start;
   uint64_t stop = start + WRITER_MAX_CHUNK_DELAY;
-  int	   max;
+  int      max;
 
   for(max=WRITER_MAX_CHUNKS_TRANSFER; max > 0 && !queue_singleton(&WriterChunkQ) && now < stop; --max) { /* Only ever do max chunks at the most */
     chunk_t *c = rq2chunk(queue_next(&WriterChunkQ));
     
     if( map_chunk_to_frame(c) < 0 ) {
       if(is_chunk_status(c, SNAPSHOT_ERROR)) { /* Something nasty went wrong! */
-	wp_totxfrsamples += c->c_samples;
-	abort_snapfile(c->c_parent);
-	//	debug_snapfile(c->c_parent);
-	completed_snapfile(c->c_parent);
-	WARNING(WRITER, "service queue aborts chunk %04hx: %s\n", c->c_name, strbuf_string(c->c_error));
+        wp_totxfrsamples += c->c_samples;
+        abort_snapfile(c->c_parent);
+        //      debug_snapfile(c->c_parent);
+        completed_snapfile(c->c_parent);
+        WARNING(WRITER, "service queue aborts chunk %04hx: %s\n", c->c_name, strbuf_string(c->c_error));
       }
-      max = 0;			/* Couldn't get a frame, so we are done */
+      max = 0;                  /* Couldn't get a frame, so we are done */
     }
-    else {			/* We succeeded */
-      de_queue(chunk2rq(c));	/* Hand the chunk over to the READER thread */
+    else {                      /* We succeeded */
+      de_queue(chunk2rq(c));    /* Hand the chunk over to the READER thread */
       set_chunk_status(c, SNAPSHOT_WAITING);
       c->c_parent->f_pending++;
       set_chunk_owner(c, CHUNK_OWNER_READER);
@@ -1239,7 +1239,7 @@ private uint64_t writer_service_queue(uint64_t start) {
     }
     now = monotonic_ns_clock();
   }
-  return now;			/* Current end-of-loop time */
+  return now;                   /* Current end-of-loop time */
 }
 
 /*
@@ -1282,16 +1282,16 @@ private int process_reader_message(void *s) {
     f->f_written++;
     if(f->f_written == f->f_nchunks) {
       f->f_status = SNAPSHOT_WRITTEN;
-      completed_snapfile(f);	/* This file is finished -- all chunks were written */
+      completed_snapfile(f);    /* This file is finished -- all chunks were written */
     }
     return true;      
   }
   if(is_chunk_status(c, SNAPSHOT_ERROR)) {
     if(f->f_status != SNAPSHOT_ERROR)
-      abort_snapfile(f);	/* Tidy the chunk list, marking all WRITER-owned chunks into SNAPSHOT_ERROR state */
+      abort_snapfile(f);        /* Tidy the chunk list, marking all WRITER-owned chunks into SNAPSHOT_ERROR state */
     set_chunk_owner(c, CHUNK_OWNER_WRITER); /* Needs to be after the abort_snapfile() to avoid dual counting */
     if(f->f_pending == 0)
-      completed_snapfile(f);	/* This file is finished -- no pending chunks in transit */
+      completed_snapfile(f);    /* This file is finished -- no pending chunks in transit */
     return true;
   }
   
@@ -1307,7 +1307,7 @@ private int process_writer_command(void *s) {
   strbuf  err;
 
   ret = recv_object_ptr(s, (void **)&cmd);
-  if( !ret ) {			/* Quit */
+  if( !ret ) {                  /* Quit */
     return false;
   }
 
@@ -1315,7 +1315,7 @@ private int process_writer_command(void *s) {
   err = strbuf_next(cmd);
 
   switch(cmd_buf[0]) {
-  case 'd':			/* Dir command */
+  case 'd':                     /* Dir command */
   case 'D':
     /* Call the command handler for Dir */
     strbuf_printf(err, "NO: Dir -- ");
@@ -1335,12 +1335,12 @@ private int process_writer_command(void *s) {
     }
     break;
 
-  case 's':			/* Snap command */
+  case 's':                     /* Snap command */
   case 'S':
     /* Try to build a snapshot descriptor */
     strbuf_printf(err, "NO: Snap -- ");
     snap_t *s = build_snapshot_descriptor(cmd);
-    if(s != NULL) {		    /* Snapshot building succeeded */
+    if(s != NULL) {                 /* Snapshot building succeeded */
       queue_ins_after(&snapQ, snap2qp(s));
       strbuf_printf(err, "OK Snap %04hx ", s->s_name);
       s->s_error = (strbuf)de_queue((queue *)cmd);
@@ -1381,7 +1381,7 @@ private void writer_thread_msg_loop() {    /* Read and process messages */
     {  { reader, 0, ZMQ_POLLIN, 0 },
        { command, 0, ZMQ_POLLIN, 0 },
     };
-#define	N_POLL_ITEMS	(sizeof(poll_list)/sizeof(zmq_pollitem_t))
+#define N_POLL_ITEMS    (sizeof(poll_list)/sizeof(zmq_pollitem_t))
   int (*poll_responders[N_POLL_ITEMS])(void *) =
     { process_reader_message,
       process_writer_command,
@@ -1392,7 +1392,7 @@ private void writer_thread_msg_loop() {    /* Read and process messages */
   LOG(WRITER, 1, "thread is initialised");
 
   running = writer_parameters.w_running;
-  borrowedtime = 0;		/* Keeps track of the number of [ms] we owe */
+  borrowedtime = 0;             /* Keeps track of the number of [ms] we owe */
 
   while( running && !die_die_die_now ) {
     int delay = borrowedtime + WRITER_POLL_DELAY; /* This is how long we wait normally in [ms] */
@@ -1406,7 +1406,7 @@ private void writer_thread_msg_loop() {    /* Read and process messages */
     if(ret < 0)
       break;
 
-    if(delay >= 0)		/* We did some waiting, we owe no time */
+    if(delay >= 0)              /* We did some waiting, we owe no time */
       borrowedtime = 0;
 
     /*
@@ -1418,8 +1418,8 @@ private void writer_thread_msg_loop() {    /* Read and process messages */
     
     for(n=0; n<N_POLL_ITEMS; n++) {
       if( poll_list[n].revents & ZMQ_POLLIN ) {
-	if( !(*poll_responders[n])(poll_list[n].socket) )
-	  running = false;
+        if( !(*poll_responders[n])(poll_list[n].socket) )
+          running = false;
       }
     }
     
@@ -1477,17 +1477,17 @@ public void *writer_main(void *arg) {
  */
 
 public int verify_writer_params(wparams *wp, strbuf e) {
-  import int tmpdir_dirfd;	/* Imported from snapshot.c */
+  import int tmpdir_dirfd;      /* Imported from snapshot.c */
   int ret;
 
-  if( wp->w_schedprio != 0 ) {	/* Check for illegal value */
+  if( wp->w_schedprio != 0 ) {  /* Check for illegal value */
     int max, min;
 
     min = sched_get_priority_min(SCHED_FIFO);
     max = sched_get_priority_max(SCHED_FIFO);
     if(wp->w_schedprio < min || wp->w_schedprio > max) {
       strbuf_appendf(e, "RT scheduling priority %d not in kernel's acceptable range [%d,%d]",
-		    wp->w_schedprio, min, max);
+                    wp->w_schedprio, min, max);
       return -1;
     }
   }
@@ -1498,12 +1498,12 @@ public int verify_writer_params(wparams *wp, strbuf e) {
    */
   if(wp->w_lockedram < MIN_RAM_MB || wp->w_lockedram > MAX_RAM_MB) {
     strbuf_appendf(e, "Transfer Locked RAM parameter %d MiB outwith compiled-in range [%d, %d] MiB",
-		  wp->w_lockedram, MIN_RAM_MB, MAX_RAM_MB);
+                  wp->w_lockedram, MIN_RAM_MB, MAX_RAM_MB);
     return -1;
   }
   if(wp->w_chunksize < MIN_CHUNK_SZ || wp->w_chunksize > MAX_CHUNK_SZ) {
     strbuf_appendf(e, "Transfer chunk size %d KiB outwith compiled-in range [%d, %d] KiB",
-		  wp->w_chunksize, MIN_CHUNK_SZ, MAX_CHUNK_SZ);
+                  wp->w_chunksize, MIN_CHUNK_SZ, MAX_CHUNK_SZ);
     return -1;
   }
 
@@ -1513,10 +1513,10 @@ public int verify_writer_params(wparams *wp, strbuf e) {
   int nfr;
   sz = pagesize * ((sz + pagesize - 1) / pagesize); /* Round up to multiple of PAGE SIZE */
   wp->w_chunksize = sz / 1024;
-  nfr = (wp->w_lockedram * 1024*1024) / sz;	    /* Number of frames that fit in locked RAM */
+  nfr = (wp->w_lockedram * 1024*1024) / sz;         /* Number of frames that fit in locked RAM */
   if(nfr < MIN_NFRAMES) {
     strbuf_appendf(e, "Adjusted chunk size %d KiB and given RAM %d MiB yield too few (%d < %d) frames",
-		   wp->w_chunksize, wp->w_lockedram, nfr, MIN_NFRAMES);
+                   wp->w_chunksize, wp->w_lockedram, nfr, MIN_NFRAMES);
     return -1;
   }
   wp_nframes = nfr;
@@ -1536,14 +1536,14 @@ public int verify_writer_params(wparams *wp, strbuf e) {
   wp_totxfrsamples = pagesize * (wp_totxfrsamples / pagesize);
   wp_totxfrsamples = wp_totxfrsamples / sizeof(sampl_t);
 
-  wp_nfiles = 0;		/* Currently no files in progress */
+  wp_nfiles = 0;                /* Currently no files in progress */
 
   /*
    * Check the snapdir directory exists and get a path fd for it.
    * Assumes we are already running as the non-privileged user.
    */
   wp_snap_dirfd = new_directory(tmpdir_dirfd, wp->w_snapdir);
-  if( wp_snap_dirfd < 0 ) {	/* Give up on failure */
+  if( wp_snap_dirfd < 0 ) {     /* Give up on failure */
     strbuf_appendf(e, "Snapdir %s inaccessible: %m", wp->w_snapdir);
     return -1;
   }

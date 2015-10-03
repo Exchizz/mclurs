@@ -9,13 +9,13 @@
 #include <unistd.h>
 #include "assert.h"
 
-#define true	1
-#define false	0
+#define true    1
+#define false   0
 
-#define WAIT_FOR_CONDITION(cond,limit)					\
-  do { double l = (limit); int n = 0, max = 100*l;			\
-    while( n<max && !(cond) ) usleep(10000), n++;			\
-    assertv((cond), "Waited too long (%g [s]) for condition\n", l);	\
+#define WAIT_FOR_CONDITION(cond,limit)                                  \
+  do { double l = (limit); int n = 0, max = 100*l;                      \
+    while( n<max && !(cond) ) usleep(10000), n++;                       \
+    assertv((cond), "Waited too long (%g [s]) for condition\n", l);     \
   } while(0)
 
 /* Messaging utilities */

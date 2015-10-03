@@ -116,6 +116,7 @@ queue:
 rtprio:
 
 	Looks after real-time scheduling and capability manipulation.
+	The monotonic nanosecond clock routine is also defined here.
 
 strbuf:
 
@@ -126,6 +127,7 @@ strbuf:
 	registers %C for Comedi errors, for example.
 
 util:
+
 	A few routines that simplify using the ZeroMQ message-passing
 	library.  These handle socket opening and address binding,
 	message assembly and object pointer transmission.
@@ -205,3 +207,68 @@ general:
 	Header file defining public, private, export and import used
 	to make the C code inter-relationships more transparent.
 
+Errors and Logging via error.h functionality:
+
+  Logging in snapshot is handled in two ways.  In the main thread,
+logging generates direct printing to stderr.  In the other threads, it
+generates messages sent from the thread's log socket to the log
+collector in MAIN, which dumps them to stderr as they are processed.
+This is concealed in the macros in error.h which determine the logging
+scheme based on whether "MAIN_THREAD" is defined when error.h is
+included.  The other threads export their log sockets so that logging
+in other modules is possible -- given that a specific thread can be
+assigned the job of dealing with it (on a case by case basis).
+
+  There are three classes of standard message producer, all of them
+taking as final arguments a format and argument list like printf.
+They are:
+
+  - FATAL_ERROR(fmt,...) works in the MAIN thread only and signals an
+    upcoming non-zero exit of the program.  This can only be used
+    before the threads have been started; thereafter there should be
+    no fatal errors in the MAIN thread, though there may be problems
+    in any thread that cause the program to execute a controlled shut
+    down.
+
+    FATAL_ERROR() does not itself call exit(): that is left to the
+    surrounding code to manage.  Exit codes 1-4 characterise different
+    types of fatal situation.
+
+  - WARNING(thread,fmt,...) generates a message whenever the verbose
+    global is at least zero.  It operates in all threads.  The first
+    argument is the name of the thread issuing the warning, remaining
+    arguments are as for printf.  This is used for problematic
+    conditions not necessarily fatal, especially out of MAIN thread.
+    For instance, a mismatch between requested and achieved ADC
+    frequency or buffer size results in a warning.
+
+  - LOG(thread,level,fmt,...) takes two arguments before the format
+    and arg list: the thread identifier and the log level.  It results
+    in a message whenever the verbosity is at least the indicated
+    level.  LOG() messages are informational in nature.  Levels are as
+    follows:
+
+   -1 -- not currently used, but such messages will *always* be
+         emitted.
+
+    0 -- basic information of interest almost always; suppressed by a
+         solitary -q flag.  The default initial verbosity.
+    
+    1 -- more details of normal operation, such as parameter values
+      	 and their computed consequences, periodic sample index
+      	 statements, acceptance and completion of snapshots.
+
+    2 -- detailed operational notes such as setup information on
+      	 snapshot and snapfile structures, exchange of chunks between
+      	 READER and WRITER, Comedi buffer update policy decisions.
+
+    3 -- very detailed operational information such as queuing and
+         memory management information, details of parameter
+         processing, snapshot, snapfile and chunk structures.
+
+  In addition to normal logging of information and warnings, error
+information is passed back via the strbufs attached to snapshots,
+snapfiles and chunks.  Fatal runtime errors are signalled by detailed
+assertion code which reports the botched assertion together with any
+context information provided in the assertion statement, as well as
+the file and line number where the problem arose.

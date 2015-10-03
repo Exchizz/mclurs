@@ -9,7 +9,7 @@
  * Error buffer structure.
  */
 
-typedef struct _strbuf *strbuf;	/* Opaque object */
+typedef struct _strbuf *strbuf; /* Opaque object */
 
 export strbuf alloc_strbuf();
 export strbuf alloc_big_strbuf(int);
@@ -29,10 +29,10 @@ export int  register_error_percent_handler(char, const char *(*)());
 export void strbuf_revert(strbuf);
 export void debug_strbuf(FILE *, strbuf);
 
-#define strbuf_clear(s)	((void) strbuf_setpos(s, 0))
+#define strbuf_clear(s) ((void) strbuf_setpos(s, 0))
 
-#define strbuf_next(s)	((strbuf)queue_next((queue *)(s)))
-#define strbuf_prev(s)	((strbuf)queue_prev((queue *)(s)))
+#define strbuf_next(s)  ((strbuf)queue_next((queue *)(s)))
+#define strbuf_prev(s)  ((strbuf)queue_prev((queue *)(s)))
 
 #define strbuf2qp(s)    ((queue *)(s))
 #define qp2strbuf(q)    ((strbuf)(q))

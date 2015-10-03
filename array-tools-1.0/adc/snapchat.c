@@ -20,8 +20,8 @@
  * Snapshot version
  */
 
-#define PROGRAM_VERSION	"1.0"
-#define VERSION_VERBOSE_BANNER	"MCLURS ADC toolset...\n"
+#define PROGRAM_VERSION "1.0"
+#define VERSION_VERBOSE_BANNER  "MCLURS ADC toolset...\n"
 
 /*
  * Global parameters for the snapshot program
@@ -35,7 +35,7 @@ param_t globals[] ={
   },
 };
 
-const int n_global_params =	(sizeof(globals)/sizeof(param_t));
+const int n_global_params =     (sizeof(globals)/sizeof(param_t));
 
 /*
  * Debugging print out control
@@ -50,10 +50,10 @@ struct arg_lit *h1, *vn1, *v1, *q1;
 struct arg_end *e1;
 
 BEGIN_CMD_SYNTAX(help) {
-  v1  = arg_litn("v",	"verbose", 0, 2,	"Increase verbosity"),
-  q1  = arg_lit0("q",  "quiet",			"Decrease verbosity"),
-  h1  = arg_lit0("h",	"help",			"Print usage help message"),
-  vn1 = arg_lit0(NULL,	"version",		"Print program version string"),
+  v1  = arg_litn("v",   "verbose", 0, 2,        "Increase verbosity"),
+  q1  = arg_lit0("q",  "quiet",                 "Decrease verbosity"),
+  h1  = arg_lit0("h",   "help",                 "Print usage help message"),
+  vn1 = arg_lit0(NULL,  "version",              "Print program version string"),
   e1  = arg_end(20)
 } APPLY_CMD_DEFAULTS(help) {
   /* No defaults to apply here */
@@ -66,11 +66,11 @@ struct arg_str *n2;
 struct arg_str *m2;
 
 BEGIN_CMD_SYNTAX(main) {
-  v2  = arg_litn("v",	"verbose", 0, 3,	"Increase verbosity"),
-  q2  = arg_lit0("q",  "quiet",			"Decrease verbosity"),
+  v2  = arg_litn("v",   "verbose", 0, 3,        "Increase verbosity"),
+  q2  = arg_lit0("q",  "quiet",                 "Decrease verbosity"),
   u2  = arg_str0("s",  "snapshot", "<url>",     "URL of snapshotter command socket"),
-  m2  = arg_str0("m",   "multi", "<prefix>",	"Send multiple messages if replies begin with <prefix>"),
-  n2  = arg_strn(NULL, NULL, "<args>", 1, 30,	"Message content"),
+  m2  = arg_str0("m",   "multi", "<prefix>",    "Send multiple messages if replies begin with <prefix>"),
+  n2  = arg_strn(NULL, NULL, "<args>", 1, 30,   "Message content"),
   e2  = arg_end(20)
 } APPLY_CMD_DEFAULTS(main) {
   m2->hdr.flag |= ARG_HASOPTVALUE;
@@ -81,7 +81,7 @@ BEGIN_CMD_SYNTAX(main) {
 /* Standard help routines: display the version banner */
 void print_version(FILE *fp, int verbosity) {
   fprintf(fp, "%s: Vn. %s\n", program, PROGRAM_VERSION);
-  if(verbosity > 0) {		/* Verbose requested... */
+  if(verbosity > 0) {           /* Verbose requested... */
     fprintf(fp, VERSION_VERBOSE_BANNER);
   }
 }
@@ -106,8 +106,8 @@ void print_usage(FILE *fp, void **argtable, int verbosity, char *program) {
  * Snapchat globals...
  */
 
-void      *zmq_main_ctx;	/* ZMQ context for messaging */
-char	  *snapshot_addr;	/* The URL of the snapshotter */
+void      *zmq_main_ctx;        /* ZMQ context for messaging */
+char      *snapshot_addr;       /* The URL of the snapshotter */
 
 /*
  * Print a reply message to stdout
@@ -130,18 +130,18 @@ void print_message(char *msg, int size) {
 
 int checked_prefix(const char *p, const char *str) {
   while(*p && *str && *p == *str) {
-    if( *p != *str )		/* Mismatch with prefix */
+    if( *p != *str )            /* Mismatch with prefix */
       return 0;
     p++, str++;
   }
-  return *p? 0 : 1;		/* True iff prefix has run out */
+  return *p? 0 : 1;             /* True iff prefix has run out */
 }
 
 /*
  * Main entry point
  */
 
-#define LOGBUF_SIZE	1024
+#define LOGBUF_SIZE     1024
 
 int main(int argc, char *argv[], char *envp[]) {
   const char *prefix = NULL;
@@ -165,7 +165,7 @@ int main(int argc, char *argv[], char *envp[]) {
 
   /* Try first syntax */
   int err_help = arg_parse(argc, argv, cmd_help);
-  if( !err_help ) {		/* Assume this was the desired command syntax */
+  if( !err_help ) {             /* Assume this was the desired command syntax */
     if(vn1->count)
       print_version(stdout, v1->count);
     if(h1->count || !vn1->count) {
@@ -179,7 +179,7 @@ int main(int argc, char *argv[], char *envp[]) {
   /* Try second syntax */
   int err_main = arg_parse(argc, argv, cmd_main);
   verbose = v2->count - q2->count;
-  if( err_main ) {		/* This is the default desired syntax; give full usage */
+  if( err_main ) {              /* This is the default desired syntax; give full usage */
     arg_print_errors(stderr, e2, program);
     print_usage(stderr, cmd_help, verbose>0, program);
     print_usage(stderr, cmd_main, verbose, program);
@@ -190,11 +190,11 @@ int main(int argc, char *argv[], char *envp[]) {
   ret = arg_results_to_params(cmd_main, globals, n_global_params);
 
   /* 5. Process parameters:  deal with non-parameter table arguments where necessary */
-  if(m2->count) {		/* Repeat-mode with prefix */
+  if(m2->count) {               /* Repeat-mode with prefix */
     prefix = m2->sval[0];
   }
 
-  if(verbose > 2)		/* Dump global parameters for debugging purposes */
+  if(verbose > 2)               /* Dump global parameters for debugging purposes */
     debug_params(stderr, globals, n_global_params);
 
   /* Create the ZMQ contexts */
@@ -208,7 +208,7 @@ int main(int argc, char *argv[], char *envp[]) {
   snapshot = zh_connect_new_socket(zmq_main_ctx, ZMQ_REQ, snapshot_addr);
   if( snapshot == NULL ) {
     fprintf(stderr, "%s: Error -- unable to create socket to snapshot at %s: %s\n",
-	    program, snapshot_addr, strerror(errno));
+            program, snapshot_addr, strerror(errno));
     zmq_ctx_term(zmq_main_ctx);
     exit(2);
   }
@@ -233,27 +233,27 @@ int main(int argc, char *argv[], char *envp[]) {
       used = 0;
       left = LOGBUF_SIZE-1;
       for(n=0; n<parts; n++) {
-	int  len;
+        int  len;
       
-	len = snprintf(&buf[used], left, "%s ", msg[n]);
-	if(len >= left) {
-	  len=left;
-	  fprintf(stderr, "%s: ran out of space composing message '%s'\n", program, &buf[0]);
-	  exit(2);
-	}
-	if(verbose > 1)
-	  fprintf(stderr, " [%s]", buf);
-	used += len;
-	left -= len;
+        len = snprintf(&buf[used], left, "%s ", msg[n]);
+        if(len >= left) {
+          len=left;
+          fprintf(stderr, "%s: ran out of space composing message '%s'\n", program, &buf[0]);
+          exit(2);
+        }
+        if(verbose > 1)
+          fprintf(stderr, " [%s]", buf);
+        used += len;
+        left -= len;
       }
       if(used)
-	used--;
+        used--;
     }
     else {
       used = snprintf(&buf[0], LOGBUF_SIZE-1, "%s", *msg++);
       parts--;
       if(verbose > 1)
-	fprintf(stderr, " [%s]", buf);
+        fprintf(stderr, " [%s]", buf);
     }
 
     if(verbose > 1)

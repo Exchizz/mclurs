@@ -98,7 +98,7 @@ private void errorfn(struct arg_int64 *parent, FILE *fp, int errorcode, const ch
 
 /* Generic constructor for an arg_int64 structure */
 struct arg_int64* arg_int64n(const char* shortopts, const char* longopts,
-			     const char *datatype,
+                             const char *datatype,
                              int mincount, int maxcount, const char *glossary) {
   int bytes;
   struct arg_int64 *ret;
@@ -126,14 +126,14 @@ struct arg_int64* arg_int64n(const char* shortopts, const char* longopts,
 
 /* Special case: 0 or 1 arguments */
 struct arg_int64* arg_int640(const char* shortopts, const char* longopts,
-			     const char *datatype,  const char *glossary) {
+                             const char *datatype,  const char *glossary) {
 
   return arg_int64n(shortopts, longopts, datatype, 0, 1, glossary);
 }
 
 /* Special case: exactly 1 argument */
 struct arg_int64* arg_int641(const char* shortopts, const char* longopts,
-			     const char *datatype,  const char *glossary) {
+                             const char *datatype,  const char *glossary) {
 
   return arg_int64n(shortopts, longopts, datatype, 1, 1, glossary);
 }

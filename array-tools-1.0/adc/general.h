@@ -7,9 +7,9 @@
  */
 
 #define public
-#define import	extern
-#define export	extern
+#define import  extern
+#define export  extern
 #define private static
-#define persist	static
+#define persist static
 
 #endif /* _GENERAL_H */

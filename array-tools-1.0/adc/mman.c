@@ -17,9 +17,9 @@ public void prefault_pages(void *p, int n, int w) {
   int ret = 0;
 
   while( n-- > 0 ) {
-    if( (w&PREFAULT_RDONLY) )			/* Read page */
+    if( (w&PREFAULT_RDONLY) )                   /* Read page */
       ret = *(int *)p;
-    if( (w&PREFAULT_WRONLY) )			/* Write page */
+    if( (w&PREFAULT_WRONLY) )                   /* Write page */
       *(int *)p = ret;
     p += sysconf(_SC_PAGESIZE);
   }
@@ -65,7 +65,7 @@ public void *mmap_and_lock_fixed(int fd, off_t offset, size_t length, int flags,
     mflags |= MAP_LOCKED;
 
   //  fprintf(stderr, "MMLF called map %p fd %d offs %d size %d flags %x\n",
-  //	  fixed, fd, offset, length, flags);
+  //      fixed, fd, offset, length, flags);
 
   map = mmap(fixed, length, pflags, mflags, fd, offset);
   if(map == NULL || map == (void *)-1 || map != fixed)

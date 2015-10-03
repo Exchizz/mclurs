@@ -31,7 +31,7 @@ PARAM_TYPE_DECL(string, char *,   NULL,   "%s");
 public void reset_param(param_t *p) {
   if(p->p_type == PARAM_TYPE(string)) { /* Special case of dynamic string in two places */
     if( p->p_val && *(char **)p->p_val == p->p_str) { /* String copy is in both places */
-      p->p_dyn = 0;				     /* Ignore dynamic:  caller is responsible */
+      p->p_dyn = 0;                                  /* Ignore dynamic:  caller is responsible */
     }
   }
   if(p->p_dyn)
@@ -107,15 +107,15 @@ public int set_param_from_env(char *env[], param_t ps[], int nps) {
     char **e, *p;
     int   sz;
 
-    if( !(ps[i].p_source & PARAM_SRC_ENV) )		/* Only look for params with environment source */
+    if( !(ps[i].p_source & PARAM_SRC_ENV) )             /* Only look for params with environment source */
       continue;
     for(e=env; p=*e; e++) {
-      for(sz=0; *p && *p != '='; p++, sz++);	/* Find the = */
-      if( !strncasecmp(ps[i].p_name, *e, sz) ) {	/* Unless true, it's not this one */
-	if( ps[i].p_name[sz] )			/* If true, there is more name left over:  not this one */
-	  continue;
-	if( set_param_value(&ps[i], (*p ? p+1 : p)) < 0 )
-	  return -1;
+      for(sz=0; *p && *p != '='; p++, sz++);    /* Find the = */
+      if( !strncasecmp(ps[i].p_name, *e, sz) ) {        /* Unless true, it's not this one */
+        if( ps[i].p_name[sz] )                  /* If true, there is more name left over:  not this one */
+          continue;
+        if( set_param_value(&ps[i], (*p ? p+1 : p)) < 0 )
+          return -1;
       }
     }
   }
@@ -143,8 +143,8 @@ public int set_param_from_cmd(char *cmd, param_t ps[], int nps) {
     errno = EPERM;
     return -1;
   }
-  if( !*s++ ) {		  /* If *s non-zero, step over the = */
-    errno = EINVAL;	  /* Name=Value string has no '=Value' part */
+  if( !*s++ ) {           /* If *s non-zero, step over the = */
+    errno = EINVAL;       /* Name=Value string has no '=Value' part */
     return -1;
   }
   return set_param_value(p, s);
@@ -170,7 +170,7 @@ private int do_set_params_from_string(char *str, int opt, param_t ps[], int nps)
   cur = strtok_r(str, " \t", &save);
   if( cur == NULL ) {
     errno = EBADMSG;
-    return opt? 0 : -1;		/* If parameters are optional, may succeed here for empty */
+    return opt? 0 : -1;         /* If parameters are optional, may succeed here for empty */
   }
 
   /* First parameter Name=Value should come next */
@@ -210,14 +210,14 @@ public int assign_param(param_t *p) {
     errno = EINVAL;
     return -1;
   }
-  if( !p->p_val ) {		/* Nowhere to put value */
+  if( !p->p_val ) {             /* Nowhere to put value */
     errno = EFAULT;
     return -1;
   }
 
   param_type *pt = p->p_type;
-  if(pt == PARAM_TYPE(bool)) {	/* Special cases for booleans */
-    const char *s = p->p_str;	/* May be NULL, for a boolean (== false) */
+  if(pt == PARAM_TYPE(bool)) {  /* Special cases for booleans */
+    const char *s = p->p_str;   /* May be NULL, for a boolean (== false) */
 
     if( !*s || !strncasecmp(s, "false", 6) || !strncasecmp(s, "no", 3) || !strncasecmp(s, "off", 4) ) {
       *(int *)p->p_val = 0;
@@ -229,7 +229,7 @@ public int assign_param(param_t *p) {
     }
   }
 
-  if( !p->p_str )		/* No value to put anywhere */
+  if( !p->p_str )               /* No value to put anywhere */
     return 0;
 
   if(pt == PARAM_TYPE(string)) { /* Special case for strings -- no conversion needed */
@@ -238,7 +238,7 @@ public int assign_param(param_t *p) {
   }
 
   // fprintf(stderr, "Scan param %s with str %s to %p using %s\n",
-  //	  p->p_name, p->p_str, p->p_val, pt->t_scan);
+  //      p->p_name, p->p_str, p->p_val, pt->t_scan);
   return sscanf(p->p_str, pt->t_scan, p->p_val) == 1? 0 : -1;
 }
 
@@ -271,7 +271,7 @@ int assign_cmd_params(param_t ps[], int nps) {
 
     if( p->p_source & PARAM_SRC_CMD ) {
       if(assign_param(p) < 0)
-	return -n-1;
+        return -n-1;
     }
   }
   return 0;
@@ -292,7 +292,7 @@ public int get_param_str(param_t *p, const char **vp) {
     errno = EINVAL;
     return -1;
   }
-  v = p->p_str;		/* The string value for the parameter */
+  v = p->p_str;         /* The string value for the parameter */
   if( !v ){
     errno = EINVAL;
     return -1;
@@ -311,25 +311,25 @@ private param_t *arg_param_match(const char *a, param_t ps[], int nps) {
   param_t *p, *ret;
   const char *ap;
 
-  if(a == NULL)			/* There are no long option names */
+  if(a == NULL)                 /* There are no long option names */
     return NULL;
   ret = NULL;
-  ap = a;			/* First option name starts here */
+  ap = a;                       /* First option name starts here */
   for(ap=a; *a; a=ap) {
 
     while(*ap && *ap != ',') ap++; /* Skip to end of (first) option name */
 
     p = find_param_by_name(a, ap-a, ps, nps);
-    if(p == NULL)		/* No match for that name */
+    if(p == NULL)               /* No match for that name */
       continue;
 
-    if(ret && ret != p) {	/* Multiple matches! */
+    if(ret && ret != p) {       /* Multiple matches! */
       errno = EBADSLT;
       return NULL;
     }
 
-    ret = p;			/* At least one match found */
-    if(*ap == ',') ap++;	/* Skip a comma, if more to come */
+    ret = p;                    /* At least one match found */
+    if(*ap == ',') ap++;        /* Skip a comma, if more to come */
   }
   return ret;
 }
@@ -337,8 +337,8 @@ private param_t *arg_param_match(const char *a, param_t ps[], int nps) {
 
 /* ASSUME that the count and 'data' values in every argxxx follow the hdr directly */
 /* IF THAT IS TRUE, then we can use the ->count and ->data members of ANY arg_xxx */
-#define ARG_COUNT(a)	(((struct arg_int *)(a))->count)
-#define ARG_DATA(a)	((void *)((struct arg_int *)(a))->ival)
+#define ARG_COUNT(a)    (((struct arg_int *)(a))->count)
+#define ARG_DATA(a)     ((void *)((struct arg_int *)(a))->ival)
 
 /*
  * Install defaults into an argtable from matching parameter structures.  This assumes
@@ -349,7 +349,7 @@ private param_t *arg_param_match(const char *a, param_t ps[], int nps) {
  */
 
 public int arg_defaults_from_params(void **argtable, int nargs, param_t ps[], int nps) {
-  struct arg_hdr **ate = (struct arg_hdr **)&argtable[nargs-1];	/* The arg_end structure slot */
+  struct arg_hdr **ate = (struct arg_hdr **)&argtable[nargs-1]; /* The arg_end structure slot */
 
   if( !((*ate)->flag & ARG_TERMINATOR) ) {
     errno = EINVAL;
@@ -362,24 +362,24 @@ public int arg_defaults_from_params(void **argtable, int nargs, param_t ps[], in
 
     param_t *p = arg_param_match(a->longopts, ps, nps);
 
-    if(p == NULL)		/* No parameter matched this argument */
+    if(p == NULL)               /* No parameter matched this argument */
       continue;
     /* Must be an ARG parameter, or coding problem */
     assertv( (p->p_source & PARAM_SRC_ARG), "Param %s not ARG sourced\n", p->p_name );
-    if( !p->p_str )		/* No string value, no default */
+    if( !p->p_str )             /* No string value, no default */
       continue;
 
     //    fprintf(stderr, "Found parameter %s with addr %p, str %s\n", p->p_name, p->p_val, p->p_str);
 
     /* Copy the parameter's value to the arg structure -- fake an argument parse */
-    (*a->resetfn)(a->parent);	/* Reset the counter;  init the structure */
+    (*a->resetfn)(a->parent);   /* Reset the counter;  init the structure */
     int ret = (*a->scanfn)(a->parent, p->p_str);
     /* Else value compatibility error:  abort */
     assertv(ret == 0, "Param %s str %s does not pass arg scanfn\n", p->p_name, p->p_str);
     ret = (*a->checkfn)(a->parent);
     /* Else value compatibility error:  abort */
     assertv(ret == 0, "Param %s str %s fails arg checkfn\n", p->p_name, p->p_str);
-    ARG_COUNT(a) = 0;		/* This was a default */
+    ARG_COUNT(a) = 0;           /* This was a default */
   }
 
   return 0;
@@ -410,14 +410,14 @@ public int arg_results_to_params(void **argtable, param_t ps[], int nps) {
     struct arg_hdr *a = *atp;
     void *av;
 
-    if( ARG_COUNT(a) == 0 )	/* There is no command-line argument value */
+    if( ARG_COUNT(a) == 0 )     /* There is no command-line argument value */
       continue;
 
     param_t *p = arg_param_match(a->longopts, ps, nps);
 
-    if(p == NULL)		/* No parameter matched this argument */
+    if(p == NULL)               /* No parameter matched this argument */
       continue;
-    if( !p->p_val )		/* Nowhere to put the value */
+    if( !p->p_val )             /* Nowhere to put the value */
       continue;
 
     av = ARG_DATA(a) + (ARG_COUNT(a)-1)*p->p_type->t_size;
@@ -436,20 +436,20 @@ public int arg_results_to_params(void **argtable, param_t ps[], int nps) {
     if(p->p_type == PARAM_TYPE(string)) {
       const char *v = *(char **)p->p_val;
       if(v != p->p_str) {
-	if(p->p_dyn)
-	  free((void *)p->p_str);
-	p->p_dyn = 0;
-	p->p_str = v;
+        if(p->p_dyn)
+          free((void *)p->p_str);
+        p->p_dyn = 0;
+        p->p_str = v;
       }
-      continue;			/* We are done, in this case */
+      continue;                 /* We are done, in this case */
     }
     
-    if(p->p_dyn)		/* Free the old str value if necessary */
+    if(p->p_dyn)                /* Free the old str value if necessary */
       free((void *)p->p_str);
     int ret = param_value_to_string(p, &p->p_str);
-    p->p_dyn = 1;		/* The new value is a dynamic string */
+    p->p_dyn = 1;               /* The new value is a dynamic string */
     assertv(ret >=0, "Update of parameter %s str from val for arg %d failed\n", 
-	    p->p_name, ate-atp+1); 
+            p->p_name, ate-atp+1); 
   }
   return 0;
 }
@@ -503,7 +503,7 @@ public int param_value_to_string(param_t *p, const char **s) {
   char buf[LOCALBUF_SIZE];
   int  used = 0;
 
-  if( !p->p_val )		/* Nowhere to get the value from */
+  if( !p->p_val )               /* Nowhere to get the value from */
     return 0;
 
   /* These cases are systematically treatable */
@@ -539,26 +539,26 @@ public void debug_params(FILE *fp, param_t ps[], int nps) {
     param_type *pt = p->p_type;
 
     fprintf(fp, "Parameter '%s': type %s addr %p str %p='%s'",
-	    p->p_name, pt->t_name, p->p_val, p->p_str, p->p_str);
+            p->p_name, pt->t_name, p->p_val, p->p_str, p->p_str);
     if(p->p_val) {
       fprintf(fp, " val '");
       if(pt == PARAM_TYPE(bool)) {
-	fprintf(fp, pt->t_show, *(int *)p->p_val);
+        fprintf(fp, pt->t_show, *(int *)p->p_val);
       }
       if(pt == PARAM_TYPE(int16)) {
-	fprintf(fp, pt->t_show, *(uint16_t *)p->p_val);
+        fprintf(fp, pt->t_show, *(uint16_t *)p->p_val);
       }
       if(pt == PARAM_TYPE(int32)) {
-	fprintf(fp, pt->t_show, *(uint32_t *)p->p_val);
+        fprintf(fp, pt->t_show, *(uint32_t *)p->p_val);
       }
       if(pt == PARAM_TYPE(int64)) {
-	fprintf(fp, pt->t_show, *(uint64_t *)p->p_val);
+        fprintf(fp, pt->t_show, *(uint64_t *)p->p_val);
       }
       if(pt == PARAM_TYPE(string)) {
-	fprintf(fp, pt->t_show, *(char **)p->p_val);
+        fprintf(fp, pt->t_show, *(char **)p->p_val);
       }
       if(pt == PARAM_TYPE(double)) {
-	fprintf(fp, pt->t_show, *(double *)p->p_val);
+        fprintf(fp, pt->t_show, *(double *)p->p_val);
       }
     }
     fprintf(fp, "'\n");

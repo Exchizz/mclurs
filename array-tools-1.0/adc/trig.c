@@ -5,17 +5,17 @@
  * snapshotter via ZMQ.
  *
  * Arguments:
- * --verbose|-v		Increase reporting level
- * --quiet|-q		Decrease reporting level
- * --snapshot|-s	The snapshotter socket address
- * --pre		Pre-trigger interval
- * --post		Post-trigger interval
- * --trigger		Timepoint of trigger
- * --wait-for-it|-w	Wait for a key-press to generate trigger
- * --repeat|-r		Generate multiple triggers instead of just one
- * --auto|-a		Generate the snapshot name automatically
- * --help|-h		Print usage message
- * --version		Print program version
+ * --verbose|-v         Increase reporting level
+ * --quiet|-q           Decrease reporting level
+ * --snapshot|-s        The snapshotter socket address
+ * --pre                Pre-trigger interval
+ * --post               Post-trigger interval
+ * --trigger            Timepoint of trigger
+ * --wait-for-it|-w     Wait for a key-press to generate trigger
+ * --repeat|-r          Generate multiple triggers instead of just one
+ * --auto|-a            Generate the snapshot name automatically
+ * --help|-h            Print usage message
+ * --version            Print program version
  */
 
 #include <stdio.h>
@@ -41,8 +41,8 @@
  *  Program source version
  */
 
-#define PROGRAM_VERSION	"1.0"
-#define VERSION_VERBOSE_BANNER	"MCLURS ADC toolset...\n"
+#define PROGRAM_VERSION "1.0"
+#define VERSION_VERBOSE_BANNER  "MCLURS ADC toolset...\n"
 
 /*
  * Auto-name format options
@@ -105,7 +105,7 @@ param_t globals[] ={
   },
 };
 
-const int n_global_params =	(sizeof(globals)/sizeof(param_t));
+const int n_global_params =     (sizeof(globals)/sizeof(param_t));
 
 /*
  * Debugging print out control
@@ -120,10 +120,10 @@ struct arg_lit *h1, *vn1, *v1, *q1;
 struct arg_end *e1;
 
 BEGIN_CMD_SYNTAX(help) {
-  v1  = arg_litn("v",	"verbose", 0, 3,	"Increase verbosity"),
-  q1  = arg_lit0("q",  "quiet",			"Decrease verbosity"),
-  h1  = arg_lit0("h",	"help",			"Print usage help message"),
-  vn1 = arg_lit0(NULL,	"version",		"Print program version string"),
+  v1  = arg_litn("v",   "verbose", 0, 3,        "Increase verbosity"),
+  q1  = arg_lit0("q",  "quiet",                 "Decrease verbosity"),
+  h1  = arg_lit0("h",   "help",                 "Print usage help message"),
+  vn1 = arg_lit0(NULL,  "version",              "Print program version string"),
   e1  = arg_end(20)
 } APPLY_CMD_DEFAULTS(help) {
   /* No defaults to apply here */
@@ -136,13 +136,13 @@ struct arg_int *pb2, *pe2;
 struct arg_str *n2;
 
 BEGIN_CMD_SYNTAX(single) {
-  v2  = arg_litn("v",	"verbose", 0, 3,	"Increase verbosity"),
-  q2  = arg_lit0("q",  "quiet",			"Decrease verbosity"),
+  v2  = arg_litn("v",   "verbose", 0, 3,        "Increase verbosity"),
+  q2  = arg_lit0("q",  "quiet",                 "Decrease verbosity"),
   u2  = arg_str0("s",  "snapshot", "<url>",     "URL of snapshotter command socket"),
-  pb2 = arg_int0(NULL, "pre", "<int>",		"Pre-trigger interval [ms]"),
-  pe2 = arg_int0(NULL, "pst,post", "<int>",	"Post-trigger interval [ms]"),
-  w2  = arg_lit0("w", "wait-for-it",		"Wait for keypress to trigger"),
-  n2  = arg_str1(NULL, NULL, "<snapshot name>",	"Name of the snapshot file"),
+  pb2 = arg_int0(NULL, "pre", "<int>",          "Pre-trigger interval [ms]"),
+  pe2 = arg_int0(NULL, "pst,post", "<int>",     "Post-trigger interval [ms]"),
+  w2  = arg_lit0("w", "wait-for-it",            "Wait for keypress to trigger"),
+  n2  = arg_str1(NULL, NULL, "<snapshot name>", "Name of the snapshot file"),
   e2  = arg_end(20)
 } APPLY_CMD_DEFAULTS(single) {
   INCLUDE_PARAM_DEFAULTS(globals, n_global_params);
@@ -155,13 +155,13 @@ struct arg_rex *a3;
 struct arg_int *pb3, *pe3;
 
 BEGIN_CMD_SYNTAX(autoname) {
-  v3  = arg_litn("v",	"verbose", 0, 3,	"Increase verbosity"),
-  q3  = arg_lit0("q",  "quiet",			"Decrease verbosity"),
+  v3  = arg_litn("v",   "verbose", 0, 3,        "Increase verbosity"),
+  q3  = arg_lit0("q",  "quiet",                 "Decrease verbosity"),
   u3  = arg_str0("s",  "snapshot", "<url>",     "URL of snapshotter command socket"),
-  pb3 = arg_int0(NULL, "pre", "<int>",		"Pre-trigger interval [ms]"),
-  pe3 = arg_int0(NULL, "pst,post", "<int>",	"Post-trigger interval [ms]"),
-  w3  = arg_lit0("w", "wait-for-it",		"Wait for keypress to trigger"),
-  a3  = arg_rex1("a", "auto", AUTO_NAME_FORMAT_REX, "<format>", REG_EXTENDED,	"Automatic snapshot name"),
+  pb3 = arg_int0(NULL, "pre", "<int>",          "Pre-trigger interval [ms]"),
+  pe3 = arg_int0(NULL, "pst,post", "<int>",     "Post-trigger interval [ms]"),
+  w3  = arg_lit0("w", "wait-for-it",            "Wait for keypress to trigger"),
+  a3  = arg_rex1("a", "auto", AUTO_NAME_FORMAT_REX, "<format>", REG_EXTENDED,   "Automatic snapshot name"),
   e3  = arg_end(20)
 } APPLY_CMD_DEFAULTS(autoname) {
   a3->hdr.flag |= ARG_HASOPTVALUE;
@@ -175,15 +175,15 @@ struct arg_rex *a4;
 struct arg_int *pb4, *pe4;
 
 BEGIN_CMD_SYNTAX(repeat) {
-  v4  = arg_litn("v",	"verbose", 0, 3,	"Increase verbosity"),
-  q4  = arg_lit0("q",  "quiet",			"Decrease verbosity"),
+  v4  = arg_litn("v",   "verbose", 0, 3,        "Increase verbosity"),
+  q4  = arg_lit0("q",  "quiet",                 "Decrease verbosity"),
   u4  = arg_str0("s",  "snapshot", "<url>",     "URL of snapshotter command socket"),
-  pb4 = arg_int0(NULL, "pre", "<int>",		"Pre-trigger interval [ms]"),
-  pe4 = arg_int0(NULL, "pst,post", "<int>",	"Post-trigger interval [ms]"),
-  a4  = arg_rex0("a", "auto", AUTO_NAME_FORMAT_REX, "<format>", REG_EXTENDED,	"Automatic snapshot name"),
+  pb4 = arg_int0(NULL, "pre", "<int>",          "Pre-trigger interval [ms]"),
+  pe4 = arg_int0(NULL, "pst,post", "<int>",     "Post-trigger interval [ms]"),
+  a4  = arg_rex0("a", "auto", AUTO_NAME_FORMAT_REX, "<format>", REG_EXTENDED,   "Automatic snapshot name"),
         arg_rem(NULL, "<format> is " AUTO_NAME_FORMAT_REX),
-  w4  = arg_lit0("w", "wait-for-it",		"Wait for keypress to trigger"),
-  r4  = arg_lit1("r", "repeat",			"Loop, generating multiple triggers (implies -wa)"),
+  w4  = arg_lit0("w", "wait-for-it",            "Wait for keypress to trigger"),
+  r4  = arg_lit1("r", "repeat",                 "Loop, generating multiple triggers (implies -wa)"),
   e4  = arg_end(20)
 } APPLY_CMD_DEFAULTS(repeat) {
   a4->hdr.flag |= ARG_HASOPTVALUE;
@@ -193,7 +193,7 @@ BEGIN_CMD_SYNTAX(repeat) {
 /* Standard help routines: display the version banner */
 void print_version(FILE *fp, int verbosity) {
   fprintf(fp, "%s: Vn. %s\n", program, PROGRAM_VERSION);
-  if(verbosity > 0) {		/* Verbose requested... */
+  if(verbosity > 0) {           /* Verbose requested... */
     fprintf(fp, VERSION_VERBOSE_BANNER);
   }
 }
@@ -218,16 +218,16 @@ void print_usage(FILE *fp, void **argtable, int verbosity, char *program) {
  * Globals
  */
 
-void   *zmq_main_ctx;		/* ZMQ context for messaging */
+void   *zmq_main_ctx;           /* ZMQ context for messaging */
 
-const char *auto_name;		/* Auto-generate snapshot path value */
-name_mode   auto_mode;		/* The basis for snapshot name generation */
-const char *snap_name;		/* The base name if not auto */
-const char *snapshot_addr;	/* URL of the snapshotter program */
-int	    wait_for_it;	/* Wait for keypress before making message */
-int	    repeat;		/* Don't just do one, do many triggers */
-uint32_t    window_pre;		/* Window pre-trigger interval [ms] */
-uint32_t    window_pst;		/* Window post-trigger interval [ms] */
+const char *auto_name;          /* Auto-generate snapshot path value */
+name_mode   auto_mode;          /* The basis for snapshot name generation */
+const char *snap_name;          /* The base name if not auto */
+const char *snapshot_addr;      /* URL of the snapshotter program */
+int         wait_for_it;        /* Wait for keypress before making message */
+int         repeat;             /* Don't just do one, do many triggers */
+uint32_t    window_pre;         /* Window pre-trigger interval [ms] */
+uint32_t    window_pst;         /* Window post-trigger interval [ms] */
 
 /*
  * Process a (possibly multipart) log message.
@@ -235,7 +235,7 @@ uint32_t    window_pst;		/* Window post-trigger interval [ms] */
  * Use a 1024 byte logging buffer
  */
 
-#define LOGBUF_SIZE	1024
+#define LOGBUF_SIZE     1024
 
 void print_message(void *socket) {
   char log_buffer[LOGBUF_SIZE];
@@ -301,11 +301,11 @@ char *make_path_value(char buf[], int size, const char *snapname, uint64_t trigg
 
   switch(mode) {
 
-  case SNAPNAME:		/* Use the supplied snapshot name */
+  case SNAPNAME:                /* Use the supplied snapshot name */
     snprintf(&buf[0], size, "%s", snapname);
     break;
 
-  case TAI64N:			/* Use a TAI64N format timestamp */
+  case TAI64N:                  /* Use a TAI64N format timestamp */
     assertv(size >= 25, "Buffer too small (%d) for TAI path\n", size);
     secs = trigger / 1000000000;
     ns = trigger - secs * 1000000000;
@@ -313,7 +313,7 @@ char *make_path_value(char buf[], int size, const char *snapname, uint64_t trigg
     break;
 
   case ISODATE:
-  case ISOUTC:			/* Use an ISO standard date with fractional seconds */
+  case ISOUTC:                  /* Use an ISO standard date with fractional seconds */
     assertv(size >= 26, "Buffer too small (%d) for ISO path\n", size);
     trig = trigger / 1000000000;
     ns = trigger - trig * 1000000000;
@@ -322,17 +322,17 @@ char *make_path_value(char buf[], int size, const char *snapname, uint64_t trigg
     snprintf(&buf[used], size-used, ".%06d", ns/1000);
     break;
 
-  case HEXADECIMAL:		/* Use a hexadecimal print of the trigger time */
+  case HEXADECIMAL:             /* Use a hexadecimal print of the trigger time */
     assertv(size >= 16, "Buffer too small (%d) for HEX path\n", size);
     snprintf(&buf[0], size, "%016llx", trigger);
     break;
 
-  case SEQUENTIAL:		/* Generate a sequentially incrementing snapshot name */
+  case SEQUENTIAL:              /* Generate a sequentially incrementing snapshot name */
     assertv(size >= 10, "Buffer too small (%d) for SEQ path\n", size);
     snprintf(&buf[0], size, "snap%06d", counter++);
     break;
 
-  case SPECIAL:			/* User-supplied format, not yet implemented */
+  case SPECIAL:                 /* User-supplied format, not yet implemented */
   default:
     snprintf(&buf[0], size, "%s%d", "unimplemented", counter++);
     break;
@@ -381,7 +381,7 @@ int main(int argc, char *argv[], char *envp[]) {
 
   /* Try first syntax */
   int err_help = arg_parse(argc, argv, cmd_help);
-  if( !err_help ) {		/* Assume this was the desired command syntax */
+  if( !err_help ) {             /* Assume this was the desired command syntax */
     int verbose = v1->count - q1->count;
     if(vn1->count)
       print_version(stdout, verbose);
@@ -395,12 +395,12 @@ int main(int argc, char *argv[], char *envp[]) {
   }
 
   struct arg_end  *found = NULL;
-  void		 **table = NULL;
+  void           **table = NULL;
   int errs = 0, min_errs  = 100;
 
   /* Try remaining syntaxes */
   errs = arg_parse(argc, argv, cmd_single);
-  if( !errs || errs < min_errs ) {	/* Choose single trigger manual-named mode */
+  if( !errs || errs < min_errs ) {      /* Choose single trigger manual-named mode */
     found = e2;
     table = cmd_single;
     verbose = v2->count - q2->count;
@@ -421,35 +421,35 @@ int main(int argc, char *argv[], char *envp[]) {
       verbose = v3->count - q3->count;
       min_errs = errs;
       if( !errs ) {
-	repeat = 0;
-	wait_for_it = w2->count;
-	snap_name = NULL;
+        repeat = 0;
+        wait_for_it = w2->count;
+        snap_name = NULL;
       }
     }
   }
 
   if( errs ) {
     errs = arg_parse(argc, argv, cmd_repeat);
-    if( !errs || errs < min_errs ) {	/* Choose multi-trigger mode */
+    if( !errs || errs < min_errs ) {    /* Choose multi-trigger mode */
       found = e4;
       table = cmd_repeat;
       verbose = v4->count - q4->count;
       min_errs = errs;
       if( !errs ) {
-	repeat = 1;
-	wait_for_it = 1;
-	if( !a4->count || !w4->count ) {
-	  if(verbose >= 0)
-	    fprintf(stderr, "%s: Warning -- repeat (-r) implies -a and -w, using --auto=%s\n", program, auto_name);
-	}
-	snap_name = NULL;
+        repeat = 1;
+        wait_for_it = 1;
+        if( !a4->count || !w4->count ) {
+          if(verbose >= 0)
+            fprintf(stderr, "%s: Warning -- repeat (-r) implies -a and -w, using --auto=%s\n", program, auto_name);
+        }
+        snap_name = NULL;
       }
     }
   }
 
   /* Now found indicates the command line with minimum errors in parse */
 
-  if( min_errs ) {		/* No command line matched precisely */
+  if( min_errs ) {              /* No command line matched precisely */
     arg_print_errors(stderr, found, program);
     print_usage(stderr, cmd_help, verbose>0, program);
     print_usage(stderr, cmd_single, verbose>0, program);
@@ -476,7 +476,7 @@ int main(int argc, char *argv[], char *envp[]) {
   arg_free(cmd_autoname);
   arg_free(cmd_repeat);
 
-  if(verbose > 2)		/* Dump global parameters for debugging purposes */
+  if(verbose > 2)               /* Dump global parameters for debugging purposes */
     debug_params(stderr, globals, n_global_params);
 
   /* Create the ZMQ contexts */
@@ -490,7 +490,7 @@ int main(int argc, char *argv[], char *envp[]) {
   snapshot = zh_connect_new_socket(zmq_main_ctx, ZMQ_REQ, snapshot_addr);
   if( snapshot == NULL ) {
     fprintf(stderr, "%s: Error -- unable to create socket to snapshot at %s: %s\n",
-	    program, snapshot_addr, strerror(errno));
+            program, snapshot_addr, strerror(errno));
     zmq_ctx_term(zmq_main_ctx);
     exit(2);
   }

@@ -2,7 +2,7 @@
 
 #include "general.h"
 
-#define _GNU_SOURCE	/* Linux-specific code below (O_PATH) */
+#define _GNU_SOURCE     /* Linux-specific code below (O_PATH) */
 
 /* Use direct logging to stderr: needed before including error.h */
 #define MAIN_THREAD
@@ -49,25 +49,25 @@
  * Snapshot version
  */
 
-#define PROGRAM_VERSION	"1.1"
-#define VERSION_VERBOSE_BANNER	"MCLURS ADC toolset...\n"
+#define PROGRAM_VERSION "1.1"
+#define VERSION_VERBOSE_BANNER  "MCLURS ADC toolset...\n"
 
 /*
  * Global parameters for the snapshot program
  */
 
-#define MAX_GROUPS	32
+#define MAX_GROUPS      32
 
 public int die_die_die_now = 0;
 
 import  rparams     reader_parameters;
-import  wparams	    writer_parameters;
+import  wparams     writer_parameters;
 import  const char *tmpdir_path;
 private const char *snapshot_addr;
 private const char *snapshot_user;
 private const char *snapshot_group;
 private gid_t       snapshot_gid_list[MAX_GROUPS];
-private int	    schedprio;
+private int         schedprio;
 
 public param_t globals[] ={
   { "tmpdir",   "/tmp",
@@ -90,74 +90,74 @@ public param_t globals[] ={
     PARAM_TYPE(string), PARAM_SRC_ENV|PARAM_SRC_ARG,
     "directory where samples are written"
   },
-  { "dev",	"/dev/comedi0",
+  { "dev",      "/dev/comedi0",
     &reader_parameters.r_device,
     PARAM_TYPE(string), PARAM_SRC_ENV|PARAM_SRC_ARG,
     "the Comedi device to open"
   },
-  { "range",	"750",
+  { "range",    "750",
     &reader_parameters.r_range,
     PARAM_TYPE(int32), PARAM_SRC_ENV|PARAM_SRC_ARG|PARAM_SRC_CMD,
     "the ADC converter full-scale range [mV]"
   },
-  { "bufsz",	"56",
+  { "bufsz",    "56",
     &reader_parameters.r_bufsz,
     PARAM_TYPE(int32),  PARAM_SRC_ENV|PARAM_SRC_ARG|PARAM_SRC_CMD,
     "size of the Comedi buffer [MiB]"
   },
-  { "window",	"10",
+  { "window",   "10",
     &reader_parameters.r_window,
     PARAM_TYPE(double),  PARAM_SRC_ENV|PARAM_SRC_ARG|PARAM_SRC_CMD,
     "guaranteed window in the ring buffer [s]"
   },
-  { "bufhwm",	"0.9",
+  { "bufhwm",   "0.9",
     &reader_parameters.r_buf_hwm_fraction,
     PARAM_TYPE(double), PARAM_SRC_ENV|PARAM_SRC_ARG|PARAM_SRC_CMD,
     "ring buffer high-water mark fraction"
   }, 
-  { "rtprio",	NULL,
+  { "rtprio",   NULL,
     &schedprio,
     PARAM_TYPE(int32),  PARAM_SRC_ENV|PARAM_SRC_ARG,
     "priority of real-time threads [0-99]"
   },
-  { "rdprio",	NULL,
+  { "rdprio",   NULL,
     &reader_parameters.r_schedprio,
     PARAM_TYPE(int32),  PARAM_SRC_ENV|PARAM_SRC_ARG,
     "priority of real-time reader thread [0-99]"
   },
-  { "wrprio",	NULL,
+  { "wrprio",   NULL,
     &writer_parameters.w_schedprio,
     PARAM_TYPE(int32),  PARAM_SRC_ENV|PARAM_SRC_ARG,
     "priority of real-time writer thread [0-99]"
   },
-  { "user",	NULL,
+  { "user",     NULL,
     &snapshot_user,
     PARAM_TYPE(string), PARAM_SRC_ENV|PARAM_SRC_ARG,
     "user/UID for file system access and creation"
   },
-  { "group",	NULL,
+  { "group",    NULL,
     &snapshot_group,
     PARAM_TYPE(string), PARAM_SRC_ENV|PARAM_SRC_ARG,
     "group/GID for file system access and creation"
   },
-  { "ram",	"64",
+  { "ram",      "64",
     &writer_parameters.w_lockedram,
     PARAM_TYPE(int32), PARAM_SRC_ENV|PARAM_SRC_ARG,
     "amount of data RAM to lock [MiB]"
   },
-  { "wof",	"0.5",
+  { "wof",      "0.5",
     &writer_parameters.w_writeahead,
     PARAM_TYPE(double), PARAM_SRC_ENV|PARAM_SRC_ARG,
     "write overbooking fraction"
   },
-  { "chunk",	"1024",
+  { "chunk",    "1024",
     &writer_parameters.w_chunksize,
     PARAM_TYPE(int32), PARAM_SRC_ENV|PARAM_SRC_ARG,
     "size of a transfer chunk [KiB]"
   },
 };
 
-public const int n_global_params =	(sizeof(globals)/sizeof(param_t));
+public const int n_global_params =      (sizeof(globals)/sizeof(param_t));
 
 /*
  * Debugging, logging, print out control
@@ -177,10 +177,10 @@ private struct arg_lit *h1, *vn1, *v1, *q1;
 private struct arg_end *e1;
 
 BEGIN_CMD_SYNTAX(help) {
-  v1  = arg_litn("v",  "verbose", 0, 3,	"Increase verbosity"),
-  q1  = arg_lit0("q",  "quiet",		"Decrease verbosity"),
-  h1  = arg_lit0("h",  "help",		"Print usage help message"),
-  vn1 = arg_lit0(NULL, "version",	"Print program version string"),
+  v1  = arg_litn("v",  "verbose", 0, 3, "Increase verbosity"),
+  q1  = arg_lit0("q",  "quiet",         "Decrease verbosity"),
+  h1  = arg_lit0("h",  "help",          "Print usage help message"),
+  vn1 = arg_lit0(NULL, "version",       "Print program version string"),
   e1  = arg_end(20)
 } APPLY_CMD_DEFAULTS(help) {
   /* No defaults to apply here */
@@ -191,8 +191,8 @@ private struct arg_str *g2;
 private struct arg_end *e2;
 
 BEGIN_CMD_SYNTAX(main) {
-  v2  = arg_litn("v",  "verbose", 0, 3,	      "Increase verbosity"),
-  q2  = arg_lit0("q",  "quiet",		      "Decrease verbosity"),
+  v2  = arg_litn("v",  "verbose", 0, 3,       "Increase verbosity"),
+  q2  = arg_lit0("q",  "quiet",               "Decrease verbosity"),
         arg_str0("s",  "snapshot", "<url>",   "URL of snapshotter command socket"),
         arg_str0(NULL, "tmpdir", "<path>",    "Path to temporary directory"),
         arg_str0("S",  "snapdir", "<path>",   "Path to samples directory"),
@@ -218,7 +218,7 @@ BEGIN_CMD_SYNTAX(main) {
 /* Standard help routines: display the version banner */
 private void print_version(FILE *fp, int verbosity) {
   fprintf(fp, "%s: Vn. %s\n", program, PROGRAM_VERSION);
-  if(verbosity > 0) {		/* Verbose requested... */
+  if(verbosity > 0) {           /* Verbose requested... */
     fprintf(fp, VERSION_VERBOSE_BANNER);
   }
 }
@@ -246,35 +246,35 @@ private void print_usage(FILE *fp, void **argtable, int verbosity, char *program
 private const char *snapshot_addr = NULL;  /* The address of the main command socket */
 private const char *snapshot_user = NULL;  /* The user we should run as, after startup */
 private const char *snapshot_group = NULL; /* The group(s) to run as, after startup */
-private int	    schedprio;		   /* Real-time priority for reader and writer */
+private int         schedprio;             /* Real-time priority for reader and writer */
 
 /*
  * Snapshot globals shared between threads
  */
 
-public void       *snapshot_zmq_ctx;	/* ZMQ context for messaging -- created by the TIDY thread */
+public void       *snapshot_zmq_ctx;    /* ZMQ context for messaging -- created by the TIDY thread */
 
-public int	   tmpdir_dirfd;	/* The file descriptor obtained for the TMPDIR directory */
-public const char *tmpdir_path;		/* The path for the file descriptor above */
+public int         tmpdir_dirfd;        /* The file descriptor obtained for the TMPDIR directory */
+public const char *tmpdir_path;         /* The path for the file descriptor above */
 
 /*
  * Thread handles for reader and writer
  */
 
 private pthread_t reader_thread,
-		  writer_thread,
-		  tidy_thread;
+                  writer_thread,
+                  tidy_thread;
 
 private pthread_attr_t reader_thread_attr,
-		       writer_thread_attr,
-		       tidy_thread_attr;
+                       writer_thread_attr,
+                       tidy_thread_attr;
 
 /*
  * Establish main comms:  this routine runs last, so it mostly does connect() calls.
  * It must run when the other three threads are already active.
  */
 
-private void *log_socket;	/* N.B.  This socket is opened by the TIDY thread, but not used there */
+private void *log_socket;       /* N.B.  This socket is opened by the TIDY thread, but not used there */
 private void *reader;
 private void *writer;
 private void *command;
@@ -337,7 +337,7 @@ private int create_thread_log_buffers() {
  * CAP_SYS_ADMIN (Tidy)   -- ability to set RT IO scheduling priorities (unused at present)
  *
  * CAP_SETUID (Main)
- * CAP_SETGID (Main)	  -- ability to change user ID
+ * CAP_SETGID (Main)      -- ability to change user ID
  *
  * Otherwise the main thread and the tidy thread need no special powers.  The ZMQ IO thread
  * is also unprivileged, and is currently spawned during context creation from tidy.
@@ -348,7 +348,7 @@ private int snap_adjust_capabilities() {
   uid_t u = geteuid();
   int ret = 0;
 
-  if( !c )			/* No memory? */
+  if( !c )                      /* No memory? */
     return -1;
 
   if( check_permitted_capabilities_ok() < 0 ) {
@@ -463,7 +463,7 @@ private int set_intr_sig_handler() {
  * Collect the various pieces and write to stderr
  */
 
-#define LOGBUF_SIZE	MSGBUFSIZE
+#define LOGBUF_SIZE     MSGBUFSIZE
 
 private int process_log_message(void *s) {
   char log_buffer[MSGBUFSIZE];
@@ -489,7 +489,7 @@ private int process_log_message(void *s) {
  * "b == &reply_buffer[used]".
  */
 
-#define REPLY_BUFSIZE	MSGBUFSIZE
+#define REPLY_BUFSIZE   MSGBUFSIZE
 private char reply_buffer[REPLY_BUFSIZE];
 
 private int process_reply(void *s) {
@@ -506,19 +506,19 @@ private int process_reply(void *s) {
   for_nxt_in_Q(queue *q, strbuf2qp(err), (queue *)NULL)
     strbuf  s = qp2strbuf(q);
     int     n = strbuf_used(s);
-    if(n) {				/* Empty strbuf, nothing to do */
-      strbuf_revert(s);			/* Remove any internal NUL characters */
-      if(n > REPLY_BUFSIZE-used) {	/* There is too much data */
-	n = REPLY_BUFSIZE-used-1;	/* We can manage this much of it */
+    if(n) {                             /* Empty strbuf, nothing to do */
+      strbuf_revert(s);                 /* Remove any internal NUL characters */
+      if(n > REPLY_BUFSIZE-used) {      /* There is too much data */
+        n = REPLY_BUFSIZE-used-1;       /* We can manage this much of it */
       }
-      memcpy(b, strbuf_string(s), n);	/* Copy the data */
-      b += n;  used += n;		/* Now we have used this much space */
+      memcpy(b, strbuf_string(s), n);   /* Copy the data */
+      b += n;  used += n;               /* Now we have used this much space */
     }
   end_for_nxt;
   
-  release_strbuf(err);	/* Free the entire link of strbufs */
+  release_strbuf(err);  /* Free the entire link of strbufs */
 
-  if( b[-1] != '\n' )	/* Ensure final newline */
+  if( b[-1] != '\n' )   /* Ensure final newline */
     *b = '\n';
 
   /* Send the complete reply */
@@ -535,7 +535,7 @@ private int process_reply(void *s) {
  */
 
 private int process_snapshot_command() {
-  strbuf c,e;			/* Command and Error buffers */
+  strbuf c,e;                   /* Command and Error buffers */
   char  *buf;
   int   size, ret;
   int   fwd;
@@ -556,7 +556,7 @@ private int process_snapshot_command() {
   fwd = 0;
   switch(buf[0]) {
   case 'q':
-  case 'Q':			/* Deal specially with Quit command, to close down nicely... */
+  case 'Q':                     /* Deal specially with Quit command, to close down nicely... */
     send_object_ptr(reader, NULL); /* Forward zero length message to the READER thread */
     send_object_ptr(writer, NULL); /* Forward zero length message to the WRITER thread */
     ret = zh_put_msg(command, 0, 7, "OK Quit"); /* Reply to Quit here */
@@ -600,7 +600,7 @@ private int process_snapshot_command() {
     assertv(ret == strbuf_used(e), "Reject unknown reply failed, %d\n", ret);
     break;
   }
-  if( !fwd )			/* Didn't use the strbufs */
+  if( !fwd )                    /* Didn't use the strbufs */
     release_strbuf(c);
   return 0;
 }
@@ -609,7 +609,7 @@ private int process_snapshot_command() {
  * MAIN thread message loop
  */
 
-#define	MAIN_LOOP_POLL_INTERVAL	20
+#define MAIN_LOOP_POLL_INTERVAL 20
 
 private void main_thread_msg_loop() {    /* Read and process messages */
   int poll_delay;
@@ -642,13 +642,13 @@ private void main_thread_msg_loop() {    /* Read and process messages */
     if(ret < 0)
       break;
     running = reader_parameters.r_running || writer_parameters.w_running;
-    if( !running )		/* Flush out last (log) messages */
+    if( !running )              /* Flush out last (log) messages */
       poll_delay = 100;
     for(n=0; n<N_POLL_ITEMS; n++) {
       if( poll_list[n].revents & ZMQ_POLLIN ) {
-	ret = (*poll_responders[n])(poll_list[n].socket);
-	assertv(ret >= 0, "Error in message processing in MAIN poll loop, ret %d\n", ret);
-	running = true;
+        ret = (*poll_responders[n])(poll_list[n].socket);
+        assertv(ret >= 0, "Error in message processing in MAIN poll loop, ret %d\n", ret);
+        running = true;
       }
     }
   }
@@ -685,7 +685,7 @@ public int main(int argc, char *argv[], char *envp[]) {
 
   /* Try first syntax -- reject empty command lines */
   int err_help = arg_parse(argc, argv, cmd_help);
-  if( !err_help && (vn1->count || h1->count) ) {	/* Assume this was the desired command syntax */
+  if( !err_help && (vn1->count || h1->count) ) {        /* Assume this was the desired command syntax */
     if(vn1->count)
       print_version(stdout, v1->count);
     if(h1->count || !vn1->count) {
@@ -697,7 +697,7 @@ public int main(int argc, char *argv[], char *envp[]) {
 
   /* Try second syntax -- may be empty, means use default or environment variable parameters */
   int err_main = arg_parse(argc, argv, cmd_main);
-  if( err_main ) {		/* This is the default desired syntax; give full usage */
+  if( err_main ) {              /* This is the default desired syntax; give full usage */
     arg_print_errors(stderr, e2, program);
     print_usage(stderr, cmd_help, v2->count>0, program);
     print_usage(stderr, cmd_main, v2->count, program);
@@ -751,9 +751,9 @@ public int main(int argc, char *argv[], char *envp[]) {
     for(i=0; i<g2->count; i++) {
       struct group *grp = getgrnam(g2->sval[i]);
       if(grp == NULL) {
-	FATAL_ERROR("given group %s is not recognised\n", g2->sval[i]);
-	err++;
-	continue;
+        FATAL_ERROR("given group %s is not recognised\n", g2->sval[i]);
+        err++;
+        continue;
       }
       snapshot_gid_list[i] =  grp->gr_gid;
     }
@@ -768,35 +768,35 @@ public int main(int argc, char *argv[], char *envp[]) {
   if(snapshot_user) { /* Got a UID value */
     struct passwd *pwd = getpwnam(snapshot_user);
 
-    if(pwd == NULL) {		/* The user name was invalid */
+    if(pwd == NULL) {           /* The user name was invalid */
       FATAL_ERROR("given user %s is not recognised\n", snapshot_user);
       exit(2);
     }
 
-    uid = pwd->pw_uid;	/* Use this user's UID */
+    uid = pwd->pw_uid;  /* Use this user's UID */
     if(gid == -1) {
-      gid = pwd->pw_gid;	/* Use this user's principal GID */
+      gid = pwd->pw_gid;        /* Use this user's principal GID */
       ngroups = MAX_GROUPS;
       if( getgrouplist(snapshot_user, gid, &snapshot_gid_list[0], &ngroups) < 0 ) {
-	FATAL_ERROR("too many supplementary groups for user %s", snapshot_user);
-	exit(2);
+        FATAL_ERROR("too many supplementary groups for user %s", snapshot_user);
+        exit(2);
       }
     }
   }
   else {
-    uid = getuid();		/* Use the real UID of this thread */
-    if( gid == -1 ) {		/* Use the real GID of this thread */
+    uid = getuid();             /* Use the real UID of this thread */
+    if( gid == -1 ) {           /* Use the real GID of this thread */
       gid = getgid();
       ngroups = getgroups(MAX_GROUPS, &snapshot_gid_list[0]);
       if( ngroups < 0 ) {
-	FATAL_ERROR("too many supplementary groups for uid %d", uid);
-	exit(2);
+        FATAL_ERROR("too many supplementary groups for uid %d", uid);
+        exit(2);
       }
     }
   }
 
   /* 5b. Check capabilities and drop privileges */
-  struct timespec test_stamp;	/* Check that monotonic clock is available */
+  struct timespec test_stamp;   /* Check that monotonic clock is available */
   ret = clock_gettime(CLOCK_MONOTONIC, &test_stamp);
   if( ret < 0 ) {
     FATAL_ERROR("monotonic clock unavailable: %s", strerror(errno));
@@ -816,7 +816,7 @@ public int main(int argc, char *argv[], char *envp[]) {
   }
   
   /* Check the supplied parameters;  WRITER must come first as READER needs chunk size */
-  strbuf e = alloc_strbuf(1);	/* Catch parameter error diagnostics */
+  strbuf e = alloc_strbuf(1);   /* Catch parameter error diagnostics */
 
   /* 5c. Verify and initialise parameters for the WRITER thread */
   if( !writer_parameters.w_schedprio )
@@ -878,9 +878,9 @@ public int main(int argc, char *argv[], char *envp[]) {
 
   /* Wait for the threads to establish comms etc. Don't wait too long. */
   for(timeout=250; timeout>0 && !die_die_die_now; timeout-- ) {
-    usleep(10000);		/* Wait for 10ms */
+    usleep(10000);              /* Wait for 10ms */
     if(reader_parameters.r_running && writer_parameters.w_running)
-      break;			/* Now ready to start main loop */
+      break;                    /* Now ready to start main loop */
   }
   if(timeout<=0) {
     FATAL_ERROR("READER and/or WRITER failed to start normally\n");
@@ -901,8 +901,8 @@ public int main(int argc, char *argv[], char *envp[]) {
     }
     else {
       if( thread_return ) {
-	LOG(MAIN, 1, "READER thread rejoined -- %s\n", thread_return);
-	thread_return = NULL;
+        LOG(MAIN, 1, "READER thread rejoined -- %s\n", thread_return);
+        thread_return = NULL;
       }
     }
   }
@@ -913,8 +913,8 @@ public int main(int argc, char *argv[], char *envp[]) {
     }
     else {
       if( thread_return ) {
-	LOG(MAIN, 1, "WRITER thread rejoined -- %s\n", thread_return);
-	thread_return = NULL;
+        LOG(MAIN, 1, "WRITER thread rejoined -- %s\n", thread_return);
+        thread_return = NULL;
       }
     }
   }

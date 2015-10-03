@@ -10,7 +10,7 @@
 
 typedef const struct {
   const char *t_name;
-  int	      t_size;
+  int         t_size;
   const char *t_scan;
   const char *t_show;
 }
@@ -28,19 +28,19 @@ PARAM_TYPE_EXPORT(double);
 PARAM_TYPE_EXPORT(string);
 
 typedef struct
-{ const char	*p_name;		/* Name of this parameter */
-  const char	*p_str;			/* String value for this parameter */
-  void          *p_val;			/* Location where value is to be stored */
-  param_type	*p_type;		/* Type of the parameter, for value conversion */
-  int		 p_source;		/* Possible sources of the values */
-  const char    *p_gloss;		/* Explanation of this parameter */
-  int		 p_dyn;			/* If true, free and replace str on push */
+{ const char    *p_name;                /* Name of this parameter */
+  const char    *p_str;                 /* String value for this parameter */
+  void          *p_val;                 /* Location where value is to be stored */
+  param_type    *p_type;                /* Type of the parameter, for value conversion */
+  int            p_source;              /* Possible sources of the values */
+  const char    *p_gloss;               /* Explanation of this parameter */
+  int            p_dyn;                 /* If true, free and replace str on push */
 }
   param_t;
 
-#define	PARAM_SRC_ENV	0x1
-#define	PARAM_SRC_ARG	0x2
-#define	PARAM_SRC_CMD	0x4
+#define PARAM_SRC_ENV   0x1
+#define PARAM_SRC_ARG   0x2
+#define PARAM_SRC_CMD   0x4
 
 export int set_param_value(param_t *, char *);
 export param_t *find_param_by_name(const char *, int, param_t [], int);

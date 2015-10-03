@@ -8,8 +8,8 @@
 
 /* Fatal is used only in the main thread and process */
 
-#define FATAL_ERROR(fmt, ...) do {					\
-    fprintf(stderr, "%s: Error -- " fmt, program , ## __VA_ARGS__ );	\
+#define FATAL_ERROR(fmt, ...) do {                                      \
+    fprintf(stderr, "%s: Error -- " fmt, program , ## __VA_ARGS__ );    \
   } while(0)
 
 /*
@@ -19,40 +19,40 @@
 
 #ifdef MAIN_THREAD
 
-#define WARNING(thd,fmt, ...) do { if(verbose >= 0) {			\
-    fprintf(stderr, "Warn[" #thd "]: " fmt , ## __VA_ARGS__ );		\
+#define WARNING(thd,fmt, ...) do { if(verbose >= 0) {                   \
+    fprintf(stderr, "Warn[" #thd "]: " fmt , ## __VA_ARGS__ );          \
   } } while(0)
 
-#define LOG(thd,lvl,fmt, ...) do { if(verbose >= (lvl)) {		\
-    fprintf(stderr, "Log[" #thd "]: " fmt , ## __VA_ARGS__ );		\
+#define LOG(thd,lvl,fmt, ...) do { if(verbose >= (lvl)) {               \
+    fprintf(stderr, "Log[" #thd "]: " fmt , ## __VA_ARGS__ );           \
   } } while(0)
 
 #else
 
-#define WARNING(thd,fmt, ...) do {					\
-  import int verbose;							\
-  import strbuf  logbuf_ ## thd;					\
-  import void   *logskt_ ## thd;					\
-									\
-  if(verbose >= 0) {							\
-    strbuf l = logbuf_ ## thd;						\
-    strbuf_clear(l);							\
-    strbuf_printf(l, "Warn[" #thd "]: ");				\
-    strbuf_appendf(l, fmt , ## __VA_ARGS__ );				\
-    zh_put_msg(logskt_ ## thd, 0, strbuf_used(l), strbuf_string(l));	\
+#define WARNING(thd,fmt, ...) do {                                      \
+  import int verbose;                                                   \
+  import strbuf  logbuf_ ## thd;                                        \
+  import void   *logskt_ ## thd;                                        \
+                                                                        \
+  if(verbose >= 0) {                                                    \
+    strbuf l = logbuf_ ## thd;                                          \
+    strbuf_clear(l);                                                    \
+    strbuf_printf(l, "Warn[" #thd "]: ");                               \
+    strbuf_appendf(l, fmt , ## __VA_ARGS__ );                           \
+    zh_put_msg(logskt_ ## thd, 0, strbuf_used(l), strbuf_string(l));    \
   } } while(0)
 
-#define LOG(thd,lvl,fmt, ...) do {					\
-  import int verbose;							\
-  import strbuf  logbuf_ ## thd;					\
-  import void   *logskt_ ## thd;					\
-									\
-  if(verbose >= 0) {							\
-    strbuf l = logbuf_ ## thd;						\
-    strbuf_clear(l);							\
-    strbuf_printf(l, "Log[" #thd "]: ");				\
-    strbuf_appendf(l, fmt , ## __VA_ARGS__ );				\
-    zh_put_msg(logskt_ ## thd, 0, strbuf_used(l), strbuf_string(l));	\
+#define LOG(thd,lvl,fmt, ...) do {                                      \
+  import int verbose;                                                   \
+  import strbuf  logbuf_ ## thd;                                        \
+  import void   *logskt_ ## thd;                                        \
+                                                                        \
+  if(verbose >= 0) {                                                    \
+    strbuf l = logbuf_ ## thd;                                          \
+    strbuf_clear(l);                                                    \
+    strbuf_printf(l, "Log[" #thd "]: ");                                \
+    strbuf_appendf(l, fmt , ## __VA_ARGS__ );                           \
+    zh_put_msg(logskt_ ## thd, 0, strbuf_used(l), strbuf_string(l));    \
   } } while(0)
 
 #endif

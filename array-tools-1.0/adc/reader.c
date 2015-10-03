@@ -40,19 +40,19 @@
  */
 
 public rparams reader_parameters;   /* The externally-visible parameters for the reader thread */
-public adc reader_adc;		    /* The ADC object for the READER */
+public adc reader_adc;              /* The ADC object for the READER */
 
 /*
  * Compiled in parameter limits for the READER
  */
 
-#define READER_MAX_POLL_DELAY	   100   /* Maximum poll loop delay [ms] */
+#define READER_MAX_POLL_DELAY      100   /* Maximum poll loop delay [ms] */
 #define READER_RB_HEADROOM_CHUNKS    2   /* Ring buffer min. headroom in chunks */
-#define READER_MIN_RBHWMF	  0.50	 /* Ring buffer minimum high-water mark fraction */
-#define READER_MAX_RBHWMF	  0.95	 /* Ring buffer maximum high-water mark fraction */
-#define READER_MIN_WINDOW	     1	 /* Reader minimum capture window [s] */
-#define READER_MAX_WINDOW	    30	 /* Reader maximum capture window [s] */
-#define ADC_DRY_PERIOD_MAX        1000	 /* Maximum Wait for data [ms]: initial default is 10 [s] */
+#define READER_MIN_RBHWMF         0.50   /* Ring buffer minimum high-water mark fraction */
+#define READER_MAX_RBHWMF         0.95   /* Ring buffer maximum high-water mark fraction */
+#define READER_MIN_WINDOW            1   /* Reader minimum capture window [s] */
+#define READER_MAX_WINDOW           30   /* Reader maximum capture window [s] */
+#define ADC_DRY_PERIOD_MAX        1000   /* Maximum Wait for data [ms]: initial default is 10 [s] */
 
 /*
  * READER state machine definitions.
@@ -99,11 +99,11 @@ public adc reader_adc;		    /* The ADC object for the READER */
 
 private int rp_state;
 
-#define READER_ERROR	0	/* An error occurred, base start state */
-#define	READER_PARAM	1	/* There are parameters that need to be verified */
-#define	READER_RESTING	2	/* READER is ready, Comedi and mmap setup has been done */
-#define	READER_ARMED	3	/* The ADC has been started */
-#define READER_RUN	4	/* Data from the ADC has been seen in the buffers */
+#define READER_ERROR    0       /* An error occurred, base start state */
+#define READER_PARAM    1       /* There are parameters that need to be verified */
+#define READER_RESTING  2       /* READER is ready, Comedi and mmap setup has been done */
+#define READER_ARMED    3       /* The ADC has been started */
+#define READER_RUN      4       /* Data from the ADC has been seen in the buffers */
 
 /*
  * READER forward definitions
@@ -120,13 +120,13 @@ private void *writer;
 private void *tidy;
 private void *command;
 
-public void *logskt_READER;	/* Used by the WARNING() and LOG() macros */
+public void *logskt_READER;     /* Used by the WARNING() and LOG() macros */
 
 private void create_reader_comms() {
   import void *snapshot_zmq_ctx;
   void *log;
   /* Create necessary sockets */
-  command  = zh_bind_new_socket(snapshot_zmq_ctx, ZMQ_REP, READER_CMD_ADDR);	/* Receive commands */
+  command  = zh_bind_new_socket(snapshot_zmq_ctx, ZMQ_REP, READER_CMD_ADDR);    /* Receive commands */
   assertv(command != NULL, "Failed to instantiate reader command socket\n");
   log      = zh_connect_new_socket(snapshot_zmq_ctx, ZMQ_PUSH, LOG_SOCKET);  /* Socket for log messages */
   assertv(log != NULL, "Failed to instantiate reader log socket\n");
@@ -183,7 +183,7 @@ private void process_reader_command(void *s) {
   strbuf   err;
 
   ret = recv_object_ptr(s, (void **)&cmd);
-  if( !ret ) {			/* It was a quit message */
+  if( !ret ) {                  /* It was a quit message */
     if(rp_state == READER_ARMED || rp_state == READER_RUN || rp_state == READER_RESTING)
       adc_stop_data_transfer(reader_adc);
     rp->r_running = false;
@@ -244,7 +244,7 @@ private void process_reader_command(void *s) {
       break;
     }
     LOG(READER, 1, "Init with dev %s, freq %g [Hz], isp %d [ns] and buf %d [MiB]",
-		    rp->r_device, rp->r_frequency, adc_ns_per_sample(reader_adc), rp->r_bufsz);
+                    rp->r_device, rp->r_frequency, adc_ns_per_sample(reader_adc), rp->r_bufsz);
     strbuf_printf(err, "OK Init -- nchan %d isp %d [ns]", NCHANNELS, adc_ns_per_sample(reader_adc));
     rp_state = READER_RESTING;
     break;
@@ -272,8 +272,8 @@ private void process_reader_command(void *s) {
       ret = -1;
       break;
     }
-    adc_stop_data_transfer(reader_adc);	/* Terminate any transfer in progress */
-    drain_reader_chunk_queue("READER ADC was shut down");	/* Empty the chunk queue */
+    adc_stop_data_transfer(reader_adc); /* Terminate any transfer in progress */
+    drain_reader_chunk_queue("READER ADC was shut down");       /* Empty the chunk queue */
     strbuf_printf(err, "OK Halt");
     adc_destroy(reader_adc);
     reader_adc = NULL;
@@ -300,7 +300,7 @@ private void process_reader_command(void *s) {
 
 public int set_reader_rt_scheduling() {
 
-  if( reader_parameters.r_schedprio > 0 ) {	/* Then there is RT priority scheduling to set up */
+  if( reader_parameters.r_schedprio > 0 ) {     /* Then there is RT priority scheduling to set up */
     if( set_rt_scheduling(reader_parameters.r_schedprio) < 0 )
       return -1;
 
@@ -365,12 +365,12 @@ private void process_queue_message(void *s) {
     else {
       adc_setup_chunk(reader_adc, c);
       if( !c->c_ring )
-	set_chunk_status(c, SNAPSHOT_ERROR);
+        set_chunk_status(c, SNAPSHOT_ERROR);
     }
   }
   
-  if(is_chunk_status(c, SNAPSHOT_ERROR)) {		/* We send it straight back */
-    abort_reader_chunk(c);				/* Tidy up any siblings in the queue */
+  if(is_chunk_status(c, SNAPSHOT_ERROR)) {              /* We send it straight back */
+    abort_reader_chunk(c);                              /* Tidy up any siblings in the queue */
     send_object_ptr(tidy, (void *)&c->c_frame);
     c->c_frame = NULL;
     send_object_ptr(writer, (void *)&c);
@@ -401,7 +401,7 @@ private void process_queue_message(void *s) {
   LOG(READER, 2, "Inserting %04hx before %p\n", c->c_name, pos);
   queue_ins_before(pos, chunk2rq(c));
   if(pos == &ReaderChunkQ) {
-    rq_head = c;		/* Points to the chunk at the head of the READER queue, when not NULL */
+    rq_head = c;                /* Points to the chunk at the head of the READER queue, when not NULL */
   }
   return;
 }
@@ -431,7 +431,7 @@ private void complete_queue_head_chunk() {
 
   if(c->c_first < adc_ring_tail(reader_adc) || is_dead_snapfile(c->c_parent)) { /* Oops, we are too late */
     LOG(READER, 1, "Dead chunk: first %016llx tail %016llx dead? %d\n",
-	c->c_first, adc_ring_tail(reader_adc), is_dead_snapfile(c->c_parent));
+        c->c_first, adc_ring_tail(reader_adc), is_dead_snapfile(c->c_parent));
     abort_queue_head_chunk();
     return;
   }
@@ -510,7 +510,7 @@ private void reader_thread_msg_loop() {    /* Read and process messages */
     { { writer,  0, ZMQ_POLLIN, 0 },
       { command, 0, ZMQ_POLLIN, 0 },
     };
-#define	N_POLL_ITEMS	(sizeof(poll_list)/sizeof(zmq_pollitem_t))
+#define N_POLL_ITEMS    (sizeof(poll_list)/sizeof(zmq_pollitem_t))
   void (*poll_responders[N_POLL_ITEMS])(void *) =
     { process_queue_message,
       process_reader_command,
@@ -532,41 +532,41 @@ private void reader_thread_msg_loop() {    /* Read and process messages */
     if(adc_is_running(reader_adc)) {
       adc_dry_period--;
       nb = adc_data_collect(reader_adc);
-      if( nb ) {			/* There was some new data, adc_ring_head has advanced */
+      if( nb ) {                        /* There was some new data, adc_ring_head has advanced */
 
-	adc_dry_period = adc_dry_period_max;
-	rp_state = READER_RUN;
-	/* Once the ADC head pointer has advanced past the READER queue head's end, a chunk is ready */
-	while( rq_head && rq_head->c_last <= adc_ring_head(reader_adc) ) {
-	  complete_queue_head_chunk();      
-	}
+        adc_dry_period = adc_dry_period_max;
+        rp_state = READER_RUN;
+        /* Once the ADC head pointer has advanced past the READER queue head's end, a chunk is ready */
+        while( rq_head && rq_head->c_last <= adc_ring_head(reader_adc) ) {
+          complete_queue_head_chunk();      
+        }
 
-	/* Check buffer fullness;  if necessary, call adc_data_purge to move adc_ring_tail */
-	uint64_t head = adc_ring_head(reader_adc);
-	if(head > high_water_mark) {
-	  uint64_t lwm  = head - buf_window_samples;
-	  uint64_t tail = adc_ring_tail(reader_adc);
+        /* Check buffer fullness;  if necessary, call adc_data_purge to move adc_ring_tail */
+        uint64_t head = adc_ring_head(reader_adc);
+        if(head > high_water_mark) {
+          uint64_t lwm  = head - buf_window_samples;
+          uint64_t tail = adc_ring_tail(reader_adc);
 
-	  LOG(READER, 2, "Head %lld HWM %lld LWM %lld Tail %lld\n", head, high_water_mark, lwm, tail);
+          LOG(READER, 2, "Head %lld HWM %lld LWM %lld Tail %lld\n", head, high_water_mark, lwm, tail);
 
-	  if(lwm > tail) {
-	    ret = adc_data_purge(reader_adc, (int)(lwm-tail));
-	    assertv(ret==0, "Comedi mark read failed for %d bytes: %C", (int)(lwm-tail));
-	    high_water_mark = lwm + buf_hwm_samples;
-	  }
-	}
+          if(lwm > tail) {
+            ret = adc_data_purge(reader_adc, (int)(lwm-tail));
+            assertv(ret==0, "Comedi mark read failed for %d bytes: %C", (int)(lwm-tail));
+            high_water_mark = lwm + buf_hwm_samples;
+          }
+        }
       }
       if(adc_dry_period <= 0) { /* Data capture interrupted or failed to start... */
-	WARNING(READER, "ADC data flow interruption at head %016llx\n", adc_ring_head(reader_adc));
-	rp_state = READER_ERROR;
-	adc_stop_data_transfer(reader_adc);
-	drain_reader_chunk_queue("READER ADC ran dry");
-	adc_destroy(reader_adc);
-	reader_adc = NULL;
+        WARNING(READER, "ADC data flow interruption at head %016llx\n", adc_ring_head(reader_adc));
+        rp_state = READER_ERROR;
+        adc_stop_data_transfer(reader_adc);
+        drain_reader_chunk_queue("READER ADC ran dry");
+        adc_destroy(reader_adc);
+        reader_adc = NULL;
       }
     }
     
-    ret = zmq_poll(&poll_list[0], N_POLL_ITEMS, reader_poll_delay);	/* Look for commands here */
+    ret = zmq_poll(&poll_list[0], N_POLL_ITEMS, reader_poll_delay);     /* Look for commands here */
     if( ret < 0 && errno == EINTR ) { /* Interrupted */
       WARNING(READER, "READER loop interrupted");
       break;
@@ -576,7 +576,7 @@ private void reader_thread_msg_loop() {    /* Read and process messages */
 
     for(n=0; n<N_POLL_ITEMS; n++) {
       if( poll_list[n].revents & ZMQ_POLLIN ) {
-	(*poll_responders[n])(poll_list[n].socket);
+        (*poll_responders[n])(poll_list[n].socket);
       }
     }
   }
@@ -641,7 +641,7 @@ public void *reader_main(void *arg) {
     adc_destroy(reader_adc);
   }
 
-  send_object_ptr(tidy, NULL);	/* Tell TIDY thread to finish */
+  send_object_ptr(tidy, NULL);  /* Tell TIDY thread to finish */
 
   LOG(READER, 1, "thread terminates by return");
 
@@ -665,7 +665,7 @@ public int verify_reader_params(rparams *rp, strbuf e) {
     max = sched_get_priority_max(SCHED_FIFO);
     if(rp->r_schedprio < min || rp->r_schedprio > max) {
       strbuf_appendf(e, "RT scheduling priority %d not in kernel's acceptable range [%d,%d]",
-		    rp->r_schedprio, min, max);
+                    rp->r_schedprio, min, max);
       return -1;
     }
   }
@@ -681,7 +681,7 @@ public int verify_reader_params(rparams *rp, strbuf e) {
   
   if(rp->r_window < READER_MIN_WINDOW || rp->r_window > READER_MAX_WINDOW) {
     strbuf_appendf(e, "Min. capture window %d seconds outwith compiled-in range [%d,%d] seconds",
-		   rp->r_window, 1, 30);
+                   rp->r_window, 1, 30);
     return -1;
   }
 
@@ -694,7 +694,7 @@ public int verify_reader_params(rparams *rp, strbuf e) {
   
   if(rp->r_buf_hwm_fraction < READER_MIN_RBHWMF || rp->r_buf_hwm_fraction > READER_MAX_RBHWMF) {
     strbuf_appendf(e, "Ring buffer high-water mark fraction %g outwith compiled-in range [%g,%g] seconds",
-		   rp->r_buf_hwm_fraction, 0.5, 0.95);
+                   rp->r_buf_hwm_fraction, 0.5, 0.95);
     return -1;
   }
   
@@ -705,7 +705,7 @@ public int verify_reader_params(rparams *rp, strbuf e) {
 
   if(rbw_samples > bhwm_samples) {
     strbuf_appendf(e, "Capture window of %d [kiB] is bigger than ring buffer high-water mark at %d [kiB]",
-		   rbw_samples*sizeof(sampl_t)/1024, bhwm_samples*sizeof(sampl_t)/1024);
+                   rbw_samples*sizeof(sampl_t)/1024, bhwm_samples*sizeof(sampl_t)/1024);
     return -1;
   }
 
@@ -714,12 +714,12 @@ public int verify_reader_params(rparams *rp, strbuf e) {
   if(chunksize) {
     if(rbw_samples < chunksize) {
       strbuf_appendf(e, "Capture window of %d [kiB] is smaller than chunk size %d[kiB]",
-		     rbw_samples*sizeof(sampl_t)/1024, chunksize*sizeof(sampl_t)/1024);
+                     rbw_samples*sizeof(sampl_t)/1024, chunksize*sizeof(sampl_t)/1024);
       return -1;
     }
     if(bhwm_samples+READER_RB_HEADROOM_CHUNKS*chunksize > rp->r_bufsz*1024*1024/sizeof(sampl_t)) {
       strbuf_appendf(e, "Ring overflow region %d [kiB] is smaller than %d times the chunk size %d[kiB]",
-		     (rp->r_bufsz*1024*1024-bhwm_samples*sizeof(sampl_t))/1024, READER_RB_HEADROOM_CHUNKS, chunksize*sizeof(sampl_t)/1024);
+                     (rp->r_bufsz*1024*1024-bhwm_samples*sizeof(sampl_t))/1024, READER_RB_HEADROOM_CHUNKS, chunksize*sizeof(sampl_t)/1024);
       return -1;
     }
   }

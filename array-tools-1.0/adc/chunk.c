@@ -24,7 +24,7 @@ struct _frame {
  * Set up the mmap frames for data transfer to snapshot files.
  */
 
-private int    nframes;	   /* The number of simultaneous mmap frames */
+private int    nframes;    /* The number of simultaneous mmap frames */
 private frame *framelist;  /* The list of mmap frame descriptors */
 private int    n_frame_Q = 0;
 
@@ -72,7 +72,7 @@ private void scan_framelist() {
   frame *f;
 
   for(n=0,f=framelist; n<nframes; n++, f++) {
-    if(f->f_map.b_bytes)	/* If non-zero, it's in use */
+    if(f->f_map.b_bytes)        /* If non-zero, it's in use */
       continue;
     if( !queue_singleton(&f->f_Q) )
       continue;
@@ -99,7 +99,7 @@ private frame *alloc_frame() {
   f = (frame *)de_queue(queue_next(&frameQ));
   assertv(f != NULL, "Frame queue count %d but queue is empty\n", n_frame_Q);
   n_frame_Q--;
-  f->f_map.b_bytes = 1;		/* In-use;  real size is filled in by caller */
+  f->f_map.b_bytes = 1;         /* In-use;  real size is filled in by caller */
   return f;
 }
 
@@ -131,7 +131,7 @@ public int frame_nr(frame *f) {
 
 private uint16_t chunk_counter;
 
-#define N_CHUNK_ALLOC	(4096/sizeof(chunk_t))
+#define N_CHUNK_ALLOC   (4096/sizeof(chunk_t))
 
 private QUEUE_HEADER(chunkQ);
 private int N_in_chunkQ = 0;
@@ -143,16 +143,16 @@ private int N_in_chunkQ = 0;
 public chunk_t *alloc_chunk(int nr) {
   queue *ret;
 
-  if( N_in_chunkQ < nr ) {	/* The queue doesn't have enough */
+  if( N_in_chunkQ < nr ) {      /* The queue doesn't have enough */
     int n;
 
     for(n=0; n<N_CHUNK_ALLOC; n++) {
       queue *q = (queue *)calloc(1, sizeof(chunk_t));
 
-      if( !q ) {			/* Allocation failed */
-	if( N_in_chunkQ >= nr )
-	  break;			/* But we have enough now anyway */
-	return NULL;
+      if( !q ) {                        /* Allocation failed */
+        if( N_in_chunkQ >= nr )
+          break;                        /* But we have enough now anyway */
+        return NULL;
       }
       init_queue(q);
       queue_ins_after(&chunkQ, q);
@@ -165,10 +165,10 @@ public chunk_t *alloc_chunk(int nr) {
   init_queue(&c->c_rQ);
   c->c_name = ++chunk_counter;
   
-  while(--nr > 0) {		/* Collect enough to satisfy request */
+  while(--nr > 0) {             /* Collect enough to satisfy request */
     chunk_t *c = qp2chunk(de_queue(queue_next(&chunkQ)));
 
-    init_queue(&c->c_wQ);	/* Redundant... */
+    init_queue(&c->c_wQ);       /* Redundant... */
     init_queue(&c->c_rQ);
     c->c_name = ++chunk_counter;
     queue_ins_before(ret, chunk2qp(c));
@@ -222,10 +222,10 @@ public int map_chunk_to_frame(chunk_t *c) {
   if(map == NULL) {
     strbuf_appendf(c->c_error, "Unable to map chunk c:%04hx to frame %d: %m", c->c_name, frame_nr(fp));
     set_chunk_status(c, SNAPSHOT_ERROR);
-    fp->f_map.b_bytes = 0;	/* Mark frame as free */
+    fp->f_map.b_bytes = 0;      /* Mark frame as free */
     return -1;
   }
-  c->c_frame = fp;		/* Succeeded, chunk now has a mapped frame */
+  c->c_frame = fp;              /* Succeeded, chunk now has a mapped frame */
   return 0;
 }
 
@@ -249,8 +249,8 @@ public void copy_chunk_data(chunk_t *c) {
  * Return the actual size, no greater than the space available.
  */
 
-#define qp2cname(p)	(qp2chunk(p)->c_name)
-#define rq2cname(p)	(rq2chunk(p)->c_name)
+#define qp2cname(p)     (qp2chunk(p)->c_name)
+#define rq2cname(p)     (rq2chunk(p)->c_name)
 
 public int debug_chunk(char buf[], int space, chunk_t *c) {
   import const char *snapshot_status(int);
@@ -258,17 +258,17 @@ public int debug_chunk(char buf[], int space, chunk_t *c) {
   int used;
 
   used = snprintf(buf, space,
-		  "chunk c:%04hx at %p"
-		  "wQ[c:%04hx,c:%04hx] "
-		  "rQ[c:%04hx,c:%04hx] "
-		  "RG %p FR %p PF f:%04hx status %s "
-		  "S:%08lx F:%016llx L:%016llx\n",
-		  c->c_name, c,
-		  qp2cname(queue_prev(&c->c_wQ)), qp2cname(queue_next(&c->c_wQ)),
-		  rq2cname(queue_prev(&c->c_rQ)), rq2cname(queue_next(&c->c_rQ)),
-		  c->c_ring, c->c_frame, snapfile_name(c->c_parent), snapshot_status(c->c_status),
-		  c->c_samples, c->c_first, c->c_last
-		  );
+                  "chunk c:%04hx at %p"
+                  "wQ[c:%04hx,c:%04hx] "
+                  "rQ[c:%04hx,c:%04hx] "
+                  "RG %p FR %p PF f:%04hx status %s "
+                  "S:%08lx F:%016llx L:%016llx\n",
+                  c->c_name, c,
+                  qp2cname(queue_prev(&c->c_wQ)), qp2cname(queue_next(&c->c_wQ)),
+                  rq2cname(queue_prev(&c->c_rQ)), rq2cname(queue_next(&c->c_rQ)),
+                  c->c_ring, c->c_frame, snapfile_name(c->c_parent), snapshot_status(c->c_status),
+                  c->c_samples, c->c_first, c->c_last
+                  );
   if(used >= space)
     used = space;
   return used;

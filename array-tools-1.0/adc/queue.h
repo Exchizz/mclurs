@@ -12,15 +12,17 @@ typedef struct q
 }
   queue;
 
+typedef void (*qmapfn)(void *, queue *);
+
 export queue *de_queue(queue *);
 export queue *init_queue(queue *);
 export queue *splice_queue(queue *,queue *);
-export queue *unsplice_queue(queue *, queue *);
-export void   map_queue_nxt(queue *, queue *, void (*)(void *, queue *), void *);
-export void   map_queue_prv(queue *, queue *, void (*)(void *, queue *), void *);
+//export queue *unsplice_queue(queue *, queue *);
+export void   map_queue_nxt(queue *, queue *, qmapfn, void *);
+export void   map_queue_prv(queue *, queue *, qmapfn, void *);
 
-#define queue_next(q)	((q)->q_next)
-#define queue_prev(q)	((q)->q_prev)
+#define queue_next(q)   ((q)->q_next)
+#define queue_prev(q)   ((q)->q_prev)
 
 #define queue_ins_after(q,i)  splice_queue((q), (i))
 #define queue_ins_before(q,i)  splice_queue((i), (q))
@@ -57,28 +59,28 @@ export void   map_queue_prv(queue *, queue *, void (*)(void *, queue *), void *)
  * deal with that case!
  */
 
-#define for_nxt_in_Q(var,start,end)			\
-do { queue *__s = (start), *__e = (end);		\
-     queue *__p = __s;					\
-     int    __done = 0;					\
-     while(!__done) { queue *__n = queue_next(__p);	\
-       __done = (__n == __s || __n == __e);		\
-       var = __p;  __p = __n;				\
+#define for_nxt_in_Q(var,start,end)                     \
+do { queue *__s = (start), *__e = (end);                \
+     queue *__p = __s;                                  \
+     int    __done = 0;                                 \
+     while(!__done) { queue *__n = queue_next(__p);     \
+       __done = (__n == __s || __n == __e);             \
+       var = __p;  __p = __n;                           \
        /* USER CODE GOES HERE */
 
-#define end_for_nxt  \
+#define end_for_nxt                                     \
      } } while(0)
 
-#define for_prv_in_Q(var,start,end)			\
-do { queue *__s = (start), *__e = (end);		\
-     queue *__p = __s;					\
-     int    __done = 0;					\
-     while(!__done) { queue *__n = queue_prev(__p);	\
-       __done = (__n == __s || __n == __e);		\
+#define for_prv_in_Q(var,start,end)                     \
+do { queue *__s = (start), *__e = (end);                \
+     queue *__p = __s;                                  \
+     int    __done = 0;                                 \
+     while(!__done) { queue *__n = queue_prev(__p);     \
+       __done = (__n == __s || __n == __e);             \
        var = __p;  __p = __n;
        /* USER CODE GOES HERE */
 
-#define end_for_prv  \
+#define end_for_prv                                     \
      } } while(0)
 
 #endif /* _QUEUE_H */

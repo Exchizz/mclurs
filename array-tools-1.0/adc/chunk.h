@@ -21,29 +21,29 @@ typedef struct _sfile snapfile_t;
 #include "queue.h"
 
 typedef struct {
-  queue	        c_Q[2];	    /* Q header for READER capture queue and WRITER file chunk list*/
-#define c_wQ c_Q[0]	    /* Chunk Q linkage associated with the file */
-#define c_rQ c_Q[1]	    /* Chunk Q linkage associated with the data flow */
-  frame	       *c_frame;    /* Mmap'd file buffer for this chunk */
+  queue         c_Q[2];     /* Q header for READER capture queue and WRITER file chunk list*/
+#define c_wQ c_Q[0]         /* Chunk Q linkage associated with the file */
+#define c_rQ c_Q[1]         /* Chunk Q linkage associated with the data flow */
+  frame        *c_frame;    /* Mmap'd file buffer for this chunk */
   strbuf        c_error;    /* Error buffer, for error messages (copy from snapshot_t origin) */
   snapfile_t   *c_parent;   /* Chunk belongs to this file */
   uint64_t      c_first;    /* First sample of this chunk */
   uint64_t      c_last;     /* First sample beyond this chunk */
-  uint16_t     *c_ring;	    /* Ring buffer start for this chunk */
-  convertfn	c_convert;  /* Function to copy samples into frame with conversion */
+  uint16_t     *c_ring;     /* Ring buffer start for this chunk */
+  convertfn     c_convert;  /* Function to copy samples into frame with conversion */
   uint32_t      c_samples;  /* Number of samples to copy */
   uint32_t      c_offset;   /* File offset for this chunk */
-  int	        c_status;   /* Status of this capture chunk */
-  int		c_fd;	    /* File descriptor for this chunk */
-  uint16_t	c_name;	    /* Unique name for this chunk */
+  int           c_status;   /* Status of this capture chunk */
+  int           c_fd;       /* File descriptor for this chunk */
+  uint16_t      c_name;     /* Unique name for this chunk */
 }
   chunk_t;
 
-#define qp2chunk(q)	((chunk_t *)(q))
-#define chunk2qp(c)	(&(c)->c_Q[0])
+#define qp2chunk(q)     ((chunk_t *)(q))
+#define chunk2qp(c)     (&(c)->c_Q[0])
 
-#define chunk2rq(c)	(&(c)->c_rQ)
-#define rq2chunk(q)	((chunk_t *)&((q)[-1]))
+#define chunk2rq(c)     (&(c)->c_rQ)
+#define rq2chunk(q)     ((chunk_t *)&((q)[-1]))
 
 export chunk_t *alloc_chunk(int);
 export void     release_chunk(chunk_t *);
@@ -59,14 +59,14 @@ export void     release_frame(frame *);
  * Chunk, snapfile and snapshot status codes
  */
 
-#define	SNAPSHOT_INIT		0 /* Structure just created */
-#define SNAPSHOT_ERROR		1 /* Error found during checking or execution */
-#define SNAPSHOT_PREPARE	2 /* Structure filled in, but files/chunks not done yet */
-#define SNAPSHOT_READY		3 /* Snapshot etc. is ready, but waiting for READER queue space */
-#define SNAPSHOT_WAITING	4 /* Snapshot etc. is ready, but waiting for data */
-#define SNAPSHOT_WRITING	5 /* Snapshot file's chunks are being written */
-#define SNAPSHOT_WRITTEN	6 /* Snapshot's chunk has been successfully written */
-#define SNAPSHOT_COMPLETE	7 /* Snapshot written correctly (off queue) */
+#define SNAPSHOT_INIT           0 /* Structure just created */
+#define SNAPSHOT_ERROR          1 /* Error found during checking or execution */
+#define SNAPSHOT_PREPARE        2 /* Structure filled in, but files/chunks not done yet */
+#define SNAPSHOT_READY          3 /* Snapshot etc. is ready, but waiting for READER queue space */
+#define SNAPSHOT_WAITING        4 /* Snapshot etc. is ready, but waiting for data */
+#define SNAPSHOT_WRITING        5 /* Snapshot file's chunks are being written */
+#define SNAPSHOT_WRITTEN        6 /* Snapshot's chunk has been successfully written */
+#define SNAPSHOT_COMPLETE       7 /* Snapshot written correctly (off queue) */
 
 #define SNAPSHOT_STATUS_MASK 0xff /* Mask for status values */
 
