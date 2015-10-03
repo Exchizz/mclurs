@@ -32,7 +32,7 @@ private QUEUE_HEADER(frameQ);
 
 public int init_frame_system(strbuf e, int nfr, int ram, int chunk) {
 
-  LOG(WRITER, 1, "Init %d frames of size %d [kiB] in ram %d [MiB]\n", nfr, chunk, ram);
+  LOG(WRITER, 1, "Init %d frames of size %d[kiB] in ram %d[MiB]\n", nfr, chunk, ram);
 
   framelist = (frame *)calloc(nfr, sizeof(frame));
   if( framelist ) {
@@ -40,7 +40,7 @@ public int init_frame_system(strbuf e, int nfr, int ram, int chunk) {
     int   n;
 
     if(map == NULL) {
-      strbuf_appendf(e, "Cannot mmap %d MiB of locked transfer RAM: %m", ram);
+      strbuf_appendf(e, "Cannot mmap %d[MiB] of locked transfer RAM: %m", ram);
       free((void *) framelist );
       return -1;
     }
@@ -215,7 +215,7 @@ public int map_chunk_to_frame(chunk_t *c) {
   /* Would really like to do WRONLY here, but I *think* that will break */
   map = mmap_and_lock(c->c_fd, c->c_offset, fp->f_map.b_bytes, PROT_RDWR|PREFAULT_RDWR|MAL_LOCKED);
 
-  LOG(WRITER, 2, "Map chunk %04hx in frame %d from fd %d offs %d with addr %p and size %d gives res %p\n",
+  LOG(WRITER, 3, "Map chunk %04hx in frame %d from fd %d offs %d with addr %p and size %d[B] gives res %p\n",
       c->c_name, frame_nr(fp), c->c_fd, c->c_offset, fp->f_map.b_data, fp->f_map.b_bytes, map);
 
   fp->f_map.b_data = map;
@@ -237,7 +237,7 @@ public int map_chunk_to_frame(chunk_t *c) {
 public void copy_chunk_data(chunk_t *c) {
   convertfn fn = c->c_convert;
 
-   LOG(READER, 2, "Copy chunk %04hx using fn %p from %p to %p size %d spl\n", 
+   LOG(READER, 3, "Copy chunk c:%04hx using fn %p from %p to %p size %d[spl]\n", 
       c->c_name, fn, c->c_ring, c->c_frame->f_map.b_data, c->c_samples);
 
   (*fn)((sampl_t *)c->c_frame->f_map.b_data, (sampl_t *)c->c_ring, c->c_samples);

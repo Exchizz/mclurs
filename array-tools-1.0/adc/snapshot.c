@@ -153,7 +153,7 @@ public param_t globals[] ={
   { "chunk",    "1024",
     &writer_parameters.w_chunksize,
     PARAM_TYPE(int32), PARAM_SRC_ENV|PARAM_SRC_ARG,
-    "size of a transfer chunk [KiB]"
+    "size of a transfer chunk [kiB]"
   },
 };
 

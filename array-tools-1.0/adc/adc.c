@@ -143,7 +143,7 @@ public int adc_set_chan_frequency(adc a, strbuf e, double *freq) {
   double f = *freq;
   
   if(f < MIN_SAMPLING_FREQUENCY || f > MAX_SAMPLING_FREQUENCY) {
-    strbuf_appendf(e, "Sampling frequency %g not within compiled-in ADC limits [%g,%g] Hz",
+    strbuf_appendf(e, "Sampling frequency %g not within compiled-in ADC limits [%g,%g] [Hz]",
                    f, MIN_SAMPLING_FREQUENCY, MAX_SAMPLING_FREQUENCY);
     return -1;
   }
@@ -171,7 +171,7 @@ public int adc_set_chan_frequency(adc a, strbuf e, double *freq) {
 
 public int adc_set_bufsz(adc a, strbuf e, int bufsz) {
   if(bufsz < MIN_COMEDI_BUF_SIZE || bufsz > MAX_COMEDI_BUF_SIZE) {
-    strbuf_appendf(e, "Comedi buffer size %d MiB outwith compiled-in range [%d,%d] MiB",
+    strbuf_appendf(e, "Comedi buffer size %d MiB outwith compiled-in range [%d,%d] [MiB]",
                    bufsz, MIN_COMEDI_BUF_SIZE, MAX_COMEDI_BUF_SIZE);
     return -1;
   }
@@ -244,20 +244,20 @@ public int adc_init(adc a, strbuf e) {
 
   /* Initialise Comedi streaming buffer */
   int request = a->a_req_bufsz_mib * 1024 * 1024;
-  LOG(READER, 2, "Requesting Comedi buffer %d [MiB] = %d bytes\n", a->a_req_bufsz_mib, request);
+  LOG(READER, 2, "Requesting Comedi buffer %d[MiB] = %d[B]\n", a->a_req_bufsz_mib, request);
   ret = comedi_get_buffer_size(a->a_device, 0);
   if( request > ret ) {
     ret = comedi_get_max_buffer_size(a->a_device, 0);  
     if( request > ret ) {
       ret = comedi_set_max_buffer_size(a->a_device, 0, request);
       if( ret < 0 ) {
-        strbuf_appendf(e, "Comedi set max buffer to %d MiB failed: %C", a->a_req_bufsz_mib);
+        strbuf_appendf(e, "Comedi set max buffer to %d[MiB] failed: %C", a->a_req_bufsz_mib);
         return -1;
       }
     }
     ret = comedi_set_buffer_size(a->a_device, 0, request);
     if( ret < 0 ) {
-      strbuf_appendf(e, "Comedi set streaming buffer to %d MiB failed: %C", a->a_req_bufsz_mib);
+      strbuf_appendf(e, "Comedi set streaming buffer to %d[MiB] failed: %C", a->a_req_bufsz_mib);
       return -1;
     }
   }
@@ -265,10 +265,10 @@ public int adc_init(adc a, strbuf e) {
   a->a_bufsz_bytes = comedi_get_buffer_size(a->a_device, 0);
   a->a_bufsz_samples = a->a_bufsz_bytes / sizeof(sampl_t);
   if(a->a_bufsz_bytes == request) {
-    LOG(READER, 2, "Using Comedi buffer %d byes = %d [MiB]\n", a->a_bufsz_bytes, a->a_bufsz_bytes/(1024*1024));
+    LOG(READER, 2, "Using Comedi buffer %d[B] = %d[MiB]\n", a->a_bufsz_bytes, a->a_bufsz_bytes/(1024*1024));
   }
   else{
-    WARNING(READER, "Using Comedi buffer %d[MiB], bufsz was %d[MiB]\n", a->a_bufsz_bytes/(1024*1024), a->a_req_bufsz_mib);
+    WARNING(READER, "Using Comedi buffer %d[MiB] while bufsz was %d[MiB]\n", a->a_bufsz_bytes/(1024*1024), a->a_req_bufsz_mib);
   }
 
   comedi_set_global_oor_behavior(COMEDI_OOR_NUMBER);
@@ -298,19 +298,23 @@ public int adc_init(adc a, strbuf e) {
 
   /* Check the timing:  a difference here means a problem with the driver */
   if(a->a_command.convert_arg != a->a_intersample_ns) {
+    WARNING(READER, "Comedi driver alters isp from %d[ns] to %d[ns];  new total frequency %g[Hz]\n",
+            a->a_intersample_ns, a->a_command.convert_arg, 1e9 / a->a_command.convert_arg);
     a->a_intersample_ns = a->a_command.convert_arg;
     a->a_totfrequency = 1e9 / a->a_command.convert_arg;
-    /* TODO: consider logging a warning here */
   }
   
   /* Map the Comedi buffer into memory, duplicated */
-  LOG(READER, 1, "Mapping Comedi Buffer size %d fd %d\n", a->a_bufsz_bytes, a->a_fd);
   void *map = mmap_and_lock(a->a_fd, 0, a->a_bufsz_bytes, PROT_RDONLY|PREFAULT_RDONLY|MAL_LOCKED|MAL_DOUBLED);
   if(map == NULL) {
     strbuf_appendf(e, "Unable to mmap Comedi streaming buffer: %m");
     return -1;
   }
   a->a_comedi_ring = map;
+  LOG(READER, 2, "Mapped Comedi Buffer, size %d[B] from fd %d\n", a->a_bufsz_bytes, a->a_fd);
+
+  /* Initialise the look-up tables for data conversion */
+  populate_conversion_luts();
 
   /* Initialise the sample position indices */
   a->a_head = 0;

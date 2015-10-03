@@ -41,10 +41,10 @@
 /* Using LUT only doubles the table size (but probably saves some time) */
 #define TABLE_SIZE      (2*(1<<ADC_BITS))
 
-private sampl_t lut_raw_to_1Vpk_500mV[TABLE_SIZE];       /* Amplitude tables */
+private sampl_t lut_raw_to_1Vpk_500mV[TABLE_SIZE];       /* Amplitude tables, 16 bit signed fixed point in 16 bit words */
 private sampl_t lut_raw_to_1Vpk_750mV[TABLE_SIZE];
 
-private long    lut_raw_to_1Vsq_500mV[TABLE_SIZE];       /* Energy tables */
+private long    lut_raw_to_1Vsq_500mV[TABLE_SIZE];       /* Energy tables, 24 bit positive fixed point in 32 bit words */
 private long    lut_raw_to_1Vsq_750mV[TABLE_SIZE];
 
 private int lut_not_ready = 1;
@@ -63,16 +63,16 @@ public void populate_conversion_luts() {
     short conv = RAW_500mV_TO_OUT_500mV(raw);
 
     lut_raw_to_1Vpk_500mV[raw] = conv;                     /* Raw value maps to itself x 8 with sign corrected */
-    lut_raw_to_1Vsq_500mV[raw] = (long) conv*conv;
+    lut_raw_to_1Vsq_500mV[raw] = ((long) conv*conv) >> 8;
     
     lut_raw_to_1Vpk_750mV[raw] = OUT_500mV_TO_OUT_750mV(conv);  /* Values in 0.75pk range are scaled by 1.5 */
-    lut_raw_to_1Vsq_750mV[raw] = (long) OUT_500mV_TO_OUT_750mV(conv)*OUT_500mV_TO_OUT_750mV(conv);
+    lut_raw_to_1Vsq_750mV[raw] = ((long) OUT_500mV_TO_OUT_750mV(conv)*OUT_500mV_TO_OUT_750mV(conv)) >> 8;
 
     lut_raw_to_1Vpk_500mV[raw+0x1000] = (raw&0x800)? USBDUXFAST_OOR_POS_500mV : USBDUXFAST_OOR_NEG_500mV;
-    lut_raw_to_1Vsq_500mV[raw+0x1000] = (long) lut_raw_to_1Vpk_500mV[raw+0x1000]*lut_raw_to_1Vpk_500mV[raw+0x1000];
+    lut_raw_to_1Vsq_500mV[raw+0x1000] = ((long) lut_raw_to_1Vpk_500mV[raw+0x1000]*lut_raw_to_1Vpk_500mV[raw+0x1000]) >> 8;
 
     lut_raw_to_1Vpk_750mV[raw+0x1000] = (raw&0x800)? USBDUXFAST_OOR_POS_750mV : USBDUXFAST_OOR_NEG_750mV;
-    lut_raw_to_1Vsq_750mV[raw+0x1000] = (long) lut_raw_to_1Vpk_750mV[raw+0x1000]*lut_raw_to_1Vpk_750mV[raw+0x1000];
+    lut_raw_to_1Vsq_750mV[raw+0x1000] = ((long) lut_raw_to_1Vpk_750mV[raw+0x1000]*lut_raw_to_1Vpk_750mV[raw+0x1000]) >> 8;
   }
   lut_not_ready = 0;            /* The tables are ready now... */
 }

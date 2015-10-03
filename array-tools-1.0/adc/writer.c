@@ -781,7 +781,7 @@ private int snapshot_is_complete(snap_t *s) {
 
 private void debug_snapshot_descriptor(snap_t *s) {
   LOG(WRITER, 1,
-      "Snap %04hx at %p: path '%s' fd %d status %s "
+      "Snap s:%04hx at %p: path '%s' fd %d status %s "
       "sQ[s:%04hx,s:%04hx] "
       "fQ[f:%04hx,f:%04hx] "
       "files %d/%d/%d "
@@ -900,7 +900,7 @@ private int process_status_command(strbuf c) {
      * being worked is the last one or not.
      */
     strbuf_printf(c, " Files: %d, Xfr space %d[ki] samples\n",
-		  wp_nfiles, wp_totxfrsamples/1024);
+                  wp_nfiles, wp_totxfrsamples/1024);
 
     for_nxt_in_Q(queue *p, queue_next(&snapQ), &snapQ)
       s = qp2snap(p);
@@ -970,7 +970,7 @@ private int setup_snapfile(snapfile_t *f, snap_t *s) {
 
   ret = ftruncate(fd, s->s_bytes); /* Pre-size the file */
   if(ret < 0) {                    /* Try to tidy up... */
-    strbuf_appendf(s->s_error, "Unable to truncate sample file %s to size %d [B]: %m\n", &f->f_file[0], s->s_bytes);
+    strbuf_appendf(s->s_error, "Unable to truncate sample file %s to size %d[B]: %m\n", &f->f_file[0], s->s_bytes);
     unlinkat(s->s_dirfd, &f->f_file[0], 0);
     close(fd);
     return -1;
@@ -1163,7 +1163,7 @@ private void debug_snapfile(snapfile_t *f) {
   char    buf[MSGBUFSIZE];
 
   used = snprintf(&buf[used], left,
-                  "File %s (f:%04hx) of snapshot %04hx, at %p: "
+                  "File %s (f:%04hx) of snapshot s:%04hx, at %p: "
                   "Q [f:%04hx,f:%04hx] "
                   "fd %d ix %d nc %d/%d st %s\n",
                   &f->f_file[0], f->f_name, s->s_name, f,
@@ -1227,7 +1227,7 @@ private uint64_t writer_service_queue(uint64_t start) {
         abort_snapfile(c->c_parent);
         //      debug_snapfile(c->c_parent);
         completed_snapfile(c->c_parent);
-        WARNING(WRITER, "service queue aborts chunk %04hx: %s\n", c->c_name, strbuf_string(c->c_error));
+        WARNING(WRITER, "service queue aborts chunk c:%04hx: %s\n", c->c_name, strbuf_string(c->c_error));
       }
       max = 0;                  /* Couldn't get a frame, so we are done */
     }
@@ -1237,7 +1237,7 @@ private uint64_t writer_service_queue(uint64_t start) {
       c->c_parent->f_pending++;
       set_chunk_owner(c, CHUNK_OWNER_READER);
       send_object_ptr(reader, (void *)&c);
-      LOG(WRITER, 2, "service queue transfers chunk %04hx to READER\n", c->c_name);
+      LOG(WRITER, 2, "service queue transfers chunk c:%04hx to READER\n", c->c_name);
     }
     now = monotonic_ns_clock();
   }
@@ -1504,7 +1504,7 @@ public int verify_writer_params(wparams *wp, strbuf e) {
     return -1;
   }
   if(wp->w_chunksize < MIN_CHUNK_SZ || wp->w_chunksize > MAX_CHUNK_SZ) {
-    strbuf_appendf(e, "Transfer chunk size %d KiB outwith compiled-in range [%d, %d] KiB",
+    strbuf_appendf(e, "Transfer chunk size %d KiB outwith compiled-in range [%d, %d] [kiB]",
                   wp->w_chunksize, MIN_CHUNK_SZ, MAX_CHUNK_SZ);
     return -1;
   }

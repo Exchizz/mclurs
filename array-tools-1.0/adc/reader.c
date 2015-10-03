@@ -52,7 +52,7 @@ public adc reader_adc;              /* The ADC object for the READER */
 #define READER_MAX_RBHWMF         0.95   /* Ring buffer maximum high-water mark fraction */
 #define READER_MIN_WINDOW            1   /* Reader minimum capture window [s] */
 #define READER_MAX_WINDOW           30   /* Reader maximum capture window [s] */
-#define ADC_DRY_PERIOD_MAX        1000   /* Maximum Wait for data [ms]: initial default is 10 [s] */
+#define ADC_DRY_PERIOD_MAX        1000   /* Maximum Wait for data [ms]: initial default is 10[s] */
 
 /*
  * READER state machine definitions.
@@ -243,9 +243,9 @@ private void process_reader_command(void *s) {
       rp_state = READER_ERROR;
       break;
     }
-    LOG(READER, 1, "Init with dev %s, freq %g [Hz], isp %d [ns] and buf %d [MiB]",
+    LOG(READER, 1, "Init with dev %s, freq %g[Hz], isp %d[ns] and buf %d[MiB]",
                     rp->r_device, rp->r_frequency, adc_ns_per_sample(reader_adc), rp->r_bufsz);
-    strbuf_printf(err, "OK Init -- nchan %d isp %d [ns]", NCHANNELS, adc_ns_per_sample(reader_adc));
+    strbuf_printf(err, "OK Init -- nchan %d isp %d[ns]", NCHANNELS, adc_ns_per_sample(reader_adc));
     rp_state = READER_RESTING;
     break;
 
@@ -431,11 +431,11 @@ private void complete_queue_head_chunk() {
   import int is_dead_snapfile(snapfile_t *);
   chunk_t *c = rq_head;
 
-  LOG(READER, 2, "Calling complete on chunk %04hx\n", c->c_name);
+  LOG(READER, 2, "Calling complete on chunk c:%04hx\n", c->c_name);
 
   if(c->c_first < adc_ring_tail(reader_adc) || is_dead_snapfile(c->c_parent)) { /* Oops, we are too late */
-    LOG(READER, 1, "Dead chunk: first %016llx tail %016llx dead? %d\n",
-        c->c_first, adc_ring_tail(reader_adc), is_dead_snapfile(c->c_parent));
+    LOG(READER, 1, "Dead chunk c:%04hx: first %016llx tail %016llx dead? %d\n",
+        c->c_name, c->c_first, adc_ring_tail(reader_adc), is_dead_snapfile(c->c_parent));
     abort_queue_head_chunk();
     return;
   }
@@ -599,8 +599,8 @@ private void debug_reader_params() {
   int bufsz_samples = rp->r_bufsz*1024*1024/sizeof(sampl_t);
   int headroom = 1e-6 * (bufsz_samples - buf_hwm_samples) * adc_ns_per_sample(reader_adc) + 0.5;
 
-  LOG(READER, 1, "High-water Mark %d [spl], Window %d [spl], Bufsz %d [spl],"
-      "Poll Delay %d [ms], Headroom %d [ms]\n",
+  LOG(READER, 1, "High-water Mark %d[spl], Window %d[spl], Bufsz %d[spl],"
+      "Poll Delay %d[ms], Headroom %d[ms]\n",
       buf_hwm_samples, buf_window_samples, bufsz_samples, reader_poll_delay, headroom);
 }
 
@@ -708,7 +708,7 @@ public int verify_reader_params(rparams *rp, strbuf e) {
   bhwm_samples = pagesize * bhwm_samples / sizeof(sampl_t);
 
   if(rbw_samples > bhwm_samples) {
-    strbuf_appendf(e, "Capture window of %d [kiB] is bigger than ring buffer high-water mark at %d [kiB]",
+    strbuf_appendf(e, "Capture window of %d[kiB] is bigger than ring buffer high-water mark at %d[kiB]",
                    rbw_samples*sizeof(sampl_t)/1024, bhwm_samples*sizeof(sampl_t)/1024);
     return -1;
   }
@@ -717,12 +717,12 @@ public int verify_reader_params(rparams *rp, strbuf e) {
   int chunksize = writer_chunksize_samples();
   if(chunksize) {
     if(rbw_samples < chunksize) {
-      strbuf_appendf(e, "Capture window of %d [kiB] is smaller than chunk size %d[kiB]",
+      strbuf_appendf(e, "Capture window of %d[kiB] is smaller than chunk size %d[kiB]",
                      rbw_samples*sizeof(sampl_t)/1024, chunksize*sizeof(sampl_t)/1024);
       return -1;
     }
     if(bhwm_samples+READER_RB_HEADROOM_CHUNKS*chunksize > rp->r_bufsz*1024*1024/sizeof(sampl_t)) {
-      strbuf_appendf(e, "Ring overflow region %d [kiB] is smaller than %d times the chunk size %d[kiB]",
+      strbuf_appendf(e, "Ring overflow region %d[kiB] is smaller than %d times the chunk size %d[kiB]",
                      (rp->r_bufsz*1024*1024-bhwm_samples*sizeof(sampl_t))/1024, READER_RB_HEADROOM_CHUNKS, chunksize*sizeof(sampl_t)/1024);
       return -1;
     }

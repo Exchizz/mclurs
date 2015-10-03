@@ -72,15 +72,15 @@ struct arg_end *e2;
 
 BEGIN_CMD_SYNTAX(main) {
   v2  = arg_litn("v",   "verbose", 0, 2,                "Increase verbosity"),
-  f2  = arg_dbl0("f",   "freq", "<real>",               "Sampling frequency [Hz], default 2.5 [MHz]"),
-  b2  = arg_int0("B",   "bufsz", "<int>",               "Comedi buffer size [MiB], default 40 [MiB]"),
+  f2  = arg_dbl0("f",   "freq", "<real>",               "Sampling frequency [Hz], default 2.5[MHz]"),
+  b2  = arg_int0("B",   "bufsz", "<int>",               "Comedi buffer size [MiB], default 40[MiB]"),
   d2  = arg_str0("d",   "device", "<path>",             "Comedi device to open, default /dev/comedi0"),
   rn2 = arg_rex0("r",   "range", "hi|lo", NULL, REG_EXTENDED,   "Specify range in {hi, lo}, default hi"),
   rw2 = arg_lit0(NULL,  "raw",                          "Emit raw ADC sample values"),
   e2  = arg_end(20)
 } APPLY_CMD_DEFAULTS(main) {
-  *f2->dval  = 2.5e6;           /* Default frequency 2.5 [MHz] */
-  *b2->ival  = 40;              /* Default buffer size 40 [MiB] */
+  *f2->dval  = 2.5e6;           /* Default frequency 2.5[MHz] */
+  *b2->ival  = 40;              /* Default buffer size 40[MiB] */
   *d2->sval  = COMEDI_DEVICE;   /* Default device for Comedi */
   *rn2->sval = "hi";            /* Default ADC range (hi) */
 } END_CMD_SYNTAX(main);
@@ -163,7 +163,7 @@ int main(int argc, char *argv[]) {
   /* Deal with the sampling frequency */
   sr_total    = f2->dval[0];
   if(sr_total < 5e4 || sr_total > 3e6) {
-    fprintf(stderr, "%s: Error -- total sample rate %g [Hz] out of sensible range (50 [kHz] to 3 [MHz])\n", program, sr_total);
+    fprintf(stderr, "%s: Error -- total sample rate %g[Hz] out of sensible range (50[kHz] to 3[MHz])\n", program, sr_total);
     errs++;
   }
   convert_arg = (unsigned int) 1e9 / sr_total;
@@ -171,11 +171,10 @@ int main(int argc, char *argv[]) {
   /* Deal with the requested buffer size */
   bufsz       = b2->ival[0];
   if(bufsz < 8 || bufsz > 256) {
-    fprintf(stderr, "%s: Error -- requested buffer size %d [MiB] out of sensible range (8 to 256 [MiB])\n", program, bufsz);
+    fprintf(stderr, "%s: Error -- requested buffer size %d[MiB] out of sensible range (8 to 256[MiB])\n", program, bufsz);
     errs++;
   }
   bufsz *= 1048576;
-  buf_samples = bufsz / sizeof(sampl_t);
 
   /* Deal with the Comedi device */
   device      = (char *) d2->sval[0];
@@ -205,8 +204,8 @@ int main(int argc, char *argv[]) {
   }
 
   fprintf(stderr, "%s %s\n\n", program, PROGRAM_VERSION);
-  fprintf(stderr, "Total sample rate requested = %g [Hz]\n", sr_total);
-  fprintf(stderr, "Using ADC range +/-%s [mV] full-scale\n", range? "500" : "750");
+  fprintf(stderr, "Total sample rate requested = %g[Hz]\n", sr_total);
+  fprintf(stderr, "Using ADC range +/-%s[mV] full-scale\n", range? "500" : "750");
 
   comedi_cmd *cmd = (comedi_cmd *) calloc(1, sizeof(comedi_cmd));
   if( !cmd ) {
@@ -218,19 +217,23 @@ int main(int argc, char *argv[]) {
 
   if(ret < bufsz) {
     if(comedi_set_max_buffer_size(dev, 0, bufsz) < 0 ) {
-      fprintf(stderr, "%s: Error -- failed to set %s max buffer size to %d bytes: %s\n", program, device, bufsz, comedi_strerror(comedi_errno()));
+      fprintf(stderr, "%s: Error -- failed to set %s max buffer size to %d[B]: %s\n", program, device, bufsz, comedi_strerror(comedi_errno()));
       exit(3);
     }
   }
   else {
     if(verbose)
-      fprintf(stderr, "%s: Comedi maximum buffer size requested %d, actual %d\n", program, bufsz, ret);
+      fprintf(stderr, "%s: Comedi maximum buffer size requested %d[B], actual %d[B]\n", program, bufsz, ret);
   }
 
   if(comedi_set_buffer_size(dev, 0, bufsz) < 0) {
-    fprintf(stderr, "%s: Error -- failed to set %s buffer size to %d bytes: %s\n", program, device, bufsz, comedi_strerror(comedi_errno()));
+    fprintf(stderr, "%s: Error -- failed to set %s buffer size to %d[B]: %s\n", program, device, bufsz, comedi_strerror(comedi_errno()));
     exit(3);
   }
+
+  /* Actual buffer may be larger than requested -- buffer does not shrink! */
+  bufsz = comedi_get_buffer_size(dev, 0);
+  buf_samples = bufsz / sizeof(sampl_t);
 
   for(i=0; i<N_CHANS; i++)
     chanlist[i] = CR_PACK(i, range, AREF_GROUND);
@@ -272,7 +275,7 @@ int main(int argc, char *argv[]) {
   start = (sampl_t *) map;
 
   if(verbose)
-    fprintf(stderr, "%s: Comedi buffer (size %u bytes) mapped at 0x%p\n", program, bufsz, start);
+    fprintf(stderr, "%s: Comedi buffer (size %u[B]) mapped at %p\n", program, bufsz, start);
 
   if( (ret = comedi_command(dev, cmd))       < 0 ) {
     fprintf(stderr, "%s: Error -- Comedi command returns %d: %s\n", program, ret, comedi_strerror(comedi_errno()));
@@ -287,7 +290,7 @@ int main(int argc, char *argv[]) {
   }
 
   if(verbose)
-    fprintf(stderr, "%s: Total sample rate allocated = %g Hz\n", program, 1e9 / cmd->convert_arg);
+    fprintf(stderr, "%s: Total sample rate allocated = %g[Hz]\n", program, 1e9 / cmd->convert_arg);
 
   head=tail=0;
   data_coming = 1000;           /* Is data arriving? After this many pauses with no data, exit... */
