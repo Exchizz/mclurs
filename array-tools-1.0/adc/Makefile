@@ -2,6 +2,7 @@
 
 CFLAGS	    = -Wall -Wno-format
 TARGETS     = grab trig snapchat snapshot
+DOCS	    = ${TARGETS:=.pdf}
 OFILES      = snapshot.o reader.o writer.o tidy.o
 LIBOBJS     = util.o lut.o mman.o param.o queue.o rtprio.o strbuf.o chunk.o adc.o
 XTRAS       = grab.o snapchat.o trig.o
@@ -83,14 +84,27 @@ install:	all
 	install -D grab.1a	 ${DESTDIR}/usr/share/man/man1
 
 clean:
-	rm -f ${TARGETS} ${XTRAS} ${OFILES} ${LIBRARY} ${LIBOBJS} argtab.a argtab.h ${ARGTAB_OBJS} *~
+	rm -f ${TARGETS} ${DOCS} ${XTRAS} ${OFILES} ${LIBRARY} ${LIBOBJS} argtab.a argtab.h ${ARGTAB_OBJS} *~
 
 print.pdf:	*.c *.h
 	a2ps -1r -L99 -l198 -o print.ps *.[ch] 
 	ps2pdf print.ps
 	rm print.ps
 
-%.pdf:  %.1a
+docs:	${DOCS}
+.PHONY:	docs
+
+grab.pdf:  grab.1a
+	groff -Tps -man $< > xx.ps
+	ps2pdf xx.ps $@
+	@rm -f xx.ps
+
+trig.pdf:  trig.1a
+	groff -Tps -man $< > xx.ps
+	ps2pdf xx.ps $@
+	@rm -f xx.ps
+
+snapchat.pdf:  snapchat.1a
 	groff -Tps -man $< > xx.ps
 	ps2pdf xx.ps $@
 	@rm -f xx.ps
