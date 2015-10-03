@@ -15,9 +15,6 @@ ARGTAB_HDRS = ${ARGTAB_SRCS:.c=.h} ${ARGTAB_XTRA}
 build:	${TARGETS}
 .PHONY:	build
 
-snapshot:	${OFILES} ${LIBRARY}
-	gcc -o snapshot ${OFILES} ${LIBRARY} -lcomedi -lzmq -lpthread -largtable2 -lcap
-
 snapchat:	snapchat.o ${LIBRARY}
 	gcc -o snapchat snapchat.o ${LIBRARY} -lzmq -largtable2
 
@@ -27,7 +24,8 @@ trig:	trig.o ${LIBRARY}
 grab:		grab.o ${LIBRARY}
 	gcc -o grab grab.o ${LIBRARY} -lcomedi -largtable2 -lm
 
-snapshot.o:	snapshot.c snapshot.h reader.h writer.h util.h param.h argtab.h general.h error.h
+snapshot:	${OFILES} ${LIBRARY}
+	gcc -o snapshot ${OFILES} ${LIBRARY} -lcomedi -lzmq -lpthread -largtable2 -lcap
 
 snapchat.o:	snapchat.c snapshot.h argtab.h util.h param.h
 
@@ -35,13 +33,15 @@ grab.o:		grab.c mman.h lut.h argtab.h
 
 trig.o:		trig.c snapshot.h util.h param.h argtab.h
 
-reader.o:	reader.c reader.h snapshot.h util.h queue.h param.h adc.h mman.h tidy.h chunk.h general.h error.h
+snapshot.o:	snapshot.c snapshot.h reader.h writer.h util.h param.h argtab.h general.h error.h
 
-adc.o:		adc.c adc.h mman.h queue.h general.h
+reader.o:	reader.c reader.h snapshot.h util.h queue.h param.h adc.h mman.h tidy.h chunk.h general.h error.h
 
 writer.o:	writer.c writer.h snapshot.h util.h queue.h param.h mman.h chunk.h general.h error.h
 
 tidy.o:		tidy.c tidy.h chunk.h general.h error.h
+
+adc.o:		adc.c adc.h mman.h queue.h general.h error.h
 
 rtprio.o:	rtprio.c rtprio.h general.h
 
@@ -49,7 +49,7 @@ util.o:		util.c util.h general.h
 
 lut.o:		lut.c lut.h general.h
 
-chunk.o:	chunk.c chunk.h mman.h queue.h general.h
+chunk.o:	chunk.c chunk.h mman.h queue.h general.h error.h
 
 mman.o:		mman.c mman.h general.h
 
@@ -86,12 +86,7 @@ install:	all
 clean:
 	rm -f ${TARGETS} ${DOCS} ${XTRAS} ${OFILES} ${LIBRARY} ${LIBOBJS} argtab.a argtab.h ${ARGTAB_OBJS} *~
 
-print.pdf:	*.c *.h
-	a2ps -1r -L99 -l198 -o print.ps *.[ch] 
-	ps2pdf print.ps
-	rm print.ps
-
-docs:	${DOCS}
+docs:	${DOCS} print.pdf
 .PHONY:	docs
 
 grab.pdf:  grab.1a
@@ -113,3 +108,9 @@ snapshot.pdf:	snapshot.8a
 	groff -Tps -man $< > xx.ps
 	ps2pdf xx.ps $@
 	@rm -f xx.ps
+
+print.pdf:	*.c *.h
+	a2ps -1r -L99 -l198 -o print.ps *.[ch] 
+	ps2pdf print.ps
+	rm print.ps
+
