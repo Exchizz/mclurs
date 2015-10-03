@@ -1,16 +1,6 @@
 Known bugs, things to do:  random order.
 
-1. Fix error reporting on success of a snapshot: currently no-one
-   writes the OK message to the error strbuf.
-
-   **DONE**
-
-2. Improve status return; fix removal of completed snapshots from the
-   snapshot queue (currently doesn't work).
-
-   **DONE**
-
-3. Better logging/debug information everywhere.  Separate normal
+1. Better logging/debug information everywhere.  Separate normal
    logging (via log socket) from debug functionality (to stderr
    directly).
 
@@ -21,43 +11,29 @@ Known bugs, things to do:  random order.
     debugging dumps.
    ]
 
-4. Change READER numerical parameter bounds to #defines
-
-   **DONE**
-
-5. Add in code for data exhaustion in the READER: notice when data
-   stops coming and do something about it (halt the ADC and go to ERROR
-   state).
-
-   **DONE**
-
-6. Fix group handling so that the program takes all supplementary
-   groups of a chosen user as well as the primary group; allow
-   multiple --group arguments and take all listed groups when dropping
-   privileges.
-
-   ** DONE ** -- up to MAX_GROUPS allowed
-
-7. Add in energy computations into the READER thread data acquisition
+2. Add in energy computations into the READER thread data acquisition
    loop, so that average energy over the last interval is always
    available.
 
    [some code added to lut.c as start of this feature]
 
-8. Implement a PUBLISH socket through which the READER can
+3. Implement a PUBLISH socket through which the READER can
    periodically publish energy and sample number data; implement the
    publishing code.
 
-9. Update all the manual pages to reflect the final set of command
+4. Update all the manual pages to reflect the final set of command
    lines and options for the four utilities.
 
    snapshot -- **DONE**
 
-10. Remove requirement for the three capabilities in the situation
-    where the user limits are sufficiently relaxed to allow snapshot to
-    operate correctly without them.
+5. Remove requirement for the three capabilities in the situation
+   where the user limits are sufficiently relaxed to allow snapshot to
+   operate correctly without them.
 
-    CAP_SYS_ADMIN is not needed if the Comedi buffer limit is already sufficient.
-    CAP_IPC_LOCK  is not needed if the RLIMIT_MEMLOCK value is big enough.
-    CAP_SYS_NICE  is not required if the RLIMIT_RTPRIO value is sufficient.
+   CAP_SYS_ADMIN is not needed if the Comedi buffer limit is already sufficient.
+   CAP_IPC_LOCK  is not needed if the RLIMIT_MEMLOCK value is big enough.
+   CAP_SYS_NICE  is not required if the RLIMIT_RTPRIO value is sufficient.
+
+6. Improve snapshot status reporting for completed and in-progress
+   snapshots.
 
