@@ -4,6 +4,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 #include "assert.h"
 #include <time.h>
 #include <sys/time.h>
@@ -47,6 +48,7 @@ public adc reader_adc;              /* The ADC object for the READER */
  */
 
 #define READER_MAX_POLL_DELAY      100   /* Maximum poll loop delay [ms] */
+#define READER_POLL_CHUNK_FRACTION 0.2	 /* Poll delay as this fraction of a chunk-time */
 #define READER_RB_HEADROOM_CHUNKS    2   /* Ring buffer min. headroom in chunks */
 #define READER_MIN_RBHWMF         0.50   /* Ring buffer minimum high-water mark fraction */
 #define READER_MAX_RBHWMF         0.95   /* Ring buffer maximum high-water mark fraction */
@@ -657,6 +659,7 @@ public void *reader_main(void *arg) {
 
 public int verify_reader_params(rparams *rp, strbuf e) {
   import int writer_chunksize_samples();
+  int chunksize = writer_chunksize_samples();
   
   if( rp->r_schedprio != 0 ) { /* Check for illegal value */
     int max, min;
@@ -678,31 +681,68 @@ public int verify_reader_params(rparams *rp, strbuf e) {
   
   if( adc_set_chan_frequency(reader_adc, e, &rp->r_frequency) < 0 )
     return -1;
-  
-  if(rp->r_window < READER_MIN_WINDOW || rp->r_window > READER_MAX_WINDOW) {
-    strbuf_appendf(e, "Min. capture window %d seconds outwith compiled-in range [%d,%d] seconds",
-                   rp->r_window, 1, 30);
-    return -1;
+
+  /* Test to see whether the window parameter has been set explicitly and check it value */
+  if(rp->r_window != 10.0) {	/* Is the value a non-default value? */
+    rp->r_set_window = 1;
+    if(rp->r_window < READER_MIN_WINDOW || rp->r_window > READER_MAX_WINDOW) {
+      strbuf_appendf(e, "Specified minimum capture window %d seconds outwith compiled-in range [%d,%d] seconds",
+		     rp->r_window, READER_MIN_WINDOW, READER_MAX_WINDOW);
+      return -1;
+    }
+  }
+  /* Test to see whether the bufhwm parameter has been set explicitly and check it value */
+  if(rp->r_buf_hwm_fraction != 0.9) {	/* Is the value a non-default value? */
+    rp->r_set_bufhwm = 1;
+    if(rp->r_buf_hwm_fraction < READER_MIN_RBHWMF || rp->r_buf_hwm_fraction > READER_MAX_RBHWMF) {
+      strbuf_appendf(e, "Specified ring buffer high-water mark fraction %g outwith compiled-in range [%g,%g] seconds",
+		     rp->r_buf_hwm_fraction, READER_MIN_RBHWMF, READER_MAX_RBHWMF);
+      return -1;
+    }
   }
 
   int pagesize = sysconf(_SC_PAGESIZE)/sizeof(sampl_t);
-  
-  /* Compute the size of the desired capture window in samples, rounded up to a full page */
-  int rbw_samples = rp->r_window * rp->r_frequency * NCHANNELS;
-  rbw_samples = (rbw_samples*sizeof(sampl_t) + pagesize - 1) / pagesize;
-  rbw_samples *= pagesize / sizeof(sampl_t);
-  
-  if(rp->r_buf_hwm_fraction < READER_MIN_RBHWMF || rp->r_buf_hwm_fraction > READER_MAX_RBHWMF) {
-    strbuf_appendf(e, "Ring buffer high-water mark fraction %g outwith compiled-in range [%g,%g] seconds",
-                   rp->r_buf_hwm_fraction, 0.5, 0.95);
-    return -1;
-  }
+
+  /* CHECK CONSISTENT USE OF SAMPLES VS. BYTES.  DON'T SET WINDOW TO BE HWM FRACTION -- LEAVE A CHUNK TO BE EATEN EACH CYCLE. */
   
   /* Compute ring buffer high-water mark in samples, rounded up to a full page */
-  int bhwm_samples = rp->r_buf_hwm_fraction * rp->r_bufsz * 1024 * 1024;
-  bhwm_samples = (bhwm_samples + pagesize - 1) / pagesize;
-  bhwm_samples = pagesize * bhwm_samples / sizeof(sampl_t);
-
+  int bhwm_samples;
+  if(rp->r_set_bufhwm) {
+    bhwm_samples = rp->r_buf_hwm_fraction * rp->r_bufsz * 1024 * 1024 / sizeof(sampl_t);
+    bhwm_samples = (bhwm_samples + pagesize - 1) / pagesize;
+    bhwm_samples = pagesize * bhwm_samples;
+  }
+  else {
+    bhwm_samples = rp->r_bufsz * 1024 * 1024 / sizeof(sampl_t);
+    bhwm_samples = bhwm_samples - 2*chunksize;
+    bhwm_samples = (bhwm_samples + pagesize - 1) / pagesize;
+    bhwm_samples *= pagesize;
+    rp->r_buf_hwm_fraction = bhwm_samples * sizeof(sampl_t);
+    rp->r_buf_hwm_fraction = rp->r_buf_hwm_fraction / rp->r_bufsz * 1024 * 1024;
+    if(rp->r_buf_hwm_fraction < READER_MIN_RBHWMF || rp->r_buf_hwm_fraction > READER_MAX_RBHWMF) {
+      strbuf_appendf(e, "Computed ring buffer high-water mark fraction %g outwith compiled-in range [%g,%g] seconds",
+		     rp->r_buf_hwm_fraction, READER_MIN_RBHWMF, READER_MAX_RBHWMF);
+      return -1;
+    }
+  }
+  
+  /* Compute the size of the desired capture window in samples, rounded up to a full page */
+  int rbw_samples;
+  if(rp->r_set_window) {
+    rbw_samples = rp->r_window * rp->r_frequency * NCHANNELS;
+    rbw_samples = (rbw_samples + pagesize - 1) / pagesize;
+    rbw_samples *= pagesize;
+  }
+  else {
+    rbw_samples = bhwm_samples - chunksize; /* Window must allow at least one chunk to be freed each loop */
+    rp->r_window = rbw_samples / (NCHANNELS * rp->r_frequency);
+    if(rp->r_window < READER_MIN_WINDOW) {
+      strbuf_appendf(e, "Computed minimum capture window %d seconds is less than compiled-in minimum %d seconds",
+		     rp->r_window, READER_MIN_WINDOW, READER_MAX_WINDOW);
+      return -1;
+    }
+  }
+  
   if(rbw_samples > bhwm_samples) {
     strbuf_appendf(e, "Capture window of %d[kiB] is bigger than ring buffer high-water mark at %d[kiB]",
                    rbw_samples*sizeof(sampl_t)/1024, bhwm_samples*sizeof(sampl_t)/1024);
@@ -710,7 +750,6 @@ public int verify_reader_params(rparams *rp, strbuf e) {
   }
 
   /* Check the window and high-water mark against the chunk size */
-  int chunksize = writer_chunksize_samples();
   if(chunksize) {
     if(rbw_samples < chunksize) {
       strbuf_appendf(e, "Capture window of %d[kiB] is smaller than chunk size %d[kiB]",
@@ -734,7 +773,8 @@ public int verify_reader_params(rparams *rp, strbuf e) {
   
   /* Determine the READER main loop poll delay from the chunk duration */
   double d = 1e-6 * chunksize * adc_ns_per_sample(reader_adc); /* Length of a chunk in [ms] */
-  reader_poll_delay = ((d+2.5)/5 > READER_MAX_POLL_DELAY)? READER_MAX_POLL_DELAY : (d+2.5)/5; /* One fifth of a chunk or 100[ms] */
+  d = round(d * READER_POLL_CHUNK_FRACTION);
+  reader_poll_delay = (d > READER_MAX_POLL_DELAY)? READER_MAX_POLL_DELAY : d; /* One fifth of a chunk or 100[ms] */
 
   /* Set the tail policy variables */
   buf_hwm_samples = bhwm_samples;

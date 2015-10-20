@@ -18,7 +18,7 @@
 .\" .sp <n>    insert n+1 empty lines
 .\" for manpage-specific macros, see man(7)
 .SH trig
-trig \- send manual triggered snapshot commands to \fBsnapshot\fP program
+trig \- send manually-triggered snapshot commands to the \fBsnapshot\fP program
 .SH SYNOPSIS
 .B trig
 .RI [ \-vqh ] [--version]
@@ -56,9 +56,9 @@ single-shot, single-shot-auto or multiple-shot (\fI\-r\fP) mode.
 .PP
 In all modes, the program uses the specified pre-trigger and
 post-trigger durations to define a capture window around the notional
-trigger point, and constructs a 'snap' command to send to the
-\fBsnapshot\fP data capture program so as to collect the chosen
-samples.
+trigger point, and constructs a \fBSnap\fP command (see
+\fBsnapshot(8a)\fP) to instruct the \fBsnapshot\fP data capture program
+to collect the chosen samples.
 .PP
 In single-shot mode, the time at which the trigger is pulled may
 either be given as the time at which the \fBtrig\fP program was
@@ -68,8 +68,8 @@ units, representing elapsed time since the Unix epoch.
 .PP
 When waiting for a key press, the program reads from standard input and
 the trigger is deemed pulled at the moment a character is received.
-If the character is 'q', the program terminates at once instead of
-sending a 'snap' command.
+If the character is "q", the program terminates at once instead of
+sending a \fBSnap\fP command.
 .PP
 In single-shot-auto mode, the program behaves as in single-shot mode
 but the snapshot name is automatically generated instead of specified
@@ -78,9 +78,9 @@ the section below on auto-generation of names.
 .PP
 In multiple-shot mode, the program loops; during each loop it waits
 for a keypress character as in the previous modes.  If the character
-is 'q', the program terminates; if 's', it sends one (more) 'snap'
+is "q", the program terminates; if "s", it sends one (more) \fBSnap\fP
 command and terminates after collecting the reply; any other character
-sends a 'snap', collects the reply, and repeats the loop.  Snapshot
+sends a \fBSnap\fP, collects the reply, and repeats the loop.  Snapshot
 names are auto-generated.
 .SH OPTIONS
 This program takes a number of short option flags, and a set of GNU-style long
@@ -114,10 +114,10 @@ snapshot program's command socket).  The default,
 \fIipc://snapshot-CMD\fP, matches the default used by \fBsnapshot\fP.
 .TP
 .B \-\-pre=\fIduration\fP
-specifies the pre-trigger capture window in [ms];  built-in default 1000[ms].
+specifies the pre-trigger capture window in [ms];  built-in default 1000ms.
 .TP
 .B \-\-pst=\fIduration\fP
-specifies the post-trigger capture window in [ms];  built-in default 500[ms].
+specifies the post-trigger capture window in [ms];  built-in default 500ms.
 .SH AUTO-GENERATION OF SNAPSHOT NAMES
 \fBtrig\fP normally requires a snapshot name or path to pass to the
 \fBsnapshot\fP program (the data is stored in a subdirectory with the
@@ -148,9 +148,14 @@ Note that these paths are \fInot\fP uniquely named between different runs of \fB
 .B <user fmt>
 converts the trigger time using a user-specified format; currently unimplemented.
 .PP
-If \-a is requested, a provided name on the command line is treated as
+If \-a is requested, a name provided on the command line is treated as
 an error.
 .SH EXIT STATUS
+The program exits with status 1 for argument and command line errors;
+with status 2 for problems setting up the communication
+infrastructure; and with code 3 if the given parameters are
+unacceptable (the total capture window is too long).  Otherwise it
+exits normally.
 .SH ENVIRONMENT
 The \fI\-\-snapshot\fP option available on the command line has a matching
 environment variable through which it can also be set.  Environment
@@ -165,5 +170,5 @@ to 8 seconds.  It should probably take a \fI\-\-window\fP option like
 \fBsnapshot\fP.
 .SH SEE ALSO
 .BR snapshot (1a),
-.BR adc (1a).
+.BR grab (1a).
 

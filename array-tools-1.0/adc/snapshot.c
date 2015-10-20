@@ -188,6 +188,7 @@ BEGIN_CMD_SYNTAX(help) {
 
 private struct arg_lit *v2, *q2;
 private struct arg_str *g2;
+private struct arg_dbl *w2, *h2;
 private struct arg_end *e2;
 
 BEGIN_CMD_SYNTAX(main) {
@@ -197,8 +198,8 @@ BEGIN_CMD_SYNTAX(main) {
         arg_str0(NULL, "tmpdir", "<path>",    "Path to temporary directory; default '/tmp'"),
         arg_str0("S",  "snapdir", "<path>",   "Path to samples directory; default 'snap'"),
         arg_dbl0("f",  "freq", "<real>",      "Per-channel sampling frequency [Hz]; default 312.5[kHz]"),
-        arg_dbl0("w",  "window", "<real>",    "Min. capture window length [s]; default 10[s]"),
-        arg_dbl0("B",  "bufhwm", "<real>",    "Ring buffer High-water mark fraction; default 0.9"),
+  w2 =  arg_dbl0("w",  "window", "<real>",    "Min. capture window length [s]; default 10[s]"),
+  h2 =  arg_dbl0("B",  "bufhwm", "<real>",    "Ring buffer High-water mark fraction; default 0.9"),
         arg_str0("d",  "dev", "<path>",       "Comedi device to use; default '/dev/comedi0'"),
         arg_int0("P",  "rtprio", "<1-99>",    "Common thread RT priority; default unset"),
         arg_int0("R",  "rdprio", "<1-99>",    "Reader thread RT priority; default unset"),
@@ -711,6 +712,10 @@ public int main(int argc, char *argv[], char *envp[]) {
     debug_params(stderr, globals, n_global_params);
   }
 #endif
+
+  /* 3a. Record whether window and bufhwm arguments were given */
+  reader_parameters.r_set_window = w2->count;
+  reader_parameters.r_set_bufhwm = h2->count;
   
   /* 4. Process parameters:  copy argument values back through the parameter table */
   ret = arg_results_to_params(cmd_main, globals, n_global_params);

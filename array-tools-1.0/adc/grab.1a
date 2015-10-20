@@ -4,7 +4,7 @@
 .\" First parameter, NAME, should be all caps
 .\" Second parameter, SECTION, should be 1-8, maybe w/ subsection
 .\" other parameters are allowed: see man(7), man(1)
-.TH ADC 1a "July  2, 2015" SDU "MCLURS ARRAY TOOLS"
+.TH GRAB 1a "July  2, 2015" SDU "MCLURS ARRAY TOOLS"
 .\" Please adjust this date whenever revising the manpage.
 .\"
 .\" Some roff macros, for reference:
@@ -20,11 +20,11 @@
 .SH grab
 grab \- capture 8 channel raw data from array ADC hardware
 .SH SYNOPSIS
-.B adc
+.B grab
 .RI [ \-vh ]
 .RI [ \-\-version ]
 .br
-.B adc
+.B grab
 .RI [ \-v ]
 .RI [ \-r|\-\-range=hi|lo ]
 .RI [ \-\-raw ]
@@ -38,7 +38,7 @@ command.
 .PP
 \fBgrab\fP uses the Comedi library to retrieve digitized data from the
 array ADC hardware.  The data is read from the device driver as 16 bit
-signed little-endian samples and mapped into a +1 [V] to -1 [V] range
+little-endian raw samples and mapped into a signed 16 bit +1V to -1V peak range
 (unless the \fIraw\fP option is given), which are retrieved in groups
 of 8 to match the 8 hardware channels.  The program retrieves data
 until interrupted, and dumps it to standard output.
@@ -49,7 +49,7 @@ program reports any Comedi errors or errors that arise during mapping
 and locking the streaming buffer.  Its debugging output comprises
 information on buffer sizes and on the actual total sampling frequency
 achieved (which may differ from that requested since the usable
-frequencies are subharmonics of the USBDUXfast's 30 MHz sampling
+frequencies are subharmonics of the USBDUXfast's 30MHz sampling
 clock).
 .PP
 \fBgrab\fP waits up to ten seconds for the first data to arrive from
@@ -75,7 +75,7 @@ by the USBDUXfast hardware.  The default range is \fIhi\fP.
 .TP
 .B \-\-raw
 Normally the ADC output is rescaled to give signed 16 bit
-twos-complement output with a range of +1 [Vpk] to -1 [Vpk], allowing
+twos-complement output with a range of +1Vpk to -1Vpk, allowing
 for the chosen ADC range.  If the \fIraw\fP flag is given, no output
 scaling is done and the raw ADC output is emitted.  This comprises
 (for the USBDUXfast) a 12 bit binary value covering the selected
@@ -84,10 +84,10 @@ range; bit 12 is set for out-of-range voltages at the ADC inputs.
 .B \-f|\-\-freq=<frequency>
 This optional argument indicates the total conversion frequency for
 sampling.  This is 8 times the sampling frequency of each individual
-channel.  Reasonable frequencies lie in the range 60 kHz to 3 MHz (for
-frequencies above about 1 MHz, the improved USBDUXfast driver is
-required).  The default sampling frequency is 2.5 MHz, i.e. each
-channel is sampled at 312.5 kHz.
+channel.  Reasonable frequencies lie in the range 60kHz to 3MHz (for
+frequencies above about 1MHz, the improved USBDUXfast driver is
+required).  The default sampling frequency is 2.5MHz, i.e. each
+channel is sampled at 312.5kHz.
 .TP
 .B \-d|\-\-device=<path>
 An optional argument to specify which Comedi device to use.  The
@@ -96,13 +96,13 @@ default \fIpath\fP is /dev/comedi0.
 .B \-B|\-\-bufsz=<size>
 An optional argument to specify what size ring buffer to request
 Comedi to set up for the capture.  The \fIsize\fP parameter is interpreted
-as a number of [MiB] to request. The default \fIsize\fP is 40 [MiB].
+as a number of [MiB] to request. The default \fIsize\fP is 40MiB.
 .SH EXIT STATUS
 \fBgrab\fP exits normally if the flow of data dries up for more than
 one second; it exits with code 1 for usage or parameter range errors;
 with code 2 for Comedi initialisation errors; with code 3 for errors
-that arise when mmapping and locking the streaming buffer and with
-code 4 if executing the Comedi asynchronous date capture command
+that arise when mapping and locking the streaming buffer and with
+code 4 if executing the Comedi asynchronous data capture command
 fails.
 .SH ENVIRONMENT
 No environment variables are used or affected by this command.

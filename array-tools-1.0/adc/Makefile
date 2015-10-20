@@ -25,7 +25,7 @@ grab:		grab.o ${LIBRARY}
 	gcc -o grab grab.o ${LIBRARY} -lcomedi -largtable2 -lm
 
 snapshot:	${OFILES} ${LIBRARY}
-	gcc -o snapshot ${OFILES} ${LIBRARY} -lcomedi -lzmq -lpthread -largtable2 -lcap
+	gcc -o snapshot ${OFILES} ${LIBRARY} -lcomedi -lzmq -lpthread -largtable2 -lcap -lm
 
 snapchat.o:	snapchat.c snapshot.h argtab.h util.h param.h
 

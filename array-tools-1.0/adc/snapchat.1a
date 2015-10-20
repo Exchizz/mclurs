@@ -90,7 +90,8 @@ contains the constructed message sent to \fBsnapshot\fP.
 .PP
 While \fBsnapchat\fP is generally silent unless a \fIverbose\fP mode
 is chosen, it nevertheless reports error responses sent by
-\fBsnapshot\fP (replies that begin "\fBNo:\fP".
+\fBsnapshot\fP (replies that begin "\fBNo:\fP").  If no reply is
+received, \fBsnapchat\fP will wait forever.
 .SH ENVIRONMENT
 The \fB\-\-snapshot\fP option available on the command line has a
 matching environment variable through which it can also be set.
