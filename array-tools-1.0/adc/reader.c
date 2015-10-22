@@ -597,9 +597,11 @@ private void debug_reader_params() {
   int bufsz_samples = rp->r_bufsz*1024*1024/sizeof(sampl_t);
   int headroom = 1e-6 * (bufsz_samples - buf_hwm_samples) * adc_ns_per_sample(reader_adc) + 0.5;
 
-  LOG(READER, 1, "High-water Mark %d[spl], Window %d[spl], Bufsz %d[spl],"
-      "Poll Delay %d[ms], Headroom %d[ms]\n",
-      buf_hwm_samples, buf_window_samples, bufsz_samples, reader_poll_delay, headroom);
+  LOG(READER, 1, "High-water Mark = %d[spl], Window = %d[spl] = %.2g[s], Bufsz = %d[MiB] = %d[spl], HWMfrac = %.2g, "
+      "Poll Delay = %d[ms], Headroom = %d[ms]\n",
+      buf_hwm_samples, buf_window_samples, rp->r_window,
+      rp->r_bufsz, bufsz_samples, rp->r_buf_hwm_fraction,
+      reader_poll_delay, headroom);
 }
 
 /*
@@ -718,11 +720,19 @@ public int verify_reader_params(rparams *rp, strbuf e) {
     bhwm_samples = (bhwm_samples + pagesize - 1) / pagesize;
     bhwm_samples *= pagesize;
     rp->r_buf_hwm_fraction = bhwm_samples * sizeof(sampl_t);
-    rp->r_buf_hwm_fraction = rp->r_buf_hwm_fraction / rp->r_bufsz * 1024 * 1024;
-    if(rp->r_buf_hwm_fraction < READER_MIN_RBHWMF || rp->r_buf_hwm_fraction > READER_MAX_RBHWMF) {
-      strbuf_appendf(e, "Computed ring buffer high-water mark fraction %g outwith compiled-in range [%g,%g] seconds",
-		     rp->r_buf_hwm_fraction, READER_MIN_RBHWMF, READER_MAX_RBHWMF);
+    rp->r_buf_hwm_fraction = rp->r_buf_hwm_fraction / (rp->r_bufsz * 1024 * 1024);
+    /* If the computed value is too low, the buffer is too small */
+    if(rp->r_buf_hwm_fraction < READER_MIN_RBHWMF) {
+      strbuf_appendf(e, "Computed ring buffer high-water mark fraction %g less than minimum %g:  try a bigger bufsz",
+		     rp->r_buf_hwm_fraction, READER_MIN_RBHWMF);
       return -1;
+    }
+    /* If the computed value is too high, truncate it */
+    if(rp->r_buf_hwm_fraction > READER_MAX_RBHWMF) {
+      rp->r_buf_hwm_fraction = READER_MAX_RBHWMF;
+      bhwm_samples = rp->r_buf_hwm_fraction * rp->r_bufsz * 1024 * 1024 / sizeof(sampl_t);
+      bhwm_samples = (bhwm_samples + pagesize - 1) / pagesize;
+      bhwm_samples = pagesize * bhwm_samples;
     }
   }
   

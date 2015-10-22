@@ -100,7 +100,7 @@ public param_t globals[] ={
     PARAM_TYPE(int32), PARAM_SRC_ENV|PARAM_SRC_ARG|PARAM_SRC_CMD,
     "the ADC converter full-scale range [mV]; default 750[mV]"
   },
-  { "bufsz",    "56",
+  { "bufsz",    "48",
     &reader_parameters.r_bufsz,
     PARAM_TYPE(int32),  PARAM_SRC_ENV|PARAM_SRC_ARG|PARAM_SRC_CMD,
     "size of the Comedi buffer [MiB]; default 56[MiB]"

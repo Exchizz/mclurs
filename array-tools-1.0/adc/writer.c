@@ -238,7 +238,7 @@ private int set_writer_rt_scheduling() {
 private void debug_writer_params() {
   wparams *wp = &writer_parameters;
 
-  LOG(WRITER, 1, "TMPDIR=%s, SNAPDIR=%s, RTprio=%d;  WOF=%g;"
+  LOG(WRITER, 1, "TMPDIR=%s, SNAPDIR=%s, RTprio=%d;  WOF=%g; "
       "FrameRAM = %d[MiB], ChunkSize = %d[kiB], nFrames = %d, xfrSampleQ = %d[kiB]\n",
       tmpdir_path, wp->w_snapdir, wp->w_schedprio, wp->w_writeahead,
       wp->w_lockedram, wp->w_chunksize, wp_nframes, wp_totxfrsamples*sizeof(sampl_t)/1024);
