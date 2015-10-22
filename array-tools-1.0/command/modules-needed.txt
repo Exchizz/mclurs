@@ -1,2 +1,7 @@
 # BEGIN: Kernel modules required by MCLURS array-cmd program
+bcm2708
+i2c-dev
+wire
+ds2482
+gpio-pca953x
 # END:   Kernel modules required by MCLURS array-cmd program
