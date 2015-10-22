@@ -401,7 +401,7 @@ private void process_queue_message(void *s) {
   }
   queue_ins_before(pos, chunk2rq(c));
 
-  LOG(READER, 2, "Inserted %s before $s\n", c_nstr(c), rq2cname(pos));
+  LOG(READER, 2, "Inserted %s before %s\n", c_nstr(c), rq2cname(pos));
 
   /* rq_head points to the chunk at the head of the READER queue */
   rq_head = rq2chunk(queue_next(&ReaderChunkQ));
@@ -685,7 +685,7 @@ public int verify_reader_params(rparams *rp, strbuf e) {
     return -1;
 
   /* Test to see whether the window parameter has been set explicitly and check it value */
-  if(rp->r_window != 10.0) {	/* Is the value a non-default value? */
+  if(rp->r_set_window == 0 && rp->r_window != 10.0) {	/* Is the value a non-default value? */
     rp->r_set_window = 1;
     if(rp->r_window < READER_MIN_WINDOW || rp->r_window > READER_MAX_WINDOW) {
       strbuf_appendf(e, "Specified minimum capture window %d seconds outwith compiled-in range [%d,%d] seconds",
@@ -693,8 +693,9 @@ public int verify_reader_params(rparams *rp, strbuf e) {
       return -1;
     }
   }
+
   /* Test to see whether the bufhwm parameter has been set explicitly and check it value */
-  if(rp->r_buf_hwm_fraction != 0.9) {	/* Is the value a non-default value? */
+  if(rp->r_set_bufhwm == 0 && rp->r_buf_hwm_fraction != 0.9) {	/* Is the value a non-default value? */
     rp->r_set_bufhwm = 1;
     if(rp->r_buf_hwm_fraction < READER_MIN_RBHWMF || rp->r_buf_hwm_fraction > READER_MAX_RBHWMF) {
       strbuf_appendf(e, "Specified ring buffer high-water mark fraction %g outwith compiled-in range [%g,%g] seconds",
@@ -705,7 +706,7 @@ public int verify_reader_params(rparams *rp, strbuf e) {
 
   int pagesize = sysconf(_SC_PAGESIZE)/sizeof(sampl_t);
 
-  /* CHECK CONSISTENT USE OF SAMPLES VS. BYTES.  DON'T SET WINDOW TO BE HWM FRACTION -- LEAVE A CHUNK TO BE EATEN EACH CYCLE. */
+  /* CHECK CONSISTENT USE OF SAMPLES VS. BYTES.  */
   
   /* Compute ring buffer high-water mark in samples, rounded up to a full page */
   int bhwm_samples;
@@ -716,7 +717,7 @@ public int verify_reader_params(rparams *rp, strbuf e) {
   }
   else {
     bhwm_samples = rp->r_bufsz * 1024 * 1024 / sizeof(sampl_t);
-    bhwm_samples = bhwm_samples - 2*chunksize;
+    bhwm_samples = bhwm_samples - READER_RB_HEADROOM_CHUNKS*chunksize;
     bhwm_samples = (bhwm_samples + pagesize - 1) / pagesize;
     bhwm_samples *= pagesize;
     rp->r_buf_hwm_fraction = bhwm_samples * sizeof(sampl_t);
@@ -748,7 +749,7 @@ public int verify_reader_params(rparams *rp, strbuf e) {
     rp->r_window = rbw_samples / (NCHANNELS * rp->r_frequency);
     if(rp->r_window < READER_MIN_WINDOW) {
       strbuf_appendf(e, "Computed minimum capture window %d seconds is less than compiled-in minimum %d seconds",
-		     rp->r_window, READER_MIN_WINDOW, READER_MAX_WINDOW);
+		     rp->r_window, READER_MIN_WINDOW);
       return -1;
     }
   }

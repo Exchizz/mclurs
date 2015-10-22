@@ -1,0 +1,15 @@
+Known Bugs
+
+The sequence init - go - halt - param - init - go
+can succeed but no data appears to be collected by
+the second activation.
+
+Non-default parameter initialisation for window
+and bufhwm is broken: this means that when issuing
+a P command they are not recomputed properly.
+
+Shutdown on buffer overrun does not occur...
+
+READER thread logging can cause overrun.
+
+WRITER thread runs at 100% CPU.

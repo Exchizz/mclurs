@@ -47,7 +47,7 @@
   import strbuf  logbuf_ ## thd;                                        \
   import void   *logskt_ ## thd;                                        \
                                                                         \
-  if(verbose >= 0) {                                                    \
+  if(verbose >= (lvl)) {						\
     strbuf l = logbuf_ ## thd;                                          \
     strbuf_clear(l);                                                    \
     strbuf_printf(l, "Log[" #thd "]: ");                                \

@@ -668,7 +668,7 @@ private snap_t *build_snapshot_descriptor(strbuf c) {
   setval_param(&ps[SNAP_BEGIN],  (void **) &ret->s_first);
   setval_param(&ps[SNAP_END],    (void **) &ret->s_last);
   setval_param(&ps[SNAP_START],  (void **) &ret->s_first);
-  setval_param(&ps[SNAP_FINISH], (void **) &ret->s_first);
+  setval_param(&ps[SNAP_FINISH], (void **) &ret->s_last);
   setval_param(&ps[SNAP_LENGTH], (void **) &ret->s_samples);
   setval_param(&ps[SNAP_COUNT],  (void **) &ret->s_count);
   setval_param(&ps[SNAP_PATH],   (void **) &path);
