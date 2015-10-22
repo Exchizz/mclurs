@@ -460,19 +460,21 @@ public int adc_data_collect(adc a) {
   import uint64_t monotonic_ns_clock();
   uint64_t now;
   int      nb;
-  int      ns;
   
   /* Retrieve any new data if possible */
   nb  = comedi_get_buffer_contents(a->a_device, 0);
   now = monotonic_ns_clock();
   if(nb) {
-    ns  = nb / sizeof(sampl_t);
+    int ns  = nb / sizeof(sampl_t);
+    int new = ns - (int)(a->a_head - a->a_tail); /* Extra samples available since last call */
+ 
     a->a_head_time = now;
     a->a_head = a->a_tail + ns; /* Assume that nb accumulates if mark read not called */
     if( !a->a_live ) {          /* Estimate the timestamp of sample index 0 */
       a->a_start_time = a->a_head_time - ns*a->a_intersample_ns;
       a->a_live++;
     }
+    return new*sizeof(sampl_t); /* Number of *new* bytes this call */
   }
   return nb;
 }

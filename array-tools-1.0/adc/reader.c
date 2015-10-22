@@ -535,16 +535,17 @@ private void reader_thread_msg_loop() {    /* Read and process messages */
       adc_dry_period--;
       nb = adc_data_collect(reader_adc);
       if( nb ) {                        /* There was some new data, adc_ring_head has advanced */
+        uint64_t head = adc_ring_head(reader_adc);
 
         adc_dry_period = adc_dry_period_max;
         rp_state = READER_RUN;
+
         /* Once the ADC head pointer has advanced past the READER queue head's end, a chunk is ready */
-        while( rq_head && rq_head->c_last <= adc_ring_head(reader_adc) ) {
+        while( rq_head && rq_head->c_last <= head ) {
           complete_queue_head_chunk();      
         }
 
         /* Check buffer fullness;  if necessary, call adc_data_purge to move adc_ring_tail */
-        uint64_t head = adc_ring_head(reader_adc);
         if(head > high_water_mark) {
           uint64_t lwm  = head - buf_window_samples;
           uint64_t tail = adc_ring_tail(reader_adc);

@@ -7,9 +7,3 @@ the second activation.
 Non-default parameter initialisation for window
 and bufhwm is broken: this means that when issuing
 a P command they are not recomputed properly.
-
-Shutdown on buffer overrun does not occur...
-
-READER thread logging can cause overrun.
-
-WRITER thread runs at 100% CPU.

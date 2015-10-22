@@ -1416,7 +1416,10 @@ private void writer_thread_msg_loop() {    /* Read and process messages */
   borrowedtime = 0;             /* Keeps track of the number of [ms] we owe */
 
   while( running && !die_die_die_now ) {
-    int delay = borrowedtime + WRITER_POLL_DELAY; /* This is how long we wait normally in [ms] */
+    int delay = borrowedtime + WRITER_POLL_DELAY; /* WRITER_POLL_DELAY is how long we wait normally in [ms] */
+
+    if(delay > WRITER_POLL_DELAY) /* Ensure loop responsiveness: upper bound on requested delay */
+      delay = WRITER_POLL_DELAY;
 
     int ret = zmq_poll(&poll_list[0], N_POLL_ITEMS, (delay<=0? 0 : delay));
 
@@ -1427,8 +1430,8 @@ private void writer_thread_msg_loop() {    /* Read and process messages */
     if(ret < 0)
       break;
 
-    if(delay >= 0)              /* We did some waiting, we owe no time */
-      borrowedtime = 0;
+    /* If we did some waiting, we owe no time but are up-to-date */
+    borrowedtime = (delay >= 0? 0 : delay);
 
     /*
      * Delays may occur in the message service routines because of
