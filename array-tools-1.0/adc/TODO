@@ -21,10 +21,11 @@ Known bugs, things to do:  random order.
    periodically publish energy and sample number data; implement the
    publishing code.
 
-4. Update all the manual pages to reflect the final set of command
-   lines and options for the four utilities.
-
-   snapshot -- **DONE**
+4. Sort out the WRITER mechanism for allocating the locked RAM to
+   snapfiles and snapshots so that more writeahead can be managed.
+   For instance, can allow a snapfile to use a certain proportion of
+   the available locked RAM dependent on how many files are currently
+   in transit.
 
 5. Remove requirement for the three capabilities in the situation
    where the user limits are sufficiently relaxed to allow snapshot to
@@ -37,3 +38,7 @@ Known bugs, things to do:  random order.
 6. Improve snapshot status reporting for completed and in-progress
    snapshots.
 
+7. Initialise the ADC dry period limit based on the loop time in the
+   READER thread.  Allow extra time when doing group synchronisation.
+
+8. Add parameter to indicate group synchronisation and give wait period.

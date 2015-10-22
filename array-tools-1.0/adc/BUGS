@@ -7,3 +7,12 @@ the second activation.
 Non-default parameter initialisation for window
 and bufhwm is broken: this means that when issuing
 a P command they are not recomputed properly.
+
+FIX: by adding a flag to the param module to note
+when a parameter has been set explicitly by CMD,
+ARG or ENV.
+
+WRITER only allocates one file for a snapshot,
+should do at least two.  Need to sort out how the
+allocation of locked transfer RAM is to be
+managed...

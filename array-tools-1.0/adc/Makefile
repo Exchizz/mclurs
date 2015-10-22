@@ -1,6 +1,6 @@
 #
 
-CFLAGS	    = -Wall -Wno-format
+CFLAGS	    = -Wall -Wno-format -Wno-parentheses
 TARGETS     = grab trig snapchat snapshot
 DOCS	    = ${TARGETS:=.pdf}
 OFILES      = snapshot.o reader.o writer.o tidy.o
