@@ -35,12 +35,18 @@ typedef struct
   int            p_source;              /* Possible sources of the values */
   const char    *p_gloss;               /* Explanation of this parameter */
   int            p_dyn;                 /* If true, free and replace str on push */
+  int		 p_setby;		/* The source which actually set the value */
 }
   param_t;
 
+#define PARAM_SRC_DEF	0x0
 #define PARAM_SRC_ENV   0x1
 #define PARAM_SRC_ARG   0x2
 #define PARAM_SRC_CMD   0x4
+
+#define param_isset(p)      ((p)->p_setby != PARAM_SRC_DEF)
+#define param_setby(p,x)    ((p)->p_setby |= (x))
+#define param_setbysrc(p,x) ((p)->p_setby & (x))
 
 export int set_param_value(param_t *, char *);
 export param_t *find_param_by_name(const char *, int, param_t [], int);

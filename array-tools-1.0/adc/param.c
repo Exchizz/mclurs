@@ -38,6 +38,7 @@ public void reset_param(param_t *p) {
     free( (void *)p->p_str );
   p->p_str = NULL;
   p->p_dyn = 0;
+  p->p_setby = PARAM_SRC_DEF;
   if(p->p_val)
     p->p_val = NULL;
 }
@@ -116,6 +117,7 @@ public int set_param_from_env(char *env[], param_t ps[], int nps) {
           continue;
         if( set_param_value(&ps[i], (*p ? p+1 : p)) < 0 )
           return -1;
+	param_setby(&ps[i], PARAM_SRC_ENV);
       }
     }
   }
@@ -147,7 +149,10 @@ public int set_param_from_cmd(char *cmd, param_t ps[], int nps) {
     errno = EINVAL;       /* Name=Value string has no '=Value' part */
     return -1;
   }
-  return set_param_value(p, s);
+  if( set_param_value(p, s) < 0 )
+    return -1;
+  param_setby(p, PARAM_SRC_CMD);
+  return 0;
 }
 
 /*
@@ -188,7 +193,7 @@ private int do_set_params_from_string(char *str, int opt, param_t ps[], int nps)
   return (done || opt)? 0 : -1;
 }
 
-/* Parameters are compulasory */
+/* Parameters are compulsory */
 
 public int set_params_from_string(char *str, param_t ps[], int nps) {
   return do_set_params_from_string(str, 0, ps, nps);
@@ -422,6 +427,7 @@ public int arg_results_to_params(void **argtable, param_t ps[], int nps) {
 
     av = ARG_DATA(a) + (ARG_COUNT(a)-1)*p->p_type->t_size;
     memcpy(p->p_val, av, p->p_type->t_size);
+    param_setby(p, PARAM_SRC_ARG);
     
     /*
      * This one copy back is tricky...  If *p->p_val is not already the

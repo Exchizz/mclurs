@@ -483,7 +483,7 @@ private int check_snapshot_params(param_t ps[], strbuf e) {
   int ret;
 
   /* path= is MANDATORY */
-  if( !ps[SNAP_PATH].p_str ) {
+  if( !param_isset(&ps[SNAP_PATH]) ) {
     strbuf_appendf(e, "missing PATH parameter");
     return -1;
   }
@@ -492,22 +492,22 @@ private int check_snapshot_params(param_t ps[], strbuf e) {
   assertv(ret==0, "Snapshot PATH parameter assignment failed: %m");
 
   /* EITHER begin= OR start= is MANDATORY */
-  if( !ps[SNAP_BEGIN].p_str && !ps[SNAP_START].p_str ) {
+  if( !param_isset(&ps[SNAP_BEGIN]) && !param_isset(&ps[SNAP_START]) ) {
     strbuf_appendf(e, "neither BEGIN nor START present");
     return -1;
   }
 
   /* IF begin= THEN end= XOR length= AND NOT finish= is REQUIRED */
-  if( ps[SNAP_BEGIN].p_str ) {
-    if( ps[SNAP_FINISH].p_str ) {
+  if( param_isset(&ps[SNAP_BEGIN]) ) {
+    if( param_isset(&ps[SNAP_FINISH]) ) {
       strbuf_appendf(e, "BEGIN with FINISH present");
       return -1;
     }
-    if( !ps[SNAP_END].p_str && !ps[SNAP_LENGTH].p_str ) {
+    if( !param_isset(&ps[SNAP_END]) && !param_isset(&ps[SNAP_LENGTH]) ) {
       strbuf_appendf(e, "BEGIN but neither END nor LENGTH present");
       return -1;
     }
-    if( ps[SNAP_END].p_str && ps[SNAP_LENGTH].p_str ) {
+    if( param_isset(&ps[SNAP_END]) && param_isset(&ps[SNAP_LENGTH]) ) {
       strbuf_appendf(e, "BEGIN with both END and LENGTH present");
       return -1;
     }
@@ -516,14 +516,14 @@ private int check_snapshot_params(param_t ps[], strbuf e) {
       strbuf_appendf(e, "cannot assign BEGIN value %s: %m", ps[SNAP_BEGIN].p_str);
       return -1;
     }
-    if(ps[SNAP_END].p_str) {
+    if( param_isset(&ps[SNAP_END]) ) {
       ret = assign_param(&ps[SNAP_END]); /* Error implies bad number */
       if(ret < 0) {
         strbuf_appendf(e, "cannot assign END value %s: %m", ps[SNAP_END].p_str);
         return -1;
       }
     }
-    if(ps[SNAP_LENGTH].p_str) {
+    if( param_isset(&ps[SNAP_LENGTH]) ) {
       ret = assign_param(&ps[SNAP_LENGTH]); /* Error implies bad number */
       if(ret < 0) {
         strbuf_appendf(e, "cannot assign LENGTH value %s: %m", ps[SNAP_LENGTH].p_str);
@@ -533,16 +533,16 @@ private int check_snapshot_params(param_t ps[], strbuf e) {
   }
 
   /* IF start= THEN finish= XOR length= AND NOT end= is REQUIRED */
-  if( ps[SNAP_START].p_str ) {
-    if( ps[SNAP_END].p_str ) {
+  if( param_isset(&ps[SNAP_START]) ) {
+    if( param_isset(&ps[SNAP_END]) ) {
       strbuf_appendf(e, "START with END present");
       return -1;
     }
-    if( !ps[SNAP_FINISH].p_str && !ps[SNAP_LENGTH].p_str ) {
+    if( !param_isset(&ps[SNAP_FINISH]) && !param_isset(&ps[SNAP_LENGTH]) ) {
       strbuf_appendf(e, "START but neither FINISH nor LENGTH present");
       return -1;
     }
-    if( ps[SNAP_FINISH].p_str && ps[SNAP_LENGTH].p_str ) {
+    if( param_isset(&ps[SNAP_FINISH]) && param_isset(&ps[SNAP_LENGTH]) ) {
       strbuf_appendf(e, "START with both FINISH and LENGTH present");
       return -1;
     }
@@ -551,14 +551,14 @@ private int check_snapshot_params(param_t ps[], strbuf e) {
       strbuf_appendf(e, "cannot assign START value %s: %m", ps[SNAP_START].p_str);
       return -1;
     }
-    if(ps[SNAP_FINISH].p_str) {
+    if( param_isset(&ps[SNAP_FINISH]) ) {
       ret = assign_param(&ps[SNAP_FINISH]); /* Error implies bad number */
       if(ret < 0) {
         strbuf_appendf(e, "cannot assign FINISH value %s: %m", ps[SNAP_FINISH].p_str);
         return -1;
       }
     }
-    if(ps[SNAP_LENGTH].p_str) {
+    if( param_isset(&ps[SNAP_LENGTH]) ) {
       ret = assign_param(&ps[SNAP_LENGTH]); /* Error implies bad number */
       if(ret < 0) {
         strbuf_appendf(e, "cannot assign LENGTH value %s: %m", ps[SNAP_LENGTH].p_str);
@@ -568,7 +568,7 @@ private int check_snapshot_params(param_t ps[], strbuf e) {
   }
 
   /* count= is OPTIONAL */
-  if(ps[SNAP_COUNT].p_str) {
+  if( param_isset(&ps[SNAP_COUNT]) ) {
       ret = assign_param(&ps[SNAP_COUNT]); /* Error implies bad number */
       if(ret < 0) {
         strbuf_appendf(e, "cannot assign COUNT value %s: %m", ps[SNAP_COUNT].p_str);
@@ -592,14 +592,14 @@ private int check_snapshot_params(param_t ps[], strbuf e) {
 private void setup_snapshot_samples(snap_t *s, param_t p[]) {
 
   /* Start with length= -- if present, no finish= or end= spec. needed */
-  if( p[SNAP_LENGTH].p_str ) {  /* Length was stored in s_samples, round up to integral number of pages */
+  if( param_isset(&p[SNAP_LENGTH]) ) {  /* Length was stored in s_samples, round up to integral number of pages */
     s->s_bytes = s->s_samples * sizeof(sampl_t);
     s->s_bytes += (sysconf(_SC_PAGE_SIZE) - (s->s_bytes % sysconf(_SC_PAGE_SIZE))) % sysconf(_SC_PAGE_SIZE);
     s->s_samples = s->s_bytes / sizeof(sampl_t);
   }
 
   /* Mandatory EITHER begin= OR start= -- it was begin= */
-  if( p[SNAP_BEGIN].p_str ) {   /* Begin time was stored in s_first */
+  if( param_isset(&p[SNAP_BEGIN]) ) {   /* Begin time was stored in s_first */
     s->s_first = adc_time_to_sample(reader_adc, s->s_first);
     s->s_first = s->s_first - (s->s_first % NCHANNELS);   /* Fix to NCHANNELS boundary */
     if( !s->s_samples ) {                                 /* No length given, need end from s_last */
@@ -614,7 +614,7 @@ private void setup_snapshot_samples(snap_t *s, param_t p[]) {
   }
 
   /* Mandatory EITHER begin= OR start= -- it was start= */
-  if( p[SNAP_START].p_str ) {   /* Start sample was stored in s_first */
+  if( param_isset(&p[SNAP_START]) ) {   /* Start sample was stored in s_first */
     if( !s->s_samples ) {       /* No length given, need end from s_last */
       s->s_last += ((NCHANNELS - (s->s_last % NCHANNELS)) % NCHANNELS); /* Round up to integral number of channel sweeps */
       s->s_samples = s->s_last - s->s_first;                /* Compute requested length */
@@ -626,7 +626,7 @@ private void setup_snapshot_samples(snap_t *s, param_t p[]) {
   }
 
   /* Optional count=, default is 1 */
-  if( !p[SNAP_COUNT].p_str ) { /* The count parameter was written to s_count */
+  if( !param_isset(&p[SNAP_COUNT]) ) { /* The count parameter was written to s_count */
     s->s_count = 1;
   }
 

@@ -16,6 +16,8 @@
 #include "param.h"
 #include "argtab.h"
 
+#include "defaults.h"
+
 /*
  * Snapshot version
  */
@@ -30,8 +32,8 @@
 extern char *snapshot_addr;
 
 param_t globals[] ={
-  { "snapshot",   "ipc://snapshot-CMD", &snapshot_addr, param_type_string, PARAM_SRC_ENV|PARAM_SRC_ARG,
-    "address of snapshot command socket"
+  { "snapshot",   SNAPSHOT_COMMAND, &snapshot_addr, param_type_string, PARAM_SRC_ENV|PARAM_SRC_ARG,
+    "address of snapshot command socket, default '" SNAPSHOT_COMMAND "'"
   },
 };
 

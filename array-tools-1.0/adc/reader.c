@@ -685,9 +685,11 @@ public int verify_reader_params(rparams *rp, strbuf e) {
   if( adc_set_chan_frequency(reader_adc, e, &rp->r_frequency) < 0 )
     return -1;
 
-  /* Test to see whether the window parameter has been set explicitly and check it value */
-  if(rp->r_set_window == 0 && rp->r_window != 10.0) {	/* Is the value a non-default value? */
-    rp->r_set_window = 1;
+  param_t *pwin = find_param_by_name("window", 6, globals, n_global_params);
+  param_t *phwm = find_param_by_name("bufhwm", 6, globals, n_global_params);
+
+  /* Test to see whether the window parameter has been set explicitly and check its value */
+  if( param_isset(pwin) ) {
     if(rp->r_window < READER_MIN_WINDOW || rp->r_window > READER_MAX_WINDOW) {
       strbuf_appendf(e, "Specified minimum capture window %d seconds outwith compiled-in range [%d,%d] seconds",
 		     rp->r_window, READER_MIN_WINDOW, READER_MAX_WINDOW);
@@ -696,8 +698,7 @@ public int verify_reader_params(rparams *rp, strbuf e) {
   }
 
   /* Test to see whether the bufhwm parameter has been set explicitly and check it value */
-  if(rp->r_set_bufhwm == 0 && rp->r_buf_hwm_fraction != 0.9) {	/* Is the value a non-default value? */
-    rp->r_set_bufhwm = 1;
+  if( param_isset(phwm) ) {
     if(rp->r_buf_hwm_fraction < READER_MIN_RBHWMF || rp->r_buf_hwm_fraction > READER_MAX_RBHWMF) {
       strbuf_appendf(e, "Specified ring buffer high-water mark fraction %g outwith compiled-in range [%g,%g] seconds",
 		     rp->r_buf_hwm_fraction, READER_MIN_RBHWMF, READER_MAX_RBHWMF);
@@ -711,7 +712,7 @@ public int verify_reader_params(rparams *rp, strbuf e) {
   
   /* Compute ring buffer high-water mark in samples, rounded up to a full page */
   int bhwm_samples;
-  if(rp->r_set_bufhwm) {
+  if( param_isset(phwm) ) {
     bhwm_samples = rp->r_buf_hwm_fraction * rp->r_bufsz * 1024 * 1024 / sizeof(sampl_t);
     bhwm_samples = (bhwm_samples + pagesize - 1) / pagesize;
     bhwm_samples = pagesize * bhwm_samples;
@@ -740,7 +741,7 @@ public int verify_reader_params(rparams *rp, strbuf e) {
   
   /* Compute the size of the desired capture window in samples, rounded up to a full page */
   int rbw_samples;
-  if(rp->r_set_window) {
+  if( param_isset(pwin) ) {
     rbw_samples = rp->r_window * rp->r_frequency * NCHANNELS;
     rbw_samples = (rbw_samples + pagesize - 1) / pagesize;
     rbw_samples *= pagesize;

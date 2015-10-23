@@ -35,7 +35,8 @@
 #include "argtab.h"
 #include "util.h"
 #include "param.h"
-//#include "snapshot.h"
+
+#include "defaults.h"
 
 /*
  *  Program source version
@@ -91,8 +92,8 @@ extern uint32_t    window_pre;
 extern uint32_t    window_pst;
 
 param_t globals[] ={
-  { "snapshot", "ipc://snapshot-CMD", &snapshot_addr, PARAM_TYPE(string), PARAM_SRC_ENV|PARAM_SRC_ARG,
-    "address of snapshot command socket"
+  { "snapshot", SNAPSHOT_COMMAND, &snapshot_addr, PARAM_TYPE(string), PARAM_SRC_ENV|PARAM_SRC_ARG,
+    "address of snapshot command socket, default '" SNAPSHOT_COMMAND "'"
   },
   { "pre", "1000", &window_pre, PARAM_TYPE(int32), PARAM_SRC_ARG,
     "pre-trigger duration [ms]"

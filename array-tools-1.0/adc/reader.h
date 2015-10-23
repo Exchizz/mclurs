@@ -24,8 +24,6 @@ typedef struct {
   double      r_window;            /* Snapshot window [s] (must fit in buffer) */
   double      r_buf_hwm_fraction;  /* Ring buffer high-water mark as fraction of size */
   const char *r_device;            /* Comedi device to use */
-  int	      r_set_bufhwm;	   /* True if a bufhwm argument was provided */
-  int	      r_set_window;	   /* True if a window argument was provided */
   int         r_running;           /* Thread is running and ready */
 }
   rparams;

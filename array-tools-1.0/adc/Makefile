@@ -27,13 +27,13 @@ grab:		grab.o ${LIBRARY}
 snapshot:	${OFILES} ${LIBRARY}
 	gcc -o snapshot ${OFILES} ${LIBRARY} -lcomedi -lzmq -lpthread -largtable2 -lcap -lm
 
-snapchat.o:	snapchat.c snapshot.h argtab.h util.h param.h
+snapchat.o:	snapchat.c snapshot.h argtab.h util.h param.h defaults.h
 
 grab.o:		grab.c mman.h lut.h argtab.h
 
-trig.o:		trig.c snapshot.h util.h param.h argtab.h
+trig.o:		trig.c snapshot.h util.h param.h argtab.h defaults.h
 
-snapshot.o:	snapshot.c snapshot.h reader.h writer.h util.h param.h argtab.h general.h error.h
+snapshot.o:	snapshot.c snapshot.h reader.h writer.h util.h param.h argtab.h general.h error.h defaults.h
 
 reader.o:	reader.c reader.h snapshot.h util.h queue.h param.h adc.h mman.h tidy.h chunk.h general.h error.h
 

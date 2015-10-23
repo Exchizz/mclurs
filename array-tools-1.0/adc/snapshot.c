@@ -45,6 +45,8 @@
 #include "writer.h"
 #include "tidy.h"
 
+#include "defaults.h"
+
 /*
  * Snapshot version
  */
@@ -80,10 +82,10 @@ public param_t globals[] ={
     PARAM_TYPE(double), PARAM_SRC_ENV|PARAM_SRC_ARG|PARAM_SRC_CMD,
     "sampling frequency (divided by 8) of the ADC [Hz]; default 312.5[kHz]"
   },
-  { "snapshot", "ipc://snapshot-CMD",
+  { "snapshot", SNAPSHOT_COMMAND,
     &snapshot_addr,
     PARAM_TYPE(string), PARAM_SRC_ENV|PARAM_SRC_ARG,
-    "address of snapshot command socket; default 'ipc://snapshot-CMD'"
+    "address of snapshot command socket; default '" SNAPSHOT_COMMAND "'"
   },
   { "snapdir",  "snap",
     &writer_parameters.w_snapdir,
@@ -188,7 +190,6 @@ BEGIN_CMD_SYNTAX(help) {
 
 private struct arg_lit *v2, *q2;
 private struct arg_str *g2;
-private struct arg_dbl *w2, *h2;
 private struct arg_end *e2;
 
 BEGIN_CMD_SYNTAX(main) {
@@ -198,8 +199,8 @@ BEGIN_CMD_SYNTAX(main) {
         arg_str0(NULL, "tmpdir", "<path>",    "Path to temporary directory; default '/tmp'"),
         arg_str0("S",  "snapdir", "<path>",   "Path to samples directory; default 'snap'"),
         arg_dbl0("f",  "freq", "<real>",      "Per-channel sampling frequency [Hz]; default 312.5[kHz]"),
-  w2 =  arg_dbl0("w",  "window", "<real>",    "Min. capture window length [s]; default 10[s]"),
-  h2 =  arg_dbl0("B",  "bufhwm", "<real>",    "Ring buffer High-water mark fraction; default 0.9"),
+	arg_dbl0("w",  "window", "<real>",    "Min. capture window length [s]; default 10[s]"),
+	arg_dbl0("B",  "bufhwm", "<real>",    "Ring buffer High-water mark fraction; default 0.9"),
         arg_str0("d",  "dev", "<path>",       "Comedi device to use; default '/dev/comedi0'"),
         arg_int0("P",  "rtprio", "<1-99>",    "Common thread RT priority; default unset"),
         arg_int0("R",  "rdprio", "<1-99>",    "Reader thread RT priority; default unset"),
@@ -713,10 +714,6 @@ public int main(int argc, char *argv[], char *envp[]) {
   }
 #endif
 
-  /* 3a. Record whether window and bufhwm arguments were given */
-  reader_parameters.r_set_window = w2->count;
-  reader_parameters.r_set_bufhwm = h2->count;
-  
   /* 4. Process parameters:  copy argument values back through the parameter table */
   ret = arg_results_to_params(cmd_main, globals, n_global_params);
 
@@ -819,13 +816,31 @@ public int main(int argc, char *argv[], char *envp[]) {
     FATAL_ERROR("could not create log buffers for the threads\n");
     exit(2);
   }
+
+  /* 5c. Check the RT priority arguments and propagate defaults */
+  if( schedprio ) {	/* If the common priority is given... */
+
+    /*   ...and rdprio is given, issue a warning o/w copy default */
+    if( reader_parameters.r_schedprio ) {
+      WARNING(MAIN, "rtprio=%d and rdprio=%d both given\n", schedprio, reader_parameters.r_schedprio);
+    }
+    else {
+      reader_parameters.r_schedprio = schedprio;
+    }
+
+    /*   ...and wrprio is given, issue a warning o/w copy default */
+    if( writer_parameters.w_schedprio ) {
+      WARNING(MAIN, "rtprio=%d and wrprio=%d both given\n", schedprio, writer_parameters.w_schedprio);
+    }
+    else {
+      writer_parameters.w_schedprio = schedprio;
+    }
+  }
   
   /* Check the supplied parameters;  WRITER must come first as READER needs chunk size */
   strbuf e = alloc_strbuf(1);   /* Catch parameter error diagnostics */
 
-  /* 5c. Verify and initialise parameters for the WRITER thread */
-  if( !writer_parameters.w_schedprio )
-    writer_parameters.w_schedprio = schedprio;
+  /* 5d. Verify and initialise parameters for the WRITER thread */
   strbuf_printf(e, "WRITER Params: ");
   ret = verify_writer_params(&writer_parameters, e);
   if( ret < 0 ) {
@@ -833,9 +848,7 @@ public int main(int argc, char *argv[], char *envp[]) {
     exit(3);
   }
 
-   /* 5d. Verify and initialise parameters for the READER thread */
-  if( !reader_parameters.r_schedprio )
-    reader_parameters.r_schedprio = schedprio;
+   /* 5e. Verify and initialise parameters for the READER thread */
   strbuf_printf(e, "READER Params: ");
   ret = verify_reader_params(&reader_parameters, e);
   if( ret < 0 ) {
