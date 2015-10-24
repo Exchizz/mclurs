@@ -1,5 +1,13 @@
 #
 
+/*
+ * Copyright c. John Hallam <sw@j.hallam.dk> 2015.
+ *
+ * This program is free software licensed under the terms of the GNU General
+ * Public License, either version 3 of the License, or (at your option) any
+ * later version.  See http://www.gnu.org/licenses/gpl.txt for details.
+ */
+
 #include "general.h"
 
 /*
@@ -78,6 +86,7 @@ private void close_tidy_comms() {
  */
 
 public void *tidy_main(void *arg) {
+  import int frame_nr(frame *);
   char  *err;
   int    ret;
   frame *f;
@@ -92,6 +101,7 @@ public void *tidy_main(void *arg) {
   
   while( (ret = recv_object_ptr(tidy, (void **)&f)) && !die_die_die_now ) {
     release_frame(f);
+    LOG(TIDY, 3, "released frame %d\n", frame_nr(f));
   }
 
   LOG(TIDY, 1, "  thread terminates by return");
