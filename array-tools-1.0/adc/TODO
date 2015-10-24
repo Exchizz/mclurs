@@ -9,6 +9,9 @@ Known bugs, things to do:  random order.
 
     Still need to make reporting levels consistent and fix some
     debugging dumps.
+
+    Added LOG() statements in ADC, READER and WRITER to give a more
+    complete picture of processing.
    ]
 
 2. Add in energy computations into the READER thread data acquisition

@@ -112,6 +112,7 @@ private int rp_state;
  */
 
 private void drain_reader_chunk_queue();
+private void debug_reader_params();
 
 /*
  * READER thread comms initialisation.
@@ -246,6 +247,7 @@ private void process_reader_command(void *s) {
       rp_state = READER_ERROR;
       break;
     }
+    debug_reader_params();
     LOG(READER, 1, "Init with dev %s, freq %g[Hz], isp %d[ns] and buf %d[MiB]",
                     rp->r_device, rp->r_frequency, adc_ns_per_sample(reader_adc), rp->r_bufsz);
     strbuf_printf(err, "OK Init -- nchan %d isp %d[ns]", NCHANNELS, adc_ns_per_sample(reader_adc));
@@ -292,6 +294,7 @@ private void process_reader_command(void *s) {
     strbuf_revert(cmd);
     WARNING(READER, "%s\n > '%s'\n", strbuf_string(err), &cmd_buf[0]); /* Error occurred, log it */
   }
+  LOG(READER, 2, "Processed %s\n", &cmd_buf[0]);
   strbuf_clear(cmd);
   send_object_ptr(s, (void *)&err); /* return message */
   return;
@@ -341,6 +344,7 @@ private void abort_reader_chunk(chunk_t *ac) {
   }
   end_for_nxt;
   rq_head = queue_singleton(&ReaderChunkQ) ? NULL : rq2chunk(queue_next(&ReaderChunkQ));
+  LOG(READER, 2, "Aborted chunk %s, new RQhead %s\n", c_nstr(ac), (rq_head? c_nstr(rq_head) : "NULL"));
 }
 
 /*
@@ -385,7 +389,7 @@ private void process_queue_message(void *s) {
 
   c->c_convert = adc_convert_func(reader_adc);
 
-  LOG(READER, 2, "Adding chunk %s with last %016llx to READER queue\n", c_nstr(c), c->c_last);
+  LOG(READER, 2, "Adding chunk %s with last %016llx to queue\n", c_nstr(c), c->c_last);
 
   /* Add the chunk to the READER chunk queue in order of increasing *last* sample */
   queue *pos = &ReaderChunkQ;
@@ -393,7 +397,7 @@ private void process_queue_message(void *s) {
     for_nxt_in_strict_Q(queue *p, queue_next(&ReaderChunkQ), &ReaderChunkQ);
     chunk_t *h = rq2chunk(p);
 
-    LOG(READER, 3, "Looking at chunk %s with last %016llx\n", c_nstr(h), h, h->c_last);
+    //    LOG(READER, 3, "Looking at chunk %s with last %016llx\n", c_nstr(h), h, h->c_last);
     if(h->c_last > c->c_last) {
       pos = p;
       break;
@@ -402,10 +406,11 @@ private void process_queue_message(void *s) {
   }
   queue_ins_before(pos, chunk2rq(c));
 
-  LOG(READER, 2, "Inserted %s before %s\n", c_nstr(c), rq2cname(pos));
-
   /* rq_head points to the chunk at the head of the READER queue */
   rq_head = rq2chunk(queue_next(&ReaderChunkQ));
+
+  LOG(READER, 2, "Chunk %s enqueued before %s, new RQhead is %s\n",
+      c_nstr(c), rq2cname(pos), c_nstr(rq_head));
   return;
 }
 

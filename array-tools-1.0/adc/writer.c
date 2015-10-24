@@ -353,6 +353,7 @@ private int process_dir_command(strbuf c) {
 
   if( !path ) {                 /* No path supplied, reset to snapdir */
     clear_writer_wd();
+    LOG(WRITER, 1, "Processed Dir, path reset to '%s'\n", writer_parameters.w_snapdir); 
     return 0;
   }
 
@@ -361,6 +362,8 @@ private int process_dir_command(strbuf c) {
     strbuf_appendf(e, "cannot create path=%s: %m", path);
     return -1;
   }
+
+  LOG(WRITER, 1, "Processed Dir, path set to '%s'\n", path); 
   return 0;
 }
 
@@ -577,6 +580,7 @@ private int check_snapshot_params(param_t ps[], strbuf e) {
     }
 
   /* All required parameters present in legal combination and values parse */
+  LOG(WRITER, 2, "Snapshot parameter check successful\n");
   return 0;
 }
 
@@ -632,6 +636,7 @@ private void setup_snapshot_samples(snap_t *s, param_t p[]) {
 
   s->s_pending = 0;
   s->s_status  = 0;
+  LOG(WRITER, 2, "Snapshot samples setup completed for %s\n", snapshot_name(s));
 }
 
 /*
@@ -723,6 +728,7 @@ private snap_t *build_snapshot_descriptor(strbuf c) {
 
  FAIL:
   for(i=0; i<nps; i++) reset_param(&ps[i]);
+  LOG(WRITER, 2, "Snapshot %s preparation failed, snapshot freed\n", snapshot_name(ret));
   free_snapshot(ret);
   return NULL;
 }
@@ -902,8 +908,10 @@ private int process_status_command(strbuf c) {
     /* ... we got one */
     strbuf_printf(c, "\n");
     snapshot_report_status(c, s);
-    if(snapshot_is_complete(s))  /* If completed, free it */
+    if(snapshot_is_complete(s)) {  /* If completed, free it */
+      LOG(WRITER, 2, "Status of completed snapshot %s returned, snapshot freed\n", snapshot_name(s));
       free_snapshot(s);
+    }
   }
   else {        /* Otherwise, look at all the snapshots in the queue */
     /*
@@ -918,10 +926,13 @@ private int process_status_command(strbuf c) {
     for_nxt_in_Q(queue *p, queue_next(&snapQ), &snapQ)
       s = qp2snap(p);
       snapshot_report_status(c, s);      /* Report the status of each one */
-      if(snapshot_is_complete(s))        /* If completed, free it */
+      if(snapshot_is_complete(s)) {       /* If completed, free it */
+	LOG(WRITER, 2, "Status of completed snapshot %s returned, snapshot freed\n", snapshot_name(s));
         free_snapshot(s);
+      }
     end_for_nxt;
   }
+  LOG(WRITER, 1, "Status command processing succeeded\n");
   return 0;
 }
 
@@ -1115,10 +1126,12 @@ private void completed_snapfile(snapfile_t *f) {
   if(f->f_status == SNAPSHOT_ERROR) {
     s->s_status = SNAPSHOT_ERROR;
     unlinkat(s->s_dirfd, &f->f_file[0], 0);  /* If the file failed, remove it */
+    LOG(WRITER, 1, "Snapshot %s file %s failed and was unlinked\n", snapshot_name(s), snapfile_name(f));
   }
   else {
     s->s_done++;                /* This file is done, it was pending before */
     s->s_status = SNAPSHOT_WRITING;
+    LOG(WRITER, 1, "Snapshot %s file %s completed normally\n", snapshot_name(s), snapfile_name(f));
   }
   de_queue(file2qp(f));         /* Remove this one from the snapshot */
   free_snapfile(f);             /* And free the structure */
@@ -1160,6 +1173,7 @@ private void abort_snapfile(snapfile_t *f) {
     }
   end_for_nxt;
   /* Need to do something with the snapshot */
+  LOG(WRITER, 2, "File %s of snapshot %s aborted\n", snapfile_name(f), snapshot_name(f->f_parent));
 }
 
 /*
@@ -1248,7 +1262,7 @@ private uint64_t writer_service_queue(uint64_t start) {
         completed_snapfile(c->c_parent);
         WARNING(WRITER, "service queue aborts chunk %s: %s\n", c_nstr(c), strbuf_string(c->c_error));
       }
-      max = 0;                  /* Couldn't get a frame, so we are done */
+      break;		        /* Couldn't get a frame, so we are done */
     }
     else {                      /* We succeeded */
       de_queue(chunk2rq(c));    /* Hand the chunk over to the READER thread */
@@ -1260,6 +1274,9 @@ private uint64_t writer_service_queue(uint64_t start) {
     }
     now = monotonic_ns_clock();
   }
+  LOG(WRITER, 2, "Service queue did %d chunks in %d[ns]\n",
+      WRITER_MAX_CHUNKS_TRANSFER-max, (int)(now-start));
+  now = monotonic_ns_clock();
   return now;                   /* Current end-of-loop time */
 }
 
@@ -1297,7 +1314,8 @@ private int process_reader_message(void *s) {
   f = c->c_parent;
   f->f_pending--;
   wp_totxfrsamples += c->c_samples;
-  
+
+  LOG(WRITER, 3, "chunk %s received from READER\n", c_nstr(c));
   if(is_chunk_status(c, SNAPSHOT_WRITTEN)) {
     set_chunk_owner(c, CHUNK_OWNER_WRITER);
     f->f_written++;

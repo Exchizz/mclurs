@@ -162,6 +162,7 @@ public int adc_set_chan_frequency(adc a, strbuf e, double *freq) {
   a->a_intersample_ns = ns; /* Need a plausible value at all times for computing snapshot data */
   a->a_totfrequency = 1e9 / ns;
   *freq = a->a_totfrequency / NCHANNELS;
+  LOG(READER, 2, "ADC channel freq set to %g[Hz] (isp %d[ns]) given requested %g[Hz]\n", *freq, ns, f);
   return 0;
 }
 
@@ -176,7 +177,7 @@ public int adc_set_bufsz(adc a, strbuf e, int bufsz) {
     return -1;
   }
   a->a_req_bufsz_mib = bufsz;
-  LOG(READER, 1, "Set ADC buffer size to %d [MiB]\n", bufsz);
+  LOG(READER, 2, "ADC set requested buffer size %d[MiB]\n", bufsz);
   return 0;
 }
 
@@ -201,6 +202,7 @@ public int adc_set_range(adc a, strbuf e, int range) {
     strbuf_appendf(e, "Comedi range spec %d unknown", range);
     return -1;
   }
+  LOG(READER, 2, "ADC set conversion range to %d[mV] (Comedi range %d, mode %s)n", range, a->a_range, (a->a_raw? "raw" : "cnv"));
   return 0;
 }
 
@@ -218,6 +220,7 @@ public void adc_set_raw_mode(adc a, int on) {
     if(a->a_range == USBDUXFAST_COMEDI_750mV)
       a->a_convert = convert_raw_750mV;
   }
+  LOG(READER, 2, "ADC set mode to %s\n", (on? "raw" : "cnv" ));
 }
 
 /*
@@ -322,6 +325,8 @@ public int adc_init(adc a, strbuf e) {
   a->a_start_time = 0;
   a->a_head_time  = 0;
   a->a_running = 0;
+  LOG(READER, 1, "ADC initialised: freq=%g[Hz], isp=%d[ns], bufsz=%d[MiB], Comedi rang%d\n",
+      a->a_totfrequency, a->a_command.convert_arg, a->a_bufsz_bytes/(1024*1024), a->a_range);
   return 0;
 }
 
@@ -339,6 +344,8 @@ public int adc_start_data_transfer(adc a, strbuf e) {
   }
   else {
     a->a_running = 1;
+    LOG(READER, 1, "ADC data transfer started: freq=%g[Hz], isp=%d[ns], bufsz=%d[MiB], Comedi rang%d\n",
+	a->a_totfrequency, a->a_command.convert_arg, a->a_bufsz_bytes/(1024*1024), a->a_range);
   }
   return ret;
 }
@@ -352,6 +359,8 @@ public void adc_stop_data_transfer(adc a) {
     comedi_cancel(a->a_device, 0);
     a->a_running = 0;
     a->a_live = 0;
+    LOG(READER, 1, "ADC data transfer stopped with head at %lld and tail at %lld\n",
+	a->a_head, a->a_tail);
   }
 }
 
@@ -472,8 +481,10 @@ public int adc_data_collect(adc a) {
     a->a_head = a->a_tail + ns; /* Assume that nb accumulates if mark read not called */
     if( !a->a_live ) {          /* Estimate the timestamp of sample index 0 */
       a->a_start_time = a->a_head_time - ns*a->a_intersample_ns;
+      LOG(READER, 3, "ADC data transfer begins at %lld.%09lld with %d samples\n", (a->a_start_time/1000000000), (a->a_start_time%1000000000), ns);
       a->a_live++;
     }
+    LOG(READER, 3, "ADC advances buffer head by %d samples to %lld\n", new, a->a_head);
     return new*sizeof(sampl_t); /* Number of *new* bytes this call */
   }
   return nb;
@@ -492,5 +503,6 @@ public int adc_data_purge(adc a, int ns) {
   if(ret != nb)
     return -1;
   a->a_tail += ns;
+  LOG(READER, 3, "ADC advances buffer tail by %d samples to %lld\n", ns, a->a_tail);
   return 0;
 }
