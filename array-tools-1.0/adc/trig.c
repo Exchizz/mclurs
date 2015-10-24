@@ -497,7 +497,7 @@ int main(int argc, char *argv[], char *envp[]) {
   }
 
   /* Look at the parameters to construct the snap command */
-  if(window_pre + window_pst > 10000) {
+  if(window_pre > 10000) {
     fprintf(stderr, "%s: Error -- maximum allowed capture window is 10[s]\n", program);
     exit(3);
   }

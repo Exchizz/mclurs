@@ -206,8 +206,9 @@ private void process_reader_command(void *s) {
       ret = -1;
       break;
     }
+    /* Note: params are not optional, but we don't mind if they are missing! (Bare P resets to PARAM state.) */
     ret = set_params_from_string(&cmd_buf[0], globals, n_global_params);
-    if( ret < 0 ) { 
+    if( ret < 0 && errno != EINVAL ) {
       strbuf_printf(err, "NO: Param -- parse error at position %d", -ret);
       break;
     }

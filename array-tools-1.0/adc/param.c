@@ -171,10 +171,12 @@ private int do_set_params_from_string(char *str, int opt, param_t ps[], int nps)
   int   done;
   int   ret;
 
+  errno = 0;			/* All OK so far :-)) */
+  
   /* Initialise the strtok_r scan: skip to space */
   cur = strtok_r(str, " \t", &save);
   if( cur == NULL ) {
-    errno = EBADMSG;
+    errno = EINVAL;
     return opt? 0 : -1;         /* If parameters are optional, may succeed here for empty */
   }
 
@@ -190,6 +192,8 @@ private int do_set_params_from_string(char *str, int opt, param_t ps[], int nps)
       return str-cur;
     done++;
   }
+  if( !done && !opt )
+    errno = EINVAL;
   return (done || opt)? 0 : -1;
 }
 
