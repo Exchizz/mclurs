@@ -1257,9 +1257,10 @@ private void debug_snapfile(snapfile_t *f) {
 private uint64_t writer_service_queue(uint64_t start) {
   uint64_t now  = start;
   uint64_t stop = start + WRITER_MAX_CHUNK_DELAY;
+  int      nc = 0;
   int      max;
 
-  for(max=WRITER_MAX_CHUNKS_TRANSFER; max > 0 && !queue_singleton(&WriterChunkQ) && now < stop; --max) { /* Only ever do max chunks at the most */
+  for(max=WRITER_MAX_CHUNKS_TRANSFER; max > 0 && !queue_singleton(&WriterChunkQ) && now < stop; --max, nc++) { /* Only ever do max chunks at the most */
     chunk_t *c = rq2chunk(queue_next(&WriterChunkQ));
     
     if( map_chunk_to_frame(c) < 0 ) {
@@ -1270,7 +1271,7 @@ private uint64_t writer_service_queue(uint64_t start) {
         completed_snapfile(c->c_parent);
         WARNING(WRITER, "service queue aborts chunk %s: %s\n", c_nstr(c), strbuf_string(c->c_error));
       }
-      break;                    /* Couldn't get a frame, so we are done */
+      max = 0;                    /* Couldn't get a frame, so we are done */
     }
     else {                      /* We succeeded */
       de_queue(chunk2rq(c));    /* Hand the chunk over to the READER thread */
@@ -1282,9 +1283,9 @@ private uint64_t writer_service_queue(uint64_t start) {
     }
     now = monotonic_ns_clock();
   }
-  LOG(WRITER, 2, "Service queue did %d chunks in %d[ns]\n",
-      WRITER_MAX_CHUNKS_TRANSFER-max, (int)(now-start));
-  now = monotonic_ns_clock();
+  if(nc) {
+    LOG(WRITER, 2, "service queue did %d chunks in %d[ns]\n", nc, (int)(now-start));
+  }
   return now;                   /* Current end-of-loop time */
 }
 
