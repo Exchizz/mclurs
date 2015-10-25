@@ -128,9 +128,9 @@ import  const char *snapfile_name(snapfile_t *);
 /* Local queue headers etc. used by the WRITER thread */
 
 private QUEUE_HEADER(snapQ);            /* The list of active snapshots */
-public queue *ssQp = &snapQ;		/* For debugging */
+public queue *ssQp = &snapQ;            /* For debugging */
 private QUEUE_HEADER(WriterChunkQ);     /* The list of chunks awaiting mapping, in order of first sample */
-public queue *wcQp = &WriterChunkQ;	/* For debugging */
+public queue *wcQp = &WriterChunkQ;     /* For debugging */
 
 /*
  * --------------------------------------------------------------------------------
@@ -935,7 +935,7 @@ private int process_status_command(strbuf c) {
       s = qp2snap(p);
       snapshot_report_status(c, s);      /* Report the status of each one */
       if(snapshot_is_complete(s)) {       /* If completed, free it */
-	LOG(WRITER, 2, "Status of completed snapshot %s returned, snapshot freed\n", snapshot_name(s));
+        LOG(WRITER, 2, "Status of completed snapshot %s returned, snapshot freed\n", snapshot_name(s));
         free_snapshot(s);
       }
     end_for_nxt;
@@ -1270,7 +1270,7 @@ private uint64_t writer_service_queue(uint64_t start) {
         completed_snapfile(c->c_parent);
         WARNING(WRITER, "service queue aborts chunk %s: %s\n", c_nstr(c), strbuf_string(c->c_error));
       }
-      break;		        /* Couldn't get a frame, so we are done */
+      break;                    /* Couldn't get a frame, so we are done */
     }
     else {                      /* We succeeded */
       de_queue(chunk2rq(c));    /* Hand the chunk over to the READER thread */

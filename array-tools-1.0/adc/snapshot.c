@@ -207,8 +207,8 @@ BEGIN_CMD_SYNTAX(main) {
         arg_str0(NULL, "tmpdir", "<path>",    "Path to temporary directory; default '/tmp'"),
         arg_str0("S",  "snapdir", "<path>",   "Path to samples directory; default 'snap'"),
         arg_dbl0("f",  "freq", "<real>",      "Per-channel sampling frequency [Hz]; default 312.5[kHz]"),
-	arg_dbl0("w",  "window", "<real>",    "Min. capture window length [s]; default 10[s]"),
-	arg_dbl0("B",  "bufhwm", "<real>",    "Ring buffer High-water mark fraction; default 0.9"),
+        arg_dbl0("w",  "window", "<real>",    "Min. capture window length [s]; default 10[s]"),
+        arg_dbl0("B",  "bufhwm", "<real>",    "Ring buffer High-water mark fraction; default 0.9"),
         arg_str0("d",  "dev", "<path>",       "Comedi device to use; default '/dev/comedi0'"),
         arg_int0("P",  "rtprio", "<1-99>",    "Common thread RT priority; default unset"),
         arg_int0("R",  "rdprio", "<1-99>",    "Reader thread RT priority; default unset"),
@@ -826,7 +826,7 @@ public int main(int argc, char *argv[], char *envp[]) {
   }
 
   /* 5c. Check the RT priority arguments and propagate defaults */
-  if( schedprio ) {	/* If the common priority is given... */
+  if( schedprio ) {     /* If the common priority is given... */
 
     /*   ...and rdprio is given, issue a warning o/w copy default */
     if( reader_parameters.r_schedprio ) {

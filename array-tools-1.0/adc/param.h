@@ -43,11 +43,11 @@ typedef struct
   int            p_source;              /* Possible sources of the values */
   const char    *p_gloss;               /* Explanation of this parameter */
   int            p_dyn;                 /* If true, free and replace str on push */
-  int		 p_setby;		/* The source which actually set the value */
+  int            p_setby;               /* The source which actually set the value */
 }
   param_t;
 
-#define PARAM_SRC_DEF	0x0
+#define PARAM_SRC_DEF   0x0
 #define PARAM_SRC_ENV   0x1
 #define PARAM_SRC_ARG   0x2
 #define PARAM_SRC_CMD   0x4

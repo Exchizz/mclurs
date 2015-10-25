@@ -125,7 +125,7 @@ public int set_param_from_env(char *env[], param_t ps[], int nps) {
           continue;
         if( set_param_value(&ps[i], (*p ? p+1 : p)) < 0 )
           return -1;
-	param_setby(&ps[i], PARAM_SRC_ENV);
+        param_setby(&ps[i], PARAM_SRC_ENV);
       }
     }
   }
@@ -179,7 +179,7 @@ private int do_set_params_from_string(char *str, int opt, param_t ps[], int nps)
   int   done;
   int   ret;
 
-  errno = 0;			/* All OK so far :-)) */
+  errno = 0;                    /* All OK so far :-)) */
   
   /* Initialise the strtok_r scan: skip to space */
   cur = strtok_r(str, " \t", &save);

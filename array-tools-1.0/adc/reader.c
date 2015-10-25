@@ -56,7 +56,7 @@ public adc reader_adc;              /* The ADC object for the READER */
  */
 
 #define READER_MAX_POLL_DELAY      100   /* Maximum poll loop delay [ms] */
-#define READER_POLL_CHUNK_FRACTION 0.2	 /* Poll delay as this fraction of a chunk-time */
+#define READER_POLL_CHUNK_FRACTION 0.2   /* Poll delay as this fraction of a chunk-time */
 #define READER_RB_HEADROOM_CHUNKS    2   /* Ring buffer min. headroom in chunks */
 #define READER_MIN_RBHWMF         0.50   /* Ring buffer minimum high-water mark fraction */
 #define READER_MAX_RBHWMF         0.95   /* Ring buffer maximum high-water mark fraction */
@@ -706,7 +706,7 @@ public int verify_reader_params(rparams *rp, strbuf e) {
   if( param_isset(pwin) ) {
     if(rp->r_window < READER_MIN_WINDOW || rp->r_window > READER_MAX_WINDOW) {
       strbuf_appendf(e, "Specified minimum capture window %d seconds outwith compiled-in range [%d,%d] seconds",
-		     rp->r_window, READER_MIN_WINDOW, READER_MAX_WINDOW);
+                     rp->r_window, READER_MIN_WINDOW, READER_MAX_WINDOW);
       return -1;
     }
   }
@@ -715,7 +715,7 @@ public int verify_reader_params(rparams *rp, strbuf e) {
   if( param_isset(phwm) ) {
     if(rp->r_buf_hwm_fraction < READER_MIN_RBHWMF || rp->r_buf_hwm_fraction > READER_MAX_RBHWMF) {
       strbuf_appendf(e, "Specified ring buffer high-water mark fraction %g outwith compiled-in range [%g,%g] seconds",
-		     rp->r_buf_hwm_fraction, READER_MIN_RBHWMF, READER_MAX_RBHWMF);
+                     rp->r_buf_hwm_fraction, READER_MIN_RBHWMF, READER_MAX_RBHWMF);
       return -1;
     }
   }
@@ -741,7 +741,7 @@ public int verify_reader_params(rparams *rp, strbuf e) {
     /* If the computed value is too low, the buffer is too small */
     if(rp->r_buf_hwm_fraction < READER_MIN_RBHWMF) {
       strbuf_appendf(e, "Computed ring buffer high-water mark fraction %g less than minimum %g:  try a bigger bufsz",
-		     rp->r_buf_hwm_fraction, READER_MIN_RBHWMF);
+                     rp->r_buf_hwm_fraction, READER_MIN_RBHWMF);
       return -1;
     }
     /* If the computed value is too high, truncate it */
@@ -765,7 +765,7 @@ public int verify_reader_params(rparams *rp, strbuf e) {
     rp->r_window = rbw_samples / (NCHANNELS * rp->r_frequency);
     if(rp->r_window < READER_MIN_WINDOW) {
       strbuf_appendf(e, "Computed minimum capture window %d seconds is less than compiled-in minimum %d seconds",
-		     rp->r_window, READER_MIN_WINDOW);
+                     rp->r_window, READER_MIN_WINDOW);
       return -1;
     }
   }
