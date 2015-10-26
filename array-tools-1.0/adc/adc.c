@@ -210,7 +210,7 @@ public int adc_set_range(adc a, strbuf e, int range) {
     strbuf_appendf(e, "Comedi range spec %d unknown", range);
     return -1;
   }
-  LOG(READER, 2, "ADC set conversion range to %d[mV] (Comedi range %d, mode %s)n", range, a->a_range, (a->a_raw? "raw" : "cnv"));
+  LOG(READER, 2, "ADC set conversion range to %d[mV] (Comedi range %d, mode '%s')\n", range, a->a_range, (a->a_raw? "raw" : "cnv"));
   return 0;
 }
 
@@ -333,7 +333,7 @@ public int adc_init(adc a, strbuf e) {
   a->a_start_time = 0;
   a->a_head_time  = 0;
   a->a_running = 0;
-  LOG(READER, 1, "ADC initialised: freq=%g[Hz], isp=%d[ns], bufsz=%d[MiB], Comedi rang%d\n",
+  LOG(READER, 1, "ADC initialised: freq=%g[Hz], isp=%d[ns], bufsz=%d[MiB], Comedi range %d\n",
       a->a_totfrequency, a->a_command.convert_arg, a->a_bufsz_bytes/(1024*1024), a->a_range);
   return 0;
 }
@@ -352,7 +352,7 @@ public int adc_start_data_transfer(adc a, strbuf e) {
   }
   else {
     a->a_running = 1;
-    LOG(READER, 1, "ADC data transfer started: freq=%g[Hz], isp=%d[ns], bufsz=%d[MiB], Comedi rang%d\n",
+    LOG(READER, 1, "ADC data transfer started: freq=%g[Hz], isp=%d[ns], bufsz=%d[MiB], Comedi range %d\n",
         a->a_totfrequency, a->a_command.convert_arg, a->a_bufsz_bytes/(1024*1024), a->a_range);
   }
   return ret;

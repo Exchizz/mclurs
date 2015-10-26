@@ -449,10 +449,8 @@ private void complete_queue_head_chunk() {
   import int is_dead_snapfile(snapfile_t *);
   chunk_t *c = rq_head;
 
-  LOG(READER, 2, "Calling complete on chunk %s\n", c_nstr(c));
-
   if(c->c_first < adc_ring_tail(reader_adc) || is_dead_snapfile(c->c_parent)) { /* Oops, we are too late */
-    LOG(READER, 1, "Dead chunk %s: first %016llx tail %016llx dead? %d\n",
+    WARNING(READER, "Dead chunk %s: first %016llx tail %016llx dead? %d\n",
         c_nstr(c), c->c_first, adc_ring_tail(reader_adc), is_dead_snapfile(c->c_parent));
     abort_queue_head_chunk();
     return;
@@ -460,6 +458,8 @@ private void complete_queue_head_chunk() {
     
   de_queue(chunk2rq(rq_head));
   rq_head = queue_singleton(&ReaderChunkQ) ? NULL : rq2chunk(queue_next(&ReaderChunkQ));
+
+  LOG(READER, 2, "Calling complete on chunk %s, new RQhead %s\n", c_nstr(c), (rq_head? c_nstr(rq_head) : "NULL" ));
 
   copy_chunk_data(c);
 
