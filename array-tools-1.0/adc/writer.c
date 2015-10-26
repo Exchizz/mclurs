@@ -870,6 +870,7 @@ private void snapshot_report_status(strbuf x, snap_t *s) {
  */
 
 private int process_status_command(strbuf c) {
+  import const char *reader_state();
   strbuf   e     = strbuf_next(c);
   param_t *ps    = &status_params[0]; 
   int      nps   = n_status_params;
@@ -896,8 +897,8 @@ private int process_status_command(strbuf c) {
       return -1;
     }
     else {
-      strbuf_printf(c, " Files: %d, Xfr space %d[ki] samples\n",
-                    wp_nfiles, wp_totxfrsamples/1024);
+      strbuf_printf(c, " Files %d, Xfr space %d[ki] samples; READER %s\n",
+                    wp_nfiles, wp_totxfrsamples/1024, reader_state());
       return 0;
     }
   }

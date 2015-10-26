@@ -115,6 +115,12 @@ private int rp_state;
 #define READER_ARMED    3       /* The ADC has been started */
 #define READER_RUN      4       /* Data from the ADC has been seen in the buffers */
 
+/* Displayable state indicator */ 
+public const char *reader_state() {
+  private const char *st[] = { "ERROR", "PARAM", "INIT", "ARMED", "ACTIVE" };
+  return st[rp_state];
+}
+
 /*
  * READER forward definitions
  */
