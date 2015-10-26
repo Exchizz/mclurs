@@ -68,14 +68,14 @@ can be set individually or in combination since the command takes a
 comma-separated list of parameter assignments.  For instance,
 \fIfreq=100e3,window=15\fP would set the sampling frequency to 100kHz
 and the capture window to 15s.
-.PP
+.IP
 The list of parameters that can be set this way is given in the
 section on options; all parameters can also be initialised from the
 command line or environment.
-.PP
-The \fBParam\fP command can be issued when the program is in
-pre-initialised state, on start-up or after a \fBHalt\fP command has
-been executed.
+.IP
+The \fBParam\fP command can be issued, with new parameters or with
+none, when the program is in pre-initialised state, on start-up or
+after a \fBHalt\fP command has been executed.
 .TP
 .B Init
 asks the program to initialise the data capture system.  It checks the
@@ -84,7 +84,7 @@ interface, maps and locks the Comedi buffer into memory, and creates
 and validates the Comedi data capture command.  It does not begin
 acquisition.  This command is only valid when the capture process is
 stopped.
-.PP
+.IP
 \fBsnapshot\fP replies to an \fBInit\fP command with the number of ADC
 channels available and the channel skew in [ns], that is, the period
 between acquisition of individual samples and hence the time offset
@@ -97,11 +97,11 @@ requests \fBsnapshot\fP to begin data acquisition by executing the
 prepared Comedi command and dealing with the data arriving in the
 Comedi buffer as required.  This command is only valid after
 initialisation by \fBInit\fP.
-.PP
+.IP
 Once \fBGo\fP is executed, the \fBsnapshot\fP program enters an
 "armed" state until data is received from Comedi, at which point it
 switches to "running" state.
-.PP
+.IP
 If data from the hardware fails to arrive within a reasonable period,
 the ADC command is aborted and \fBsnapshot\fP switches to an error
 state.  In error state, only \fBParam\fP (or \fBQuit\fP) commands can
@@ -121,14 +121,14 @@ collecting data (in "armed" or "running" state).  A correct snapshot
 command issued when not running receives a "NO" (error) response.
 When a \fBSnap\fP command is accepted, \fBsnasphot\fP returns an "OK"
 response which includes the internal snapshot "name".
-.PP
+.IP
 The \fIparameter list\fP specifies the range of data to capture either
 by giving the start and end points or the start point and snapshot
 length.  It is an error to provide both an endpoint and a length.  The
 parameter \fIlength\fP gives the number of samples to collect; it is
 rounded to the nearest multiple of 8 channels so as to include the
 requested data range.
-.PP
+.IP
 Start and end points can be given either as sample indices with
 respect to the start of data acquisition -- using the parameters
 \fIstart\fP and \fIfinish\fP -- or as timepoints (in [ns] from the
@@ -137,10 +137,10 @@ time-based parameters are converted to sample indices using the time
 when the program switched from "armed" to "running" state.  The
 initial point of the range is rounded down to a multiple of the number
 of channels, while the endpoint is rounded up likewise.
-.PP
+.IP
 The optional \fIcount\fP parameter allows one to request a repeating
 snapshot.
-.PP
+.IP
 The mandatory \fIpath\fP parameter gives the name of the snapshot,
 which is used when constructing the disk directory to hold the data.
 It may be a relative or absolute path; relative paths are with respect
@@ -159,7 +159,7 @@ an optional \fIname\fP parameter to limit its attention to a single
 snapshot.  For in-progress snapshots a short status line is generated.
 For completed snapshots the final status is that produced by the
 completion (finish or error) of the operation.
-.PP
+.IP
 Asking for the status of a completed snapshot frees up the resources
 it is holding.
 .SH SNAPSHOT STRUCTURE
@@ -365,13 +365,18 @@ data.
 If \fB\-\-bufhwm\fP is not specified, then it is computed as the
 minimum of the default (0.9) and the fraction of \fB\-\-bufsz\fP
 remaining after two chunks have been removed.  If the result is less
-than the minimum of 0.5, an error will be reported.
+than the minimum fraction of 0.5, an error will be reported.
 .PP
 Similarly, if \fB\-\-window\fP is not given explicitly, it is
 calculated as the duration required to fill \fB\-\-bufhwm\fP times
-\fB\-\-bufsz\fP of the streaming buffer at the specified sampling
-frequency \fB\-\-freq\fP.  If the computed duration is less than the
-minimum of 1s, an error is reported.
+\fB\-\-bufsz\fP less one chunk of the streaming buffer at the
+specified sampling frequency \fB\-\-freq\fP.  If the computed duration
+is less than the minimum of 1s, an error is reported.
+.SH BUGS
+The command sequence \fBInit\fP \- \fBGo\fP \- \fBHalt\fP \-
+\fBParam\fP \- \fBInit\fP \- \fBGo\fP completes successfully but does
+not initiate a successful new capture: some piece of Comedi state
+remains un-reset.
 .SH SEE ALSO
 .BR snapchat (1a) ,
 .BR adc (1a) ,

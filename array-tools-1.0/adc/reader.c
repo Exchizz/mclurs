@@ -552,7 +552,6 @@ private void reader_thread_msg_loop() {    /* Read and process messages */
     int n;
 
     if(adc_is_running(reader_adc)) {
-      adc_dry_period--;
       nb = adc_data_collect(reader_adc);
       if( nb ) {                        /* There was some new data, adc_ring_head has advanced */
         uint64_t head = adc_ring_head(reader_adc);
@@ -578,6 +577,9 @@ private void reader_thread_msg_loop() {    /* Read and process messages */
             high_water_mark = lwm + buf_hwm_samples;
           }
         }
+	else {			/* No data received on this pass through the main loop */
+	  adc_dry_period -= reader_poll_delay;
+	}
       }
       if(adc_dry_period <= 0) { /* Data capture interrupted or failed to start... */
         WARNING(READER, "ADC data flow interruption at head %016llx\n", adc_ring_head(reader_adc));
