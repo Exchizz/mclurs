@@ -111,7 +111,7 @@ Loop to send multiple snapshot messages;  implies \-w and \-a.
 .B \-\-snapshot=\fIurl\fP
 specifies the ZeroMQ URL of the communication endpoint to talk to (the
 snapshot program's command socket).  The default,
-\fIipc://snapshot-CMD\fP, matches the default used by \fBsnapshot\fP.
+\fItcp://127.0.0.1:7777\fP, matches the default used by \fBsnapshot\fP.
 .TP
 .B \-\-pre=\fIduration\fP
 specifies the pre-trigger capture window in [ms];  built-in default 1000ms.
@@ -171,4 +171,3 @@ to 8 seconds.  It should probably take a \fI\-\-window\fP option like
 .SH SEE ALSO
 .BR snapshot (1a),
 .BR grab (1a).
-

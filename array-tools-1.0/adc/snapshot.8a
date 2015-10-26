@@ -208,11 +208,13 @@ Show the program version number and exit.
 .B \-s | \-\-snapshot=\fIurl\fP
 specifies the ZeroMQ URL of the communication endpoint to talk to (the
 snapshot program's command socket).  The default value is
-"\fIipc://snapshot-CMD\fP", though any of ZeroMQ's standard
-inter-process transports may be used.  For example, a \fItcp://...\fP
-URL allows the \fBsnapshot\fP program to run on a different host from
-the processes (such as \fBsnapchat\fP, \fBtrig\fP or \fBarray-cmd\fP)
-from which it receives commands.
+"\fItcp://127.0.0.1:7777\fP", though any of ZeroMQ's standard
+inter-process transports may be used.  For example, a \fIipc://...\fP
+URL allows the \fBsnapshot\fP program to use purely local
+communication with the processes (such as \fBsnapchat\fP, \fBtrig\fP
+or \fBarray-cmd\fP) from which it receives commands \-\- which must
+therefore run on the local host.  The necessary filesystem permissions
+must be set for the socket specified by the URL..
 .TP
 .B \-\-tmpdir=\fIpath\fP
 \fIpath\fP specifies the directory in which temporary files are to be
@@ -266,6 +268,10 @@ filesystem.  The \fIpri\fP argument must be a valid priority for a
 SCHED_FIFO process; see \fBsched_setscheduler(2)\fP for more
 information.  This option implies the two real-time options below.
 The default is not to request real-time treatment.
+.IP
+Setting this argument and either of the two following arguments (which
+take precedence) is redundant and will generate a warning, though
+\fBsnapshot\fP will continue with the priorities set.
 .TP
 .B \-R | \-\-rdprio=\fIpri\fP
 If this option is given, the program attempts to set real-time

@@ -75,7 +75,7 @@ causes the program to display its version string.
 .B \-\-snapshot=\fIurl\fP
 specifies the ZeroMQ URL of the communication endpoint to talk to (the
 snapshot program's command socket).  The default value
-\fIipc://snapshot-CMD\fP matches the default used by \fBsnapshot\fP.
+\fItcp://127.0.0.1:7777\fP matches the default used by \fBsnapshot\fP.
 .TP
 .B \-\-multi=\fI[prefix]\fP
 Switch to multiple message mode and expect replies to begin with the
