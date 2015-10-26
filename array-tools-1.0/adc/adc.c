@@ -309,7 +309,7 @@ public int adc_init(adc a, strbuf e) {
 
   /* Check the timing:  a difference here means a problem with the driver */
   if(a->a_command.convert_arg != a->a_intersample_ns) {
-    WARNING(READER, "Comedi driver alters isp from %d[ns] to %d[ns];  new total frequency %g[Hz]\n",
+    WARNING(READER, "Comedi driver alters isp from %d[ns] to %d[ns]; new total frequency %g[Hz]\n",
             a->a_intersample_ns, a->a_command.convert_arg, 1e9 / a->a_command.convert_arg);
     a->a_intersample_ns = a->a_command.convert_arg;
     a->a_totfrequency = 1e9 / a->a_command.convert_arg;
@@ -333,8 +333,8 @@ public int adc_init(adc a, strbuf e) {
   a->a_start_time = 0;
   a->a_head_time  = 0;
   a->a_running = 0;
-  LOG(READER, 1, "ADC initialised: freq=%g[Hz], isp=%d[ns], bufsz=%d[MiB], Comedi range %d\n",
-      a->a_totfrequency, a->a_command.convert_arg, a->a_bufsz_bytes/(1024*1024), a->a_range);
+  LOG(READER, 1, "ADC initialised: freq=%g[Hz], isp=%d[ns], bufsz=%d[MiB], range %s\n",
+      a->a_totfrequency, a->a_command.convert_arg, a->a_bufsz_bytes/(1024*1024), (a->a_range? "750[mV]" : "500[mV]"));
   return 0;
 }
 
@@ -353,7 +353,7 @@ public int adc_start_data_transfer(adc a, strbuf e) {
   else {
     a->a_running = 1;
     LOG(READER, 1, "ADC data transfer started: freq=%g[Hz], isp=%d[ns], bufsz=%d[MiB], Comedi range %d\n",
-        a->a_totfrequency, a->a_command.convert_arg, a->a_bufsz_bytes/(1024*1024), a->a_range);
+        a->a_totfrequency, a->a_command.convert_arg, a->a_bufsz_bytes/(1024*1024), (a->a_range? "750[mV]" : "500[mV]"));
   }
   return ret;
 }
