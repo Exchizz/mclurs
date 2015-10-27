@@ -1,10 +1,26 @@
 Known Bugs
 
-The sequence init - go - halt - param - init - go
-can succeed but no data appears to be collected by
-the second activation.
+The sequence init - go - halt - param - init -
+go can succeed but after delivering 32MiB of
+data the call to check how much data is in the
+Comedi streaming buffer hangs...
+
+Interestingly, having initialised the Comedi
+subsystem, a comedi_close on the open device
+is not sufficient to release the modules while
+snapshot is still running.  Reloading the
+modules would probably work to fix the bug
+above, but is not possible without stopping
+snapshot.
 
 WRITER only allocates one file for a snapshot,
 should do at least two.  Need to sort out how the
 allocation of locked transfer RAM is to be
 managed...
+
+After running a *long* time, there is enough
+clock skew between trig and snapshot that
+chunks are handed late to the READER, making
+snapshots fail.  This implies that snapshot
+needs a clock-skew correction mechanism if it
+is to accept time-based snapshot commands.
