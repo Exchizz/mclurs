@@ -115,10 +115,16 @@ private int rp_state;
 #define READER_ARMED    3       /* The ADC has been started */
 #define READER_RUN      4       /* Data from the ADC has been seen in the buffers */
 
-/* Displayable state indicator */ 
+/* Displayable state indication for WRITER's Z command response */ 
 public const char *reader_state() {
+  private char buf[64];
+  int n;
   private const char *st[] = { "ERROR", "PARAM", "INIT", "ARMED", "ACTIVE" };
-  return st[rp_state];
+  n = snprintf(&buf[0], 64, "%s", st[rp_state]);
+  if(rp_state == READER_RUN) {
+    snprintf(&buf[n], 64-n, ", head %lld", adc_ring_head(reader_adc));
+  }
+  return &buf[0];
 }
 
 /*

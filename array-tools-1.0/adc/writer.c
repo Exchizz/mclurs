@@ -897,7 +897,7 @@ private int process_status_command(strbuf c) {
       return -1;
     }
     else {
-      strbuf_printf(c, " Files %d, Xfr space %d[ki] samples; READER %s\n",
+      strbuf_printf(c, " Files %d, Xfr space %d[ki spl]; READER %s\n",
                     wp_nfiles, wp_totxfrsamples/1024, reader_state());
       return 0;
     }

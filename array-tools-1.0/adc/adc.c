@@ -121,11 +121,14 @@ public adc adc_new(strbuf e) {
 public void adc_destroy(adc a) {
   adc_stop_data_transfer(a);
 
+  if(a->a_device) {
+    if( comedi_close(a->a_device) < 0 ) {
+      WARNING(READER, "Comedi_close failed for %s: %C", a->a_path);
+    }
+  }
+
   if(a->a_fd >= 0)
     close(a->a_fd);
-
-  if(a->a_device)
-    comedi_close(a->a_device);    
 
   if(a->a_comedi_ring)
     munmap(a->a_comedi_ring, a->a_bufsz_bytes);  
