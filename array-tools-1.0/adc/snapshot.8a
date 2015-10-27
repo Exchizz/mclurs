@@ -382,7 +382,13 @@ is less than the minimum of 1s, an error is reported.
 The command sequence \fBInit\fP \- \fBGo\fP \- \fBHalt\fP \-
 \fBParam\fP \- \fBInit\fP \- \fBGo\fP completes successfully but does
 not initiate a successful new capture: some piece of Comedi state
-remains un-reset.
+remains un-reset, which appears to be internal to Comedilib or the
+USBDUXfast module.
+.PP
+If \fBsnapshot\fP is run for a sufficiently long time, clock skew
+between the sample clock and the monotonic kernel clock becomes large
+enough that snapshots requested by \fBtrig\fP based on time fail: the
+chunks appear to be scheduled too late for filling.
 .SH SEE ALSO
 .BR snapchat (1a) ,
 .BR adc (1a) ,
