@@ -130,8 +130,8 @@ public void adc_destroy(adc a) {
   if(a->a_fd >= 0)
     close(a->a_fd);
 
-  if(a->a_comedi_ring)
-    munmap(a->a_comedi_ring, a->a_bufsz_bytes);  
+  if(a->a_comedi_ring)		/* Remember:  ring buffer is double-mapped */
+    munmap(a->a_comedi_ring, 2*a->a_bufsz_bytes);  
 
   /* Zero the structure -- back to initial state */
   bzero(a, sizeof(struct _adc));
