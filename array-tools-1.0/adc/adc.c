@@ -410,14 +410,16 @@ public void adc_setup_chunk(adc a, chunk_t *c) {
 public uint64_t adc_time_to_sample(adc a, uint64_t time) {
   uint64_t ret;
 
-  ret = (time - a->a_start_time) / a->a_intersample_ns;
+  // ret = (time - a->a_start_time) / a->a_intersample_ns;  /* Subject to clock skew */
+  ret = a->a_head + (time - a->a_head_time) / a->a_intersample_ns;
   return ret;
 }
 
 public uint64_t adc_sample_to_time(adc a, uint64_t sample) {
   uint64_t ret;
 
-  ret = a->a_start_time + sample*a->a_intersample_ns;
+  //  ret = a->a_start_time + sample*a->a_intersample_ns;  /* Subject to clock skew */
+  ret = a->a_head_time + (sample - a->a_head) / a->a_intersample_ns;
   return ret;
 }
 
