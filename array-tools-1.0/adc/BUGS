@@ -5,13 +5,11 @@ go can succeed but after delivering 32MiB of
 data the call to check how much data is in the
 Comedi streaming buffer hangs...
 
-Interestingly, having initialised the Comedi
-subsystem, a comedi_close on the open device
-is not sufficient to release the modules while
-snapshot is still running.  Reloading the
-modules would probably work to fix the bug
-above, but is not possible without stopping
-snapshot.
+Reloading the modules while the snapshot
+program has the Comedi device closed doesn't
+fix the bug above.
+
+The bug manifests as a Comedi buffer overrun.
 
 WRITER only allocates one file for a snapshot,
 should do at least two.  Need to sort out how the
