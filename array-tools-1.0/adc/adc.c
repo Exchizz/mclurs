@@ -405,13 +405,24 @@ public void adc_setup_chunk(adc a, chunk_t *c) {
 
 /*
  * Convert times to sample indices and vice versa
+ *
+ * Use head and head_time as the base to avoid clock skew in long runs.
+ * Need to take care when doing arithmetic because of unsigned type.
  */
 
 public uint64_t adc_time_to_sample(adc a, uint64_t time) {
   uint64_t ret;
 
   // ret = (time - a->a_start_time) / a->a_intersample_ns;  /* Subject to clock skew */
-  ret = a->a_head + (time - a->a_head_time) / a->a_intersample_ns;
+  if( time > a->a_head_time) {
+    uint64_t diff = time - a->a_head_time;
+    ret = a->a_head + diff / a->a_intersample_ns;
+  }
+  else {
+    uint64_t diff = a->a_head_time - time;
+    ret = a->a_head - diff / a->a_intersample_ns;
+  }
+
   return ret;
 }
 
@@ -419,7 +430,14 @@ public uint64_t adc_sample_to_time(adc a, uint64_t sample) {
   uint64_t ret;
 
   //  ret = a->a_start_time + sample*a->a_intersample_ns;  /* Subject to clock skew */
-  ret = a->a_head_time + (sample - a->a_head) / a->a_intersample_ns;
+  if(sample > a->a_head) {
+    uint64_t diff = sample - a->a_head;
+    ret = a->a_head_time + diff * a->a_intersample_ns;
+  }
+  else {
+    uint64_t diff = a->a_head - sample;
+    ret = a->a_head_time - diff * a->a_intersample_ns;
+  }
   return ret;
 }
 
