@@ -42,16 +42,22 @@ character.  The message is sent, per ZeroMQ's conventions, without a
 trailing null character.
 .PP
 In multiple message mode, \fBsnapchat\fP treats each non-option
-argument as a separate message.  These messages are sent one at a time
-in order.  Each reply is checked: if it begins with the optional
-\fIprefix\fP string, the next message will be sent; if not,
-\fBsnapchat\fP terminates.  Omitting the \fIprefix\fP suppresses the
-reply check.
+argument as a separate item.  Non-integer arguments are interpreted as
+messages to send.  However, an argument convertible as an integer is
+interpreted instead as a number of seconds to sleep, allowing one to
+specify pauses between sending messages.
+.PP
+Messages are then sent one at a time in order.  Each reply is checked:
+if it begins with the optional \fIprefix\fP string, the next message
+will be sent; if not, \fBsnapchat\fP terminates.  Omitting the
+\fIprefix\fP suppresses the reply check.
 .PP
 Because \fBsnapshot\fP provides a REP command socket (see the
-\fBzmq\fP documentation for more details), \fBsnapchat\fP expects a
+\fBzmq(7)\fP documentation for more details), \fBsnapchat\fP expects a
 reply to each message and will wait until it is received before
-continuing or terminating.
+continuing or terminating.  It will also wait for \fBsnapshot\fP to be
+started if called early, again because of the way \fBzmq\fP REQ-REP socket
+pattern works.
 .PP
 For the set of command messages one might wish to send to
 \fBsnapshot\fP, see that program's manual page \fBsnapshot(8a)\fP.

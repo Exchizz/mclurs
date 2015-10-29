@@ -231,13 +231,14 @@ int main(int argc, char *argv[], char *envp[]) {
 
   do {
     int used, left;
+    int pause = ('0' <= **msg && **msg <= '9');
 
     /* Send the message, wait for the reply;  data is in arg_str *n2 */
-    if(verbose > 0)
+    if(verbose > 0 && !pause)
       fprintf(stderr, "Sending message to %s...\n", snapshot_addr);
 
     if(verbose > 1)
-      fprintf(stderr, "Build:");
+      fprintf(stderr, pause? "Do: " : "Build:");
 
     if( !prefix ) {
       used = 0;
@@ -260,6 +261,17 @@ int main(int argc, char *argv[], char *envp[]) {
         used--;
     }
     else {
+      int d = 0;
+
+      if(pause && sscanf(*msg, "%i", &d) == 1) {
+	msg++;
+	parts--;
+	if(verbose > 1)
+	  fprintf(stderr, " sleep(%d)\n", d);
+	sleep(d);
+	continue;
+      }
+
       used = snprintf(&buf[0], LOGBUF_SIZE-1, "%s", *msg++);
       parts--;
       if(verbose > 1)
