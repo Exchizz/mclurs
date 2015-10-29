@@ -31,6 +31,7 @@ typedef struct {
   int         r_bufsz;             /* Reader buffer size [MiB] */
   double      r_window;            /* Snapshot window [s] (must fit in buffer) */
   double      r_buf_hwm_fraction;  /* Ring buffer high-water mark as fraction of size */
+  double      r_sync_wait_time;	   /* Time to wait for first data after capture start */
   const char *r_device;            /* Comedi device to use */
   int         r_running;           /* Thread is running and ready */
 }

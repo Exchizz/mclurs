@@ -165,6 +165,11 @@ public param_t globals[] ={
     PARAM_TYPE(int32), PARAM_SRC_ENV|PARAM_SRC_ARG,
     "size of a transfer chunk [kiB]; default 1[MiB]"
   },
+  { "syncwait",   "10",
+    &reader_parameters.r_sync_wait_time,
+    PARAM_TYPE(double),  PARAM_SRC_ENV|PARAM_SRC_ARG,
+    "maximum delay from capture start to first data [s]; default 10[s]"
+  },
 };
 
 public const int n_global_params =      (sizeof(globals)/sizeof(param_t));
@@ -208,6 +213,7 @@ BEGIN_CMD_SYNTAX(main) {
         arg_str0("S",  "snapdir", "<path>",   "Path to samples directory; default 'snap'"),
         arg_dbl0("f",  "freq", "<real>",      "Per-channel sampling frequency [Hz]; default 312.5[kHz]"),
         arg_dbl0("w",  "window", "<real>",    "Min. capture window length [s]; default 10[s]"),
+        arg_dbl0(NULL, "syncwait", "<real>",  "Max. delay from capture start to first data [s]; default 10[s]"),
         arg_dbl0("B",  "bufhwm", "<real>",    "Ring buffer High-water mark fraction; default 0.9"),
         arg_str0("d",  "dev", "<path>",       "Comedi device to use; default '/dev/comedi0'"),
         arg_int0("P",  "rtprio", "<1-99>",    "Common thread RT priority; default unset"),
