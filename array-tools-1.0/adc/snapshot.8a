@@ -387,9 +387,12 @@ reloading Comedilib and the USBDUXfast module.  The new capture runs
 until 32[MiB] of data have been received, then it hangs.
 .PP
 If \fBsnapshot\fP is run for a sufficiently long time, clock skew
-between the sample clock and the monotonic kernel clock becomes large
-enough that snapshots requested by \fBtrig\fP based on time fail: the
-chunks appear to be scheduled too late for filling.
+between the sample clock and the monotonic kernel clock can become
+large.  \fBsnapshot\fP therefore uses the time of arrival of the last
+batch of data when computing sample numbers from times.  However, this
+is only accurate over a relatively short time span, which should be
+taken into account when handling large quantities of data collected
+from the program.
 .SH SEE ALSO
 .BR snapchat (1a) ,
 .BR adc (1a) ,

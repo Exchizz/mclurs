@@ -16,9 +16,3 @@ should do at least two.  Need to sort out how the
 allocation of locked transfer RAM is to be
 managed...
 
-After running a *long* time, there is enough
-clock skew between trig and snapshot that
-chunks are handed late to the READER, making
-snapshots fail.  This implies that snapshot
-needs a clock-skew correction mechanism if it
-is to accept time-based snapshot commands.
