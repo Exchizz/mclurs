@@ -538,7 +538,7 @@ my %callbacks =(
 debug(2, "Starting main command loop");
 send_pin_output('red', 1);
 MAIN: while($running) {
-    my @ready = $zmq_poll->poll(1000) 
+    my @ready = map { $_->{socket} } $zmq_poll->poll(1000) 
     next MAIN unless( @ready );
 
     for my $s ( @ready ) { 
