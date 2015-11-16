@@ -310,7 +310,7 @@ do {
 
     my ($h, $p);
     if( $listen = apply_defaults($listen, @def_listen) ) {
-	if( $listen !~ m|tcp://(\d+\.\d+\.\d+\.\d+\.):(\d+)| ) {
+	if( $listen !~ m|tcp://(\d+\.\d+\.\d+\.\d+):(\d+)| ) {
 	    error("Listen address $listen is not a ZMQ TCP transport URL");
 	} else {
 	    $h = $1;
@@ -357,7 +357,7 @@ do {
 
     $snap = apply_defaults($snap, @def_snap);
     unless($snap =~ m"(tcp://\d+\.\d+\.\d+\.\d+:\d+)|(ipc://[-\w/]+)") {
-	error("Snapshot address $snap is not acceptable\n");
+	error("Snapshot address $snap is not an acceptable ZMQ address\n");
     }
     debug(2, "$$: will use $snap to talk with snapshot process") unless( $errors > $errs );
 };
@@ -493,13 +493,14 @@ $SIG{QUIT} = \&quit;
 # Main loop: listen for commands, do them
 # Given the ZMQ socket pattern every command must generate a reply:  they return it as a string.
 
-my ($n_dgrams,$n_udp_dgrams,$n_zmq_dgrams,$n_cmds) = (0,0);
+my ($n_dgrams,$n_udp_dgrams,$n_zmq_dgrams,$n_cmds) = (0,0,0,0);
 $zmq_poll->register($socket->fileno, ZMQ_POLLIN);
+print STDERR "UDP socket $socket\n";
 $zmq_poll->register($zmq_cmd, ZMQ_POLLIN);
+print STDERR "ZMQ socket $zmq_cmd\n";
 
 my %callbacks =(
-    $socket->fileno  => sub { my $skt = shift;
-		      my $dgram = '';
+    $socket->fileno => sub { my $dgram = '';
 		      
 		      # Get a datagram from UDP
 		      return unless( my $from = $socket->recv($dgram, 1024) );
@@ -751,7 +752,7 @@ sub zmq_setup {
     my $zmq_cmd = $zmq_ctx->socket(ZMQ_REP) or error("Failed to create the ZMQ command socket");
     return unless($zmq_cmd);
 
-    unless( $zmq_cmd->bind($listen) ) {
+    if( $zmq_cmd->bind($listen) < 0 ) {
 	error("Cannot bind the ZMQ command socket to the address $listen");
 	return;
     }
