@@ -1213,6 +1213,16 @@ sub new_uuid {
     }
 }
 
+# Send a message to a socket and wait for a reply;  for talking to SNAPSHOT
+sub send_msg_via_socket {
+    my $skt = shift;
+    my $msg = ZMQ::Message->new( join('', @_) );
+
+    $skt->sendmeg($msg);
+    $msg = $skt->recvmsg(0);
+    return $msg && $msg->data();
+}
+
 # Send snap command over the named pipe
 sub send_snap_cmd {
     unless($SNAP) {
