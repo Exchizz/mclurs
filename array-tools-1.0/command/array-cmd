@@ -995,10 +995,29 @@ sub send_zmq_reply {
 	debug(0, "Error sending $who reply to $h: $!");
 	return;
     } else {
-	chomp $msg;
-	debug(2, "Sent $who reply '$msg'");
+	my $str = $msg->data();
+	chomp $str;
+	debug(2, "Sent $who reply '$str'");
 	return $ret;
     }
+}
+
+# Send a message to a ZMQ socket and wait for a reply;  for talking to SNAPSHOT
+sub send_msg_via_socket {
+    my ($skt,$data) = shift;
+    my $msg = ZMQ::Message->new($data);
+
+    return unless($msg);
+    $skt->sendmeg($msg);
+    debug(2, "Sent '$data' to ZMQ socket\n"),
+    $msg = $skt->recvmsg(0);
+    $data = $msg && $msg->data();
+    if($data) {
+	debug(2, "Recv '$data' from ZMQ socket\n");
+    } else {
+	debug(2, "Recv returns undef from ZMQ socket\n");
+    }
+    return $data;
 }
 
 ## 1-wire filesystem utilities, interact with owfs, etc.
@@ -1211,16 +1230,6 @@ sub new_uuid {
 	$uuid_counter ||= 0;
 	return sprintf("S-%06d-%d-%d", $$, CORE::time(), $uuid_counter++);
     }
-}
-
-# Send a message to a socket and wait for a reply;  for talking to SNAPSHOT
-sub send_msg_via_socket {
-    my $skt = shift;
-    my $msg = ZMQ::Message->new( join('', @_) );
-
-    $skt->sendmeg($msg);
-    $msg = $skt->recvmsg(0);
-    return $msg && $msg->data();
 }
 
 # Send snap command over the named pipe
