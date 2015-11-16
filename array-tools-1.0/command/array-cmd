@@ -494,11 +494,11 @@ $SIG{QUIT} = \&quit;
 # Given the ZMQ socket pattern every command must generate a reply:  they return it as a string.
 
 my ($n_dgrams,$n_udp_dgrams,$n_zmq_dgrams,$n_cmds) = (0,0);
-$zmq_poll->register($socket, ZMQ_POLLIN);
+$zmq_poll->register($socket->fileno, ZMQ_POLLIN);
 $zmq_poll->register($zmq_cmd, ZMQ_POLLIN);
 
 my %callbacks =(
-    $socket  => sub { my $skt = shift;
+    $socket->fileno  => sub { my $skt = shift;
 		      my $dgram = '';
 		      
 		      # Get a datagram from UDP
@@ -537,9 +537,12 @@ my %callbacks =(
 debug(2, "Starting main command loop");
 send_pin_output('red', 1);
 MAIN: while($running) {
-    next MAIN unless( my @ready = $zmq_poll->poll(1000) );
+    my @ready = $zmq_poll->poll(1000) 
+    next MAIN unless( @ready );
 
-    for my $s ( @ready ) { my $fn = $callbacks{$s};
+    for my $s ( @ready ) { 
+	print STDERR "Ready Socket $s\n";
+	my $fn = $callbacks{$s};	
 	last MAIN unless( $fn and &{$fn}($s) );
     }
 }
@@ -563,7 +566,7 @@ send_pin_output('enable', 0);
 
 # Tidy up networking
 
-$zmq_poll->unregister($socket, ZMQ_POLLIN);
+$zmq_poll->unregister($socket->fileno, ZMQ_POLLIN);
 $socket->close();
 $zmq_poll->unregister($zmq_cmd, ZMQ_POLLIN);
 $zmq_cmd->close();
