@@ -494,16 +494,16 @@ $SIG{QUIT} = \&quit;
 # Given the ZMQ socket pattern every command must generate a reply:  they return it as a string.
 
 my ($n_dgrams,$n_udp_dgrams,$n_zmq_dgrams,$n_cmds) = (0,0,0,0);
-$zmq_poll->register($socket->fileno, ZMQ_POLLIN);
-print STDERR "UDP socket $socket\n";
+
+$zmq_poll->register($socket,  ZMQ_POLLIN);
 $zmq_poll->register($zmq_cmd, ZMQ_POLLIN);
-print STDERR "ZMQ socket $zmq_cmd\n";
 
 my %callbacks =(
-    $socket->fileno => sub { my $dgram = '';
+    $socket  => sub { my $skt = shift;
+		      my $dgram = '';
 		      
 		      # Get a datagram from UDP
-		      return unless( my $from = $socket->recv($dgram, 1024) );
+		      return unless( my $from = $skt->recv($dgram, 1024) );
 		      
 		      chomp $dgram;
 		      $dgram =~ s/\s#\s+/ #/g;	# Attach prefix # to following argument, if separated by whitespace
@@ -538,11 +538,10 @@ my %callbacks =(
 debug(2, "Starting main command loop");
 send_pin_output('red', 1);
 MAIN: while($running) {
-    my @ready = map { $_->{socket} } $zmq_poll->poll(1000) 
+    my @ready = map { $_->{socket} } $zmq_poll->poll(1000);
     next MAIN unless( @ready );
 
     for my $s ( @ready ) { 
-	print STDERR "Ready Socket $s\n";
 	my $fn = $callbacks{$s};	
 	last MAIN unless( $fn and &{$fn}($s) );
     }
@@ -972,7 +971,8 @@ sub ip_to_string {
 
 # Send a datagram on the UDP command socket
 sub send_udp_reply {
-    my ($to,$who,$msg) = @_;
+    my ($to,$who,@msg) = @_;
+    my $msg = join('', @msg);
 
     my $ret = $socket->send($msg, 0, $to);
 
@@ -989,8 +989,8 @@ sub send_udp_reply {
 
 # Send a datagram on the ZMQ command socket
 sub send_zmq_reply {
-    my ($to,$who,$data) = @_;
-    my $msg = ZMQ::Message->new($data);
+    my ($to,$who,@data) = @_;
+    my $msg = ZMQ::Message->new(join('', @data));
 
     my $ret = $to->send($msg, $msg->size());
 
@@ -1369,14 +1369,17 @@ sub do_command {
 	    error("Command $name(", join(' ', @_), ") failed: $m\n");
 	} else {
 	    my $r = "OK $name";
-	    $r .= " " . $m if($m);
+	    if($m) {
+		chomp $m;
+		$r .= " " . $m;
+	    }
 	    &{$reply}($r);
 	    $n_cmds++;
 	    $r = $m? " -- $m" : "";
 	    debug(1, "Command $name succeeded$r");
 	}
     } else {
-	&{$reply}("NO: $name -- $name(", join(' ', @_), ") is not recognised\n");
+	&{$reply}("NO: $name -- $name(" . join(' ', @_) . ") is not recognised\n");
 	error("Unknown command message: $name(", join(' ', @_), ")\n");
     }
 }
@@ -1771,7 +1774,7 @@ sub channel_gain {
 
 # Send back a 'pong' response to a 'ping', for testing
 sub pong {
-    my $msg  = "pong " . join(' ', @_) . "\n";
+    my $msg  = join(' ', @_) . "\n";
 
     return 1, $msg;
 }

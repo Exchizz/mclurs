@@ -14,14 +14,12 @@ sub new {
 sub register {
     my ($self, $socket, $events) = @_;
     push @{$self->{items}}, { socket => $socket, events => $events };
-    print STDERR "Register " . ref($socket) . " [$socket]\n";
     return;
 }
 
 sub unregister {
     my ($self, $socket) = @_;
     @{$self->{items}} = grep { !($_->{socket} == $socket) } @{$self->{items}};
-    print STDERR "Unregister " . ref($socket) . " [$socket]\n";
     return;
 }
 
@@ -33,28 +31,23 @@ sub _poll {
     my @fired = ((0) x scalar @$items);
     my $i = 0;
 
-    for (@$items) {
-        my $callback = (sub { my $n = shift; return sub { $fired[$n] = 1; }; })->($i);
+    sub callback { my ($fired,$n) = @_; return sub { $fired->[$n] = 1; }; };
 
+    for (@$items) {
         if (ref($_->{socket}) eq 'ZMQ::Socket') {
-            push @pollitems, { socket => $_->{socket}{_socket}, events => $_->{events}, callback => $callback };
-	    print STDERR "Poll ($i) on " . ref($_->{socket}) . " [$_->{socket}]\n";
+            push @pollitems, { socket => $_->{socket}{_socket}, events => $_->{events}, callback => callback(\@fired,$i), };
         }
         elsif (ref($_->{socket}) eq 'ZMQ::LibZMQ2::Socket') {
-            push @pollitems, { socket => $_->{socket}, events => $_->{events}, callback => sub { my $n = $i; $fired[$n] = 1; } };
-	    print STDERR "Poll ($i) on " . ref($_->{socket}) . " [$_->{socket}]\n";
+            push @pollitems, { socket => $_->{socket}, events => $_->{events}, callback => callback(\@fired,$i), };
         }
         elsif (ref($_->{socket}) eq 'ZMQ::LibZMQ3::Socket') {
-            push @pollitems, { socket => $_->{socket}, events => $_->{events}, callback => sub { my $n = $i; $fired[$n] = 1;} };
-	    print STDERR "Poll ($i) on " . ref($_->{socket}) . " [$_->{socket}]\n";
+            push @pollitems, { socket => $_->{socket}, events => $_->{events}, callback => callback(\@fired,$i), };
         }
         elsif (ref($_->{socket}) =~ m/^IO::/ && $_->{socket}->fileno() != -1) {
-            push @pollitems, { fd => $_->{socket}->fileno(), events => $_->{events}, callback => sub { my $n = $i; $fired[$n] = 1;} };
-	    print STDERR "Poll ($i) on " . ref($_->{socket}) . " [$_->{socket}] " . $_->{socket}->fileno() ." \n";
+            push @pollitems, { fd => $_->{socket}->fileno(), events => $_->{events}, callback => callback(\@fired,$i), };
         }
         elsif ($_->{socket} =~ m/^\d+$/) {
-            push @pollitems, { fd => int($_->{socket}), events => $_->{events}, callback => sub { my $n = $i; $fired[$n] = 1;} };
-	    print STDERR "Poll ($i) on fd [$_->{socket}]\n";
+            push @pollitems, { fd => int($_->{socket}), events => $_->{events}, callback => callback(\@fired,$i), };
         }
         else {
             die "Unknown type of socket";
@@ -69,7 +62,6 @@ sub _poll {
     my $c = 0;
     for (@fired) {
         push @res, $items->[$c] if $fired[$c];
-	print STDERR "Poll fired $c [" . $items->[$c]->{socket} . "]\n" if $fired[$c];
     }
     continue { $c++; }
 
