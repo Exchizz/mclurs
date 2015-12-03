@@ -128,23 +128,23 @@ my $mode;
 # The second list element is a function that checks the arg count provided
 
 my %commands = (
-    quit => [ \&quit, check_arg_fn(0), ],
-    trig => [ \&trigger, check_arg_fn(2), ],
-    snap => [ \&snapshot, check_arg_fn(3), ],
-    msnap=> [ \&multisnap, check_arg_fn(4), ],
-    set  => [ \&set, check_arg_fn(2), ],
+    quit => [ \&quit, check_arg_fn(0, 0), ],
+    trig => [ \&trigger, check_arg_fn(2, 2), ],
+    snap => [ \&snapshot, check_arg_fn(3, 3), ],
+    msnap=> [ \&multisnap, check_arg_fn(4, 4), ],
+    set  => [ \&set, check_arg_fn(2, 2), ],
     gain => [ \&channel_gain, check_arg_fn(3, 4), ],
-    chan => [ \&channel_list, check_arg_fn(0), ],
+    chan => [ \&channel_list, check_arg_fn(0, 0), ],
     ping => [ \&pong, check_arg_fn(), ],
-    scan => [ \&rescan1w, check_arg_fn(0), ],
-    time => [ \&mytime, check_arg_fn(0), ],
-    cal  => [ \&calibrate, check_arg_fn(0) ],	# Unimplemented in Vn 1.0
-    hold => [ \&hold_adc, check_arg_fn(0), ],
-    free => [ \&free_adc, check_arg_fn(0), ],
-    led  => [ \&set_led, check_arg_fn(2), ],
-    adc  => [ \&set_adc_board, check_arg_fn(0, 1), ],
+    scan => [ \&rescan1w, check_arg_fn(0, 0), ],
+    time => [ \&mytime, check_arg_fn(0, 0), ],
+    cal  => [ \&calibrate, check_arg_fn(0, 0) ],	# Unimplemented in Vn 1.0
+    hold => [ \&hold_adc, check_arg_fn(0, 0), ],
+    free => [ \&free_adc, check_arg_fn(0, 0), ],
+    led  => [ \&set_led, check_arg_fn(2, 2), ],
+    adc  => [ \&set_adc_board, check_arg_fn(1, 1), ],
     start=> [ \&sys_start, check_arg_fn(0, 1), ],
-    help => [ \&cmd_help, check_arg_fn(0), ],
+    help => [ \&cmd_help, check_arg_fn(0, 0), ],
     );
 
 # The snapshotter program accepts commands given below.  We assume that whenever this script starts there is
