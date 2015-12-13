@@ -32,6 +32,7 @@ typedef struct {
   double      r_window;            /* Snapshot window [s] (must fit in buffer) */
   double      r_buf_hwm_fraction;  /* Ring buffer high-water mark as fraction of size */
   double      r_sync_wait_time;	   /* Time to wait for first data after capture start */
+  double      r_sscorrelation;	   /* Correlation coefficient between successive (channel) samples */
   const char *r_device;            /* Comedi device to use */
   int         r_running;           /* Thread is running and ready */
 }

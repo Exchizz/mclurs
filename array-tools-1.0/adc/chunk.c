@@ -248,7 +248,7 @@ public void copy_chunk_data(chunk_t *c) {
    LOG(READER, 3, "Copy chunk %s using fn %p from %p to %p size %d[spl]\n", 
        c_nstr(c), fn, c->c_ring, c->c_frame->f_map.b_data, c->c_samples);
 
-  (*fn)((sampl_t *)c->c_frame->f_map.b_data, (sampl_t *)c->c_ring, c->c_samples);
+   (*fn)((sampl_t *)c->c_frame->f_map.b_data, (sampl_t *)c->c_ring, c->c_samples, (sampl_t)0 );
   set_chunk_status(c, SNAPSHOT_WRITTEN);
 }
 

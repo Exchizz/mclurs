@@ -22,6 +22,7 @@ export int         die_die_die_now;
 
 export int         tmpdir_dirfd;
 export const char *tmpdir_path;
+export const char *snapshot_uuid;
 
 /* Common definitions */
 

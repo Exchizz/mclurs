@@ -19,6 +19,7 @@ Known bugs, things to do:  random order.
    available.
 
    [some code added to lut.c as start of this feature]
+   [need to change this to take account of decorrelation code]
 
 3. Implement a PUBLISH socket through which the READER can
    periodically publish energy and sample number data; implement the
@@ -52,3 +53,9 @@ Known bugs, things to do:  random order.
 9. Check the Param - Init - Go - Halt - Param sequence to find where
    it fails to restore enough...  Second Init - Go fails to collect
    data.
+
+10. Add code to allow conversion to cancel the correlation between
+    successive samples from USBDUXfast.
+
+    [done.]
+

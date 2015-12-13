@@ -136,7 +136,7 @@ int main(int argc, char *argv[]) {
   sampl_t     *start;
   uint64_t     head, tail;
   int          data_coming;
-  void       (*convert)(sampl_t *, sampl_t *, int);
+  convertfn    convert;
 
   program = argv[0];
 
@@ -319,7 +319,7 @@ int main(int argc, char *argv[]) {
 
     while( nb >= BUFSPSZ ) {
       /* Convert and dump a buffer-full to stdout, repeat while possible */
-      (*convert)((sampl_t *)read_buf, back, BUFSPSZ);
+      (*convert)((sampl_t *)read_buf, back, BUFSPSZ, (sampl_t)0);
       ret  =  comedi_mark_buffer_read(dev, 0, BUFSZ);
       if(ret < 0) {
         fprintf(stderr, "%s: Error -- comedi_mark_buffer_read during loop: %s\n", program, comedi_strerror(comedi_errno()));

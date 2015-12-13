@@ -254,6 +254,14 @@ of a snapshot, since a single snapshot must fit within the Comedi
 buffer (currently).  If the window is not given explicitly, it will be
 computed; see the NOTES section below.
 .TP
+.B \-C | \-\-sscorr=\fIcoefficient\fP " (*)"
+is used to correct for the charge storage in the USBDUXfast analogue
+multiplexer at high sampling frequencies.  The \fIcoefficient\fP in
+[-1,+1] measures the correlation between successive samples taken by
+the USBDUXfast.  If non-zero, the given fraction of each sample will
+be subtracted from the following sample to correct for the
+inter-sample leakage.
+.TP
 .B \-B | \-\-bufhwm=\fIfraction\fP " (*)"
 determines the proportion of the streaming buffer available for data.
 The remainder is used as a no-man's land between the newly arriving

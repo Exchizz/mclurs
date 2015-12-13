@@ -29,6 +29,7 @@ export int  adc_set_bufsz(adc, strbuf, int);
 export int  adc_set_range(adc, strbuf, int);
 export int  adc_set_device(adc, const char *);
 export void adc_set_raw_mode(adc, int);
+export void adc_set_ssc_coeff(adc, double);
 
 export int  adc_init(adc, strbuf);
 export int  adc_start_data_transfer(adc, strbuf);

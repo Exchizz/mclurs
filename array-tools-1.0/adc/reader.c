@@ -713,6 +713,13 @@ public int verify_reader_params(rparams *rp, strbuf e) {
   if( adc_set_chan_frequency(reader_adc, e, &rp->r_frequency) < 0 )
     return -1;
 
+  /* Check the value for the successive sample correlation coefficient */
+  if(rp->r_sscorrelation < -1 || rp->r_sscorrelation > 1) {
+    strbuf_appendf(e, "Successive sample correlation %g magnitude exceeds unity", rp->r_sscorrelation);
+    return -1;
+  }
+  adc_set_ssc_coeff(reader_adc, rp->r_sscorrelation);
+
   param_t *pwin = find_param_by_name("window", 6, globals, n_global_params);
   param_t *phwm = find_param_by_name("bufhwm", 6, globals, n_global_params);
 
