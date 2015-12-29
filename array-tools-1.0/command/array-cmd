@@ -429,6 +429,19 @@ exit_on_error(2);
 
 debug(1, "Created listening sockets at $listen and at udp://$host:$port");
 
+# Set up ZMQ socket to talk to snapshotter
+my $zmq_snapshot = $zmq_ctx->socket(ZMQ_REQ) 
+    or error("Unable to create ZMQ request socket to talk to snapshotter");;
+
+if( defined($zmq_snapshot) ) {
+    $zmq_snapshot->connect($snap) >= 0
+	or error("Cannot connect to snapshotter at $snap");
+}
+
+exit_on_error(2);
+
+debug(1, "Created snapshotter comms socket at $snap");
+
 # Initialise the GPIO system
 if( my $errstring = init_gpio_pins() ) {
     error("Unable to initialise the sysfs GPIO interface at $gpio: $errstring");
@@ -571,6 +584,9 @@ $socket->close();
 $zmq_poll->unregister($zmq_cmd, ZMQ_POLLIN);
 $zmq_cmd->close();
 undef $zmq_poll;
+
+$zmq_snapshot->close();
+
 undef $zmq_ctx;
 
 close_dac();
@@ -1006,14 +1022,30 @@ sub send_zmq_reply {
     }
 }
 
-# Send a message to a ZMQ socket and wait for a reply;  for talking to SNAPSHOT
-sub send_msg_via_socket {
-    my ($skt,$data) = shift;
-    my $msg = ZMQ::Message->new($data);
+# Send a command message to a ZMQ socket and wait for a reply;  for talking to SNAPSHOT
+sub zmq_transaction {
+    my ($skt,$timeout,$cmd,$data) = @_;
+    my $msg = ZMQ::Message->new( $cmd . " " . $data );
 
-    return unless($msg);
-    $skt->sendmeg($msg);
-    debug(2, "Sent '$data' to ZMQ socket\n"),
+    unless($msg) {
+	return ( undef, "NO: $cmd -- local error" );
+    }
+
+    $skt->send($msg, $msg->size());
+    debug(2, "Sent '$data' to ZMQ socket\n");
+
+    if( $timeout > 0 ) {
+	my $p;
+
+	unless( $p = ZMQ::Poller->new() ) {
+	    return ( undef, "NO: $cmd -- local poll error" );
+	}
+	$p->register($skt, ZMQ_POLLIN);
+	unless( $p->poll($timeout) ) {
+	    return ( undef, "NO: $cmd -- local timeout" );
+	}
+    }
+    
     $msg = $skt->recvmsg(0);
     $data = $msg && $msg->data();
     if($data) {
@@ -1021,7 +1053,11 @@ sub send_msg_via_socket {
     } else {
 	debug(2, "Recv returns undef from ZMQ socket\n");
     }
-    return $data;
+
+    my $val;
+    $val = 1 if($data =~ m/^OK/);
+    $val = 0 if($data =~ m/^NO:/);
+    return ($val, $data);
 }
 
 ## 1-wire filesystem utilities, interact with owfs, etc.
