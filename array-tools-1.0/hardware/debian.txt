@@ -1,0 +1,40 @@
+/etc/mclurs directory with config etc. including global environment
+directory.
+
+
+
+/var/run/mclurs directory with current hardware configuration, found
+by mclurs-probe, including in a key-value format:
+
+   serial number of box
+   version number of hardware
+   I2C bus number to use
+   processor architecture
+
+init.d script that runs mclurs-probe to generate the /var/run/mclurs
+data.
+
+mclurs-probe should:
+
+   0: verify needed modules -- USBDUXfast driver and Comedi
+   1: create the /var/run/ directory if needed
+      (re-)initialise directory contents
+   2: determine whether Analog Board and/or USBDUXfast is present:
+         load I2C modules
+	 probe I2C bus, look for 1-wire driver and EEPROM
+	 probe for USBDUXfast
+   3: probe for machine architecture (arm or intel)
+
+   On ARM:
+   4: get serial number of RPi
+   5: get version type of RPi
+   6: get serial number of Analog Board
+   7: determine Analog Board version
+   8: install modules and assign drivers for Analog Board hardware components
+
+   On Intel:
+   9: verify accessibility of an RPi with Analog Board
+
+   If USBDUXfast:
+   A: determine 'type' of USBDUXfast
+   
