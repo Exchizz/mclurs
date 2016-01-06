@@ -77,4 +77,18 @@ else
     echo UUID of analogue board is $UUIDBOARD
 fi
 
+# Step 6:  Look for the USBDUXFAST hardware
+
+USBDUXFAST=''
+COMEDIDEV=''
+if dmesg | grep -q 'idVendor=13d8' > /dev/null 2>&1 then
+   USBDUXFAST=1
+   echo -n Found USBDUXFAST hardware " "
+   modprobe usbduxfast
+   if [ $? = 0 ]; then
+       COMEDIDEV=`dmesg | grep 'comedi' | grep 'usbduxfast' | awk '{ print substr($4,7,1);}'`
+       echo attached to /dev/comedi$COMEDIDEV
+   fi
+fi
+
 exit 0
