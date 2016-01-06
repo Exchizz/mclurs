@@ -1,0 +1,7 @@
+Chips present on Analog Board
+
+DS2482   1-wire interface
+24AA64   EEPROM/UUID
+MCP79410 RTC chip
+PCA9534  Digital Output Port (V2A,V2B only)  x27
+LTC2637  Octal DAC
