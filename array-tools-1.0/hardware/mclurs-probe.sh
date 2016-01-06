@@ -3,7 +3,7 @@
 echo MCLURS Hardware Probe Vn 0.5
 
 NCPU=`grep processor /proc/cpuinfo | wc -l`
-UUIDPI=`grep serial /proc/cpuinfo | awk '{print $3;}'`
+UUIDPI=`grep Serial /proc/cpuinfo | awk '{print $3;}'`
 
 echo Detected a ${NCPU}-cpu Pi with serial number $UUIDPI
 
@@ -28,24 +28,26 @@ if [ "x$I2CBUS" = "x" ]; then
 fi
 
 Version=0
-echo DS2482  found on I2C Bus $I2CBUS
-echo LTC2637 found on I2C Bus $I2CBUS
+echo "DS2482   found" on I2C Bus $I2CBUS
+echo "LTC2637  found" on I2C Bus $I2CBUS
 
 if grep -q ' 6f ' /tmp/i2c-$I2CBUS-detect && grep -q ' 57 ' /tmp/i2c-$I2CBUS-detect; then
-    echo MCP79410 found on I2C Bus $I2CBUS
+    echo "MCP79410 found" on I2C Bus $I2CBUS
     Version=1
 fi
 
 if grep -q ' 50 ' /tmp/i2c-$I2CBUS-detect; then
-    echo Found 24AA64 on I2C Bus $I2CBUS
+    echo "24AA64   found" on I2C Bus $I2CBUS
 fi
 
 if grep -q ' 27 ' /tmp/i2c-$I2CBUS-detect || grep -q ' UU ' /tmp/i2c-$I2CBUS-detect; then
-    echo Found PCA9534 on I2C Bus $I2CBUS
+    echo "PCA9534  found" on I2C Bus $I2CBUS
     Version=2
 fi
 
 echo I2C Probe complete, Hardware Version $Version
 rm -f /tmp/i2c-$I2CBUS-detect
+
+
 
 exit 0
