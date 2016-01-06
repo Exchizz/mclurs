@@ -69,7 +69,7 @@ echo MAC of eth0 is $ETH0MAC
 
 # Step 5:  Collect the analogue board UUID from the MCP79410 if present
 
-UUIDBOARD=`i2cdump -y 1 0x57 b | fgrep 'f0:' | awk '{ print $2$3$4$5$6$7; }'`
+UUIDBOARD=`i2cdump -y 1 0x57 b | fgrep 'f0:' | awk '{ print $2$3$4$5$6$7$8$9; }'`
 if [ "x$UUIDBOARD" = "xffffffffffffffff" ]; then
     echo "MCLURS Hardware UUID unset"
     UUIDBOARD=''
