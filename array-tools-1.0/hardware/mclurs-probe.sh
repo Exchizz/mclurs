@@ -81,7 +81,7 @@ fi
 
 USBDUXFAST=''
 COMEDIDEV=''
-if dmesg | grep -q 'idVendor=13d8' > /dev/null 2>&1 then
+if dmesg | grep -q 'idVendor=13d8' > /dev/null 2>&1; then
    USBDUXFAST=1
    echo -n Found USBDUXFAST hardware " "
    modprobe usbduxfast
