@@ -6,9 +6,8 @@ echo MCLURS Hardware Probe Vn 0.8
 
 ARCH=`uname --machine`
 NCPU=`grep processor /proc/cpuinfo | wc -l`
-UUIDPI=`grep Serial /proc/cpuinfo | awk '{print $3;}'`
 
-echo Detected a ${NCPU}-cpu $ARCH with serial number $UUIDPI
+echo Detected a ${NCPU}-core $ARCH cpu
 
 # Step 2:  Collect the network UUID (MAC address of eth0)
 
@@ -45,6 +44,11 @@ fi
 if [ "x$ARCH" = "xarmv7l" ]; then
     echo "ARM Architecture, assuming RPi"
 
+# Step 1a:  find the serial number if on a Pi
+    
+    UUIDPI=`grep Serial /proc/cpuinfo | awk '{print $3;}'`
+    echo CPU has serial number $UUIDPI
+    
 # Step 4:  Find out which I2C bus has the analogue board attached
 #
 # Look for the DS2482 and LTC2637, present on all board versions
