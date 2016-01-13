@@ -26,7 +26,7 @@ BEGIN {
 #
 # Author:     John Hallam
 # Created:    2013-09-30
-# Last Edit:  2015-07-28
+# Last Edit:  2016-01-12
 
 #=============== OPTIONS, GLOBALS, DEFAULTS ===============
 
@@ -488,17 +488,6 @@ exit_on_error(2);
 
 debug(1, "1-wire filesystem mounted and initial scan complete");
 
-# Try to open the snapshot pipe
-# $SIG{PIPE} = 'IGNORE';
-# unless( $SNAP = FileHandle->new($snap, O_WRONLY | O_NONBLOCK) ) { # Fails ENXIO if no listener
-#     debug(0, "Cannot open snapshot pipe $snap; is snapshot process running?");
-#     error("Cannot access snapshot socket $snap") unless( $!{ENXIO} );
-# }
-# exit_on_error(2);
-
-# debug(1, "Opened the named pipe $snap to snapshot process") if( $SNAP );
-# debug(1, "Deferring open of named pipe $snap until snapshot required") unless( $SNAP );
-
 # Catch SIGINT, SIGQUIT and use to generate clean exit
 $SIG{INT}  = \&quit;
 $SIG{QUIT} = \&quit;
@@ -570,12 +559,10 @@ for my $led ( qw(red yellow green) ) {
 
 send_pin_output('enable', 0);
 
-# if( $snap_started ) {
-#     send_snap_cmd('hold');
-#     send_snap_cmd('quit');
-# }
-
-# $SNAP->close() if( $SNAP );
+if( $snap_started ) {		# Tell snapshot to quit, wait 3 sec for answer
+    my (@res) = zmq_transaction($zmq_snapshot, 3000, "Quit");
+    debug(2, "Sent quit command to snapshot, got @res");
+}
 
 # Tidy up networking
 
@@ -1888,7 +1875,8 @@ sub lte {
 #
 sub sys_start {
     my $run = $_[0] && $_[0] eq 'run';
-
+    my @res = ();
+    
     send_pin_output('red', 0);
     if( not $run ) {    # Make sure everything is set up ready for capture
 
@@ -1909,8 +1897,9 @@ sub sys_start {
 
 	# Now initialise the snapshotter: tell it to start ADC capture (blocked on external trigger just now)
 	debug(2, "Start: checking snapshotter status");
-	unless( send_snap_cmd('rate', NCHANNELS*$freq) and send_snap_cmd('start') ) {
-	    error("Unable to talk to snapshotter");
+	@res = zmq_transaction($zmq_snapshot, 3000, "? ping");
+	unless( $res[0] ) {
+	    error("Unable to talk to snapshotter: $res[1]");
 	    return 0, "snapshotter comms failure\n";
 	}
 	$snap_started = 1;	# Assume snapshotter is running and ready
