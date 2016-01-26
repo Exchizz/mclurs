@@ -587,7 +587,7 @@ undef $zmq_poll;
 
 $zmq_snapshot->close();
 
-undef $zmq_ctx;
+$zmq_ctx->term();
 
 close_dac();
 send_pin_output('green', 0);
