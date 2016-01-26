@@ -131,11 +131,63 @@ sub _waitw {
     return $self->{skt};
 }
 
+# Execute a transaction (send/receive) with snapshotter
+sub _transact {
+    my $self = shift;
+    my %params = @_;
+
+    # For a transaction, 
+    # first wait until the socket is writable
+    return unless( $self->_waitw( $params{timeout} ) );
+    # next, write the message to the socket
+    return unless( $self->_write( $params{cmd} ) );
+    # then wait until the socket is readable
+    return unless( $self->_waitr( $params{timeout} ) );
+    # then read and interpret the reply
+    my $r = $self->_read();
+    return unless($r);
+    
+    $self->{_reply} = $r;
+
+    if( $r !~ /^((?:OK|NO\:))\s+(.*)$/ ) {
+	$self->{_estr} = "Reply format unexpected";
+	return;
+    }
+
+    if( $1 eq 'OK' ) {
+	$self->{_estr} = '';
+	$self->{_reply} = $2;
+	return 1;
+    } else {
+	$self->{_estr} = $2;
+	$self->{_reply} = '';
+	return 0;
+    }
+}
+
 # Query whether an error has occurred
 sub error {
     my $self = shift;
     return $self->{_estr};
 }
+
+# Get reply string from a transaction
+sub reply {
+    my $self = shift;
+    return $self->{_reply};
+}
+
+# Instruct snapshotter to quit
+sub quit {
+    my $self = shift;
+
+    unless( $self->{_run} ) {
+	$self->{_estr} = "Quit command when not running";
+	return;
+    }
+    return $self->_transact(cmd => 'Q', timeout => 3000);
+}
+
 
 sub DESTROY {
     my $self = shift;
