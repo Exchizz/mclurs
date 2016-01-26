@@ -138,12 +138,16 @@ sub _transact {
 
     # For a transaction, 
     # first wait until the socket is writable
+    print STDERR "Step 1\n";
     return unless( $self->_waitw( $params{timeout} ) );
     # next, write the message to the socket
+    print STDERR "Step 2\n";
     return unless( $self->_write( $params{cmd} ) );
     # then wait until the socket is readable
+    print STDERR "Step 3\n";
     return unless( $self->_waitr( $params{timeout} ) );
     # then read and interpret the reply
+    print STDERR "Step 4\n";
     my $r = $self->_read();
     return unless($r);
     
