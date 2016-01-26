@@ -205,6 +205,21 @@ sub _paramcheck {
     return 1;
 }
 
+# Process a reply from the Ztatus command to catch snapshot status
+sub _do_status_reply {
+    my $self = shift;
+    my $reply = $self->{_reply};
+
+    return if( $reply !~ m/Ztatus/ );
+    my @lines = split /\n/, $reply;
+    return if @lines == 1;
+
+}
+
+###
+### Public methods
+###
+
 # Query whether an error has occurred
 sub error {
     my $self = shift;
@@ -249,6 +264,7 @@ sub start {
     $self->_transact(cmd => 'go');
     return if( $self->{_estr} );
     $self->{state} = 'armed';
+    $self->{_snap} = {};	# Create the snapshot status hash
     return 1;
 }
 
@@ -281,7 +297,7 @@ sub quit {
 
     $self->_transact(cmd => 'Q', timeout => 3000);
     return if( $self->{_estr} );
-    for my $p ( qw(nchan isp sfreq dir) ) { 
+    for my $p ( qw(nchan isp sfreq dir _snap) ) { 
 	delete $self->{$p};
     }
     $self->{_run} = 0;
@@ -296,7 +312,10 @@ sub status {
 	$self->{_estr} = "Ztatus command when not running";
 	return;
     }
-    return $self->_transact(cmd => 'Z');
+    $self->_transact(cmd => 'Z');
+    return if( $self->{_estr} );
+    $self->_do_status_reply();
+    return 1;
 }
 
 # Set up snapshotter: ends in init state
@@ -391,7 +410,10 @@ sub snap {
 	$self->{_estr} = "Snap reply format unexpected";
 	return;
     }
-    return "S" . lc($1);
+
+    my $snap = "S" . lc($1);
+    $self->{_snap}->{$snap} = { name => $snap, };
+
 }
 
 # Set/get the snapshotter's working directory
