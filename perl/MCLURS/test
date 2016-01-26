@@ -23,6 +23,10 @@ my $snap = MCLURS::Snap->new(skt => $skt, timeout => 1500);
 
 dumphash($snap);
 
+print "Transaction ", ($snap->_transact(cmd => 'z') || 'failed'), "\n";
+
+dumphash($snap);
+
 undef $snap;
 $skt->close();
 undef $zmq_ctx;
