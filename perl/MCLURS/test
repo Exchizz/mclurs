@@ -19,13 +19,62 @@ my $skt = $zmq_ctx->socket(ZMQ_REQ) or die "Cannot create ZMQ REQ socket";
 
 $skt->connect($snapshot);
 
-my $snap = MCLURS::Snap->new(skt => $skt, timeout => 1500);
+print STDERR "ZMQ socket is $skt\n";
 
+my $snap = MCLURS::Snap->new(skt => $skt, timeout => 1500, freq => 312500);
+
+print "\n";
+print "Obj";
 dumphash($snap);
+print "\n";
 
-print "Transaction ", ($snap->_transact(cmd => 'z') || 'failed'), "\n";
+unless( $snap->set(freq => 312500, bufhwm => 0.8) ) {
+    print $snap->error(), "\n";
+}
 
+print "Params";
+dumphash( $snap->params() );
+print "\n";
+
+$snap->setup();
+print "Setup err: ", $snap->error(), "\n" if( $snap->error() );
+print "Setup rpl: ", $snap->reply(), "\n" if( $snap->reply() );
+print "\n";
+
+print "Obj1";
 dumphash($snap);
+print "\n";
+
+$snap->start();
+print "Start err: ", $snap->error(), "\n" if( $snap->error() );
+print "Start rpl: ", $snap->reply(), "\n" if( $snap->reply() );
+print "\n";
+
+$snap->dir('test1');
+print "Dir err: ", $snap->error(), "\n" if( $snap->error() );
+print "Dir rpl: ", $snap->reply(), "\n" if( $snap->reply() );
+print "\n";
+
+print "Obj2";
+dumphash($snap);
+print "\n";
+
+$snap->stop();
+print "Stop err: ", $snap->error(), "\n" if( $snap->error() );
+print "Stop rpl: ", $snap->reply(), "\n" if( $snap->reply() );
+print "\n";
+
+print "Obj3";
+dumphash($snap);
+print "\n";
+
+$snap->quit();
+print $snap->error() if($snap->error());
+print "\n";
+
+print "Obj4";
+dumphash($snap);
+print "\n";
 
 undef $snap;
 $skt->close();
@@ -38,7 +87,7 @@ exit(0);
 sub dumphash {
     local $_;
     my $h = shift;
-    for $_ ( keys %{$h} ) {
+    for $_ ( sort keys %{$h} ) {
 	print "\t$_:\t", $h->{$_}, "\n";
     }
 }
