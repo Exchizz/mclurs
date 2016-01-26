@@ -19,7 +19,7 @@ my $skt = $zmq_ctx->socket(ZMQ_REQ) or die "Cannot create ZMQ REQ socket";
 
 $skt->connect($snapshot);
 
-my $snap = Snap->new(skt => $skt, timeout => 1500);
+my $snap = MCLURS::Snap->new(skt => $skt, timeout => 1500);
 
 dumphash($snap);
 
