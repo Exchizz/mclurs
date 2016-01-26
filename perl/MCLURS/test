@@ -1,7 +1,7 @@
 #!/usr/bin/perl -w
 
 use strict;
-use lib ".";
+use lib "/home/pi/mclurs/perl";
 
 BEGIN {
     $ENV{ PERL_ZMQ_BACKEND } = 'ZMQ::LibZMQ3';
@@ -10,7 +10,7 @@ BEGIN {
 use ZMQ;
 use ZMQ::Constants qw(:all);
 
-use Snap;
+use MCLURS::Snap;
 
 my $snapshot = "tcp://127.0.0.1:7777/";
 
