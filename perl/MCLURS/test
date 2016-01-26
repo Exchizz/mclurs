@@ -1,0 +1,40 @@
+#!/usr/bin/perl -w
+
+use strict;
+use lib ".";
+
+BEGIN {
+    $ENV{ PERL_ZMQ_BACKEND } = 'ZMQ::LibZMQ3';
+}
+
+use ZMQ;
+use ZMQ::Constants qw(:all);
+
+use Snap;
+
+my $snapshot = "tcp://127.0.0.1:7777/";
+
+my $zmq_ctx = ZMQ::Context->new() or die "Cannot create ZMQ context";
+my $skt = $zmq_ctx->socket(ZMQ_REQ) or die "Cannot create ZMQ REQ socket";
+
+$skt->connect($snapshot);
+
+my $snap = Snap->new(skt => $skt, timeout => 1500);
+
+dumphash($snap);
+
+undef $snap;
+$skt->close();
+undef $zmq_ctx;
+
+exit(0);
+
+# ================================================================
+
+sub dumphash {
+    local $_;
+    my $h = shift;
+    for $_ ( keys %{$h} ) {
+	print "\t$_:\t", $h->{$_}, "\n";
+    }
+}
