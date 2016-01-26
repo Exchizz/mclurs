@@ -42,7 +42,7 @@ sub _init {
     }
 
     $self->{_estr} = '';
-    $self->{_snap} = $self->{skt}->getsocopt(ZMQ_LAST_ENDPOINT);
+    $self->{_snap} = $self->{skt}->getsockopt(ZMQ_LAST_ENDPOINT);
     unless( $self->{_snap} ) {
 	# Error -- $skt is not connected
 	$self->{_estr} = "Socket is not connected";
