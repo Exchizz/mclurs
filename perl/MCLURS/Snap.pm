@@ -205,15 +205,81 @@ sub _paramcheck {
     return 1;
 }
 
+# Translate snapshot status codes -- see chunk.h, chunk.c in snapshotter
+my %snapshot_state =(
+    'INI' => 'ini',
+    'ERR' => 'err',
+    'PRP' => 'prp',
+    'RDY' => 'rdy',
+    '...' => 'inQ',
+    '>>>' => 'wri',
+    '+++' => 'wtn',
+    'FIN' => 'fin',
+    );
+
+# Parse a snapshot status line
+sub _parse_snapshot_status {
+    my $self = shift;
+    local $_;
+
+    $_ = shift;
+    unless( m!^Snap\s+s:([\dA-Fa-f]+):\s+([^\s]+)\s+(\d+)/(\d+)/(\d+)$! ) {
+	$self->{_estr} = "Cannot parse status reply line";
+	return;
+    }
+
+    my $snap = $self->{_snapshots}->{"S" . lc($1)};
+    unless( $snap ) {
+	$self->{_estr} = "Cannot locate history for snapshot $snap";
+	return;
+    }
+
+    my ($status,$done,$pending,$count) = ($2,$3,$4,$5);
+    unless( $count == $snap->{count} || $count == 1 ) {
+	$self->{_estr} = "Snapshot $snap has inconsistent count $count vs. $snap->{count}";
+	return;
+    }
+
+    $snap->{count}   = $count;
+    $snap->{done}    = $done;
+    $snap->{pending} = $pending;
+    $snap->{state}   = $snapshot_state{$status};
+    return 1;
+}
+
 # Process a reply from the Ztatus command to catch snapshot status
 sub _do_status_reply {
     my $self = shift;
-    my $reply = $self->{_reply};
+    local $_;
 
-    return if( $reply !~ m/Ztatus/ );
-    my @lines = split /\n/, $reply;
-    return if @lines == 1;
+    $_ = $self->{_reply};
+    return unless( m/Ztatus/ );
 
+    # Split after every (internal) newline
+    chomp;
+    my ($l1, @lines) = split /\n$/ms;
+
+    # Running snapshotter always supplies at least 1 status line
+    unless($l1) {
+	$self->{_estr} = "Zstatus reply line missing";
+	return;
+    }
+    
+    # Process the first (general) status line
+    if( $l1 !~ m/READER\s+(\w+)/ ) {
+	$self->{_estr} = "Zstatus reply format unexpected";
+	return;
+    }
+    $self->{state} = lc($1);
+    return 1 unless(@lines);
+
+    # Process the pending-snapshot reports
+    my $n = 2;
+    for my $l ( @lines ) {
+	return unless( $self->_parse_snapshot_status($l) );
+	$n++;
+    }
+    return 1;
 }
 
 ###
@@ -264,7 +330,7 @@ sub start {
     $self->_transact(cmd => 'go');
     return if( $self->{_estr} );
     $self->{state} = 'armed';
-    $self->{_snap} = {};	# Create the snapshot status hash
+    $self->{_snapshots} = {};	# Create the snapshot status hash
     return 1;
 }
 
@@ -297,7 +363,7 @@ sub quit {
 
     $self->_transact(cmd => 'Q', timeout => 3000);
     return if( $self->{_estr} );
-    for my $p ( qw(nchan isp sfreq dir _snap) ) { 
+    for my $p ( qw(nchan isp sfreq dir _snapshots ) ) { 
 	delete $self->{$p};
     }
     $self->{_run} = 0;
@@ -313,9 +379,7 @@ sub status {
 	return;
     }
     $self->_transact(cmd => 'Z');
-    return if( $self->{_estr} );
-    $self->_do_status_reply();
-    return 1;
+    return $self->_do_status_reply();
 }
 
 # Set up snapshotter: ends in init state
@@ -329,11 +393,7 @@ sub setup {
 	return;
     }
     $self->{_run} = 1;
-    if( $self->{_reply} !~ m/READER\s+(\w+)/) {
-	$self->{_estr} = "Zstatus reply format unexpected";
-	return;
-    }
-    $self->{state} = lc($1);
+    return unless( $self->_do_status_reply() );
 
     # Check snapshotter is not already collecting data
     if( $self->{state} eq 'armed' || $self->{state} eq 'run' ) {
@@ -397,6 +457,10 @@ sub snap {
 	return;
     }
 
+    # Copy the _necessary_ parameters; the %arg hash may contain
+    # other key-value pairs that the caller wishes to associate with
+    # the snapshot, and they will be preserved in the history entry.
+
     my $sargs = '';
     @SP{@SnapParams} = ();
     for my $a ( keys %args ) {
@@ -404,6 +468,8 @@ sub snap {
     }
     $sargs =~ s/,\s+$//;
 
+    # Request the snapshot from the snapshotter
+        
     $self->_transact(cmd => "S $sargs");
     return if( $self->{_estr} );
     if( $self->reply() !~ m/Snap ([0-9a-fA-F]+)/ ) {
@@ -411,9 +477,18 @@ sub snap {
 	return;
     }
 
-    my $snap = "S" . lc($1);
-    $self->{_snap}->{$snap} = { name => $snap, };
+    # Note re-use of %SP here: this copies all the args into the
+    # snapshot history entry, and leaves any parameters not set by
+    # the %arg hash present as keys but with undefined value.
+    #
+    # The snapshot history entry is stored under the snapshotter's
+    # snapshot name (hex uid) prefixed with S.  Subsequent Zstatus
+    # replies refresh and update the history (i.e. the 'state').
 
+    my $snap = "S" . lc($1);
+    %SP = ( %args, name => $snap, state => 'snd' );
+    $self->{_snapshots}->{$snap} = \%SP;
+    return $snap;
 }
 
 # Set/get the snapshotter's working directory
