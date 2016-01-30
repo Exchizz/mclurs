@@ -223,12 +223,12 @@ sub _parse_snapshot_status {
     local $_;
 
     $_ = shift;
-    unless( m!^Snap\s+s:([\dA-Fa-f]+):\s+([^\s]+)\s+(\d+)/(\d+)/(\d+)$! ) {
+    unless( m!^Snap\s+(?:[Ss]:)?([\dA-Fa-f]+):\s+([^\s]+)\s+(\d+)/(\d+)/(\d+)$! ) {
 	$self->{_estr} = "Cannot parse status reply line";
 	return;
     }
 
-    my $snap = $self->{_snapshots}->{"S" . lc($1)};
+    my $snap = $self->{_snapshots}->{"s:" . lc($1)};
     unless( $snap ) {
 	$self->{_estr} = "Cannot locate history for snapshot $snap";
 	return;
@@ -472,7 +472,7 @@ sub snap {
         
     $self->_transact(cmd => "S $sargs");
     return if( $self->{_estr} );
-    if( $self->reply() !~ m/Snap ([0-9a-fA-F]+)/ ) {
+    if( $self->reply() !~ m/Snap (?:[Ss]:)?([0-9a-fA-F]+)/ ) {
 	$self->{_estr} = "Snap reply format unexpected";
 	return;
     }
@@ -485,7 +485,7 @@ sub snap {
     # snapshot name (hex uid) prefixed with S.  Subsequent Zstatus
     # replies refresh and update the history (i.e. the 'state').
 
-    my $snap = "S" . lc($1);
+    my $snap = "s:" . lc($1);
     %SP = ( %args, name => $snap, state => 'snd' );
     $self->{_snapshots}->{$snap} = \%SP;
     return $snap;
