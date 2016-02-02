@@ -223,28 +223,68 @@ sub _parse_snapshot_status {
     local $_;
 
     $_ = shift;
-    unless( m!^Snap\s+(?:[Ss]:)?([\dA-Fa-f]+):\s+([^\s]+)\s+(\d+)/(\d+)/(\d+)$! ) {
-	$self->{_estr} = "Cannot parse status reply line";
-	return;
+
+    # Completed snapshot
+    if( m!^OK\s+Snap\s+(?:[Ss]:)?([\dA-Fa-f]+):\s+FIN\s+(\d+)/(\d+)\s+files$! ) {
+	my ($sn,$done,$count) = ("s:" . lc($1), $2, $3);
+
+	my $snap = $self->{_snapshots}->{$sn};
+	unless( $snap ) {
+	    $self->{_estr} = "Cannot locate history for snapshot $snap";
+	    return;
+	}
+
+	unless( $count == 1 || $count == $snap->{count} ) {
+	    $self->{_estr} = "Finished snapshot $snap has inconsistent count $count vs. $snap->{count}";
+	    return;
+	}
+	$snap->{count}   = $count;
+	$snap->{done}    = $done;
+	$snap->{state}   = 'fin';
+	$snap->{pending} = 0;
+	return 1;
     }
 
-    my $snap = $self->{_snapshots}->{"s:" . lc($1)};
-    unless( $snap ) {
-	$self->{_estr} = "Cannot locate history for snapshot $snap";
-	return;
+    # In progress snapshot
+    if( m!^Snap\s+(?:[Ss]:)?([\dA-Fa-f]+):\s+([^\s]+)\s+(\d+)/(\d+)/(\d+)$! ) {
+	my $sn = "s:" . lc($1);
+
+	my $snap = $self->{_snapshots}->{$sn};
+	unless( $snap ) {
+	    $self->{_estr} = "Cannot locate history for snapshot $snap";
+	    return;
+	}
+
+	$snap->{state}   = $snapshot_state{$2};
+	my ($done,$pending,$count) = ($3,$4,$5);
+	unless( $count == 1 || $count == $snap->{count} ) {
+	    $self->{_estr} = "Snapshot $snap has inconsistent count $count vs. $snap->{count}";
+	    return;
+	}
+	$snap->{count}   = $count;
+	$snap->{done}    = $done;
+	$snap->{pending} = $pending;
+	return 1;
     }
 
-    my ($status,$done,$pending,$count) = ($2,$3,$4,$5);
-    unless( $count == $snap->{count} || $count == 1 ) {
-	$self->{_estr} = "Snapshot $snap has inconsistent count $count vs. $snap->{count}";
-	return;
+    # Failed snapshot
+    if( m!^NO:\s+Snap\s+(?:[Ss]:)?([\dA-Fa-f]+)\s+(.*)$! ) {
+	my $sn = "s:" . lc($1);
+
+	my $snap = $self->{_snapshots}->{$sn};
+	unless( $snap ) {
+	    $self->{_estr} = "Cannot locate history for snapshot $snap";
+	    return;
+	}
+
+	$snap->{state} = 'err';
+	$snap->{emsg}  = $2;
+	return 1;
     }
 
-    $snap->{count}   = $count;
-    $snap->{done}    = $done;
-    $snap->{pending} = $pending;
-    $snap->{state}   = $snapshot_state{$status};
-    return 1;
+    # Unknown reply line
+    $self->{_estr} = "Cannot parse status reply line";
+    return;
 }
 
 # Process a reply from the Ztatus command to catch snapshot status
@@ -257,7 +297,7 @@ sub _do_status_reply {
 
     # Split after every (internal) newline
     chomp;
-    my ($l1, @lines) = split /\n$/ms;
+    my ($l1, @lines) = split /\r?\n/, $_;
 
     # Running snapshotter always supplies at least 1 status line
     unless($l1) {
@@ -265,12 +305,10 @@ sub _do_status_reply {
 	return;
     }
     
+    print STDERR "Zstatus reply has ", scalar(@lines), " lines\n";
+
     # Process the first (general) status line
-    if( $l1 !~ m/READER\s+(\w+)/ ) {
-	$self->{_estr} = "Zstatus reply format unexpected";
-	return;
-    }
-    $self->{state} = lc($1);
+    $self->{state} = lc($1) if( $l1 =~ m/READER\s+(\w+)/ );
     return 1 unless(@lines);
 
     # Process the pending-snapshot reports
