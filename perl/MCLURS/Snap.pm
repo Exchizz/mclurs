@@ -455,12 +455,11 @@ sub update {
     return $self->_do_status_reply();
 }
 
-# Set up snapshotter: ends in init state
+# Probe to check that the snapshotter is running
 #
-# Initialise the snapshotter.  Sends specified parameters, then init
-# command, then resets the snapshot working directory.
+# No arguments
 
-sub setup {
+sub probe {
     my $self = shift;
 
     # First, get status, check if running
@@ -470,7 +469,29 @@ sub setup {
 	return;
     }
     $self->{_run} = 1;
-    return unless( $self->_do_status_reply() );
+    return $self->_do_status_reply();
+}
+
+# Reset the communications after a failure
+#
+# No arguments
+
+sub reset {
+    my $self = shift;
+
+    $self->_read();		# Read anything that is pending
+    return $self->_waitw(0);	# Check if we can now write
+}
+
+# Set up snapshotter: ends in init state
+#
+# Initialise the snapshotter.  Sends specified parameters, then init
+# command, then resets the snapshot working directory.
+
+sub setup {
+    my $self = shift;
+
+    return unless( $self->probe() );
 
     # Check snapshotter is not already collecting data
     if( $self->{state} eq 'armed' || $self->{state} eq 'run' ) {
@@ -660,14 +681,6 @@ sub clear {
     return 1 if( $snap->{state} eq 'fin' );
     $self->{_estr} = $snap->{emsg};
     return 0;
-}
-
-# Destroy the object after last reference drops.
-
-sub DESTROY {
-    my $self = shift;
-
-    $self->{_poll}->unregister($self->{skt});
 }
 
 # Evaluate true as final step

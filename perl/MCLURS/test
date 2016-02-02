@@ -1,7 +1,7 @@
 #!/usr/bin/perl -w
 
 use strict;
-use lib "/home/pi/mclurs/perl";
+#use lib "/home/pi/mclurs/perl";
 
 BEGIN {
     $ENV{ PERL_ZMQ_BACKEND } = 'ZMQ::LibZMQ3';

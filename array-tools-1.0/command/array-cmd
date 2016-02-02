@@ -554,7 +554,7 @@ debug(2, "Starting main command loop");
 send_pin_output('red', 1);
 MAIN: while($running) {
     my @ready = map { $_->{socket} } $zmq_poll->poll(5000);
-    unless( $SNAP->update() ) {
+    unless( $SNAP->probe() ) {
 	error("Problem with Snap status update: " . $SNAP->error());
     }
     next MAIN unless( @ready );
