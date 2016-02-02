@@ -23,6 +23,8 @@ sub new {
 }
 
 # Initialiser
+#
+# ARG includes mandatory skt parameter (the socket to use) plus any others.
 
 my @req = qw( skt );
 
@@ -230,12 +232,12 @@ sub _parse_snapshot_status {
 
 	my $snap = $self->{_snapshots}->{$sn};
 	unless( $snap ) {
-	    $self->{_estr} = "Cannot locate history for snapshot $snap";
+	    $self->{_estr} = "Cannot locate history for snapshot $sn";
 	    return;
 	}
 
 	unless( $count == 1 || $count == $snap->{count} ) {
-	    $self->{_estr} = "Finished snapshot $snap has inconsistent count $count vs. $snap->{count}";
+	    $self->{_estr} = "Finished snapshot $sn has inconsistent count $count vs. $snap->{count}";
 	    return;
 	}
 	$snap->{count}   = $count;
@@ -251,14 +253,14 @@ sub _parse_snapshot_status {
 
 	my $snap = $self->{_snapshots}->{$sn};
 	unless( $snap ) {
-	    $self->{_estr} = "Cannot locate history for snapshot $snap";
+	    $self->{_estr} = "Cannot locate history for snapshot $sn";
 	    return;
 	}
 
 	$snap->{state}   = $snapshot_state{$2};
 	my ($done,$pending,$count) = ($3,$4,$5);
 	unless( $count == 1 || $count == $snap->{count} ) {
-	    $self->{_estr} = "Snapshot $snap has inconsistent count $count vs. $snap->{count}";
+	    $self->{_estr} = "Snapshot $sn has inconsistent count $count vs. $snap->{count}";
 	    return;
 	}
 	$snap->{count}   = $count;
@@ -273,7 +275,7 @@ sub _parse_snapshot_status {
 
 	my $snap = $self->{_snapshots}->{$sn};
 	unless( $snap ) {
-	    $self->{_estr} = "Cannot locate history for snapshot $snap";
+	    $self->{_estr} = "Cannot locate history for snapshot $sn";
 	    return;
 	}
 
@@ -305,7 +307,7 @@ sub _do_status_reply {
 	return;
     }
     
-    print STDERR "Zstatus reply has ", scalar(@lines), " lines\n";
+#    print STDERR "Zstatus reply has ", scalar(@lines), " lines\n";
 
     # Process the first (general) status line
     $self->{state} = lc($1) if( $l1 =~ m/READER\s+(\w+)/ );
@@ -324,19 +326,35 @@ sub _do_status_reply {
 ### Public methods
 ###
 
-# Query whether an error has occurred
+### These all return true for success and undef for error.  Error
+### information can be retrieved using the error() method provided no
+### other calls on the object have been run.  Successful methods
+### return 1 unless otherwise noted.
+
+# Query whether an error has occurred; in some cases (e.g. parse
+# errors the reply() method can also return useful information).
+#
+# Return the current content of the _estr slot.
+
 sub error {
     my $self = shift;
     return $self->{_estr};
 }
 
 # Get reply string from a transaction
+#
+# Return the current content of the _reply slot.
+
 sub reply {
     my $self = shift;
     return $self->{_reply};
 }
 
 # Set parameters for snapshotter
+#
+# ARG is a hash giving parameters to set; the parameters are those
+# that can be set at run time in the snapshotter -- see snapshotter(8).
+
 sub set {
     my $self = shift;
     my %params = @_;
@@ -350,6 +368,11 @@ sub set {
 }
 
 # Retrieve the parameters from the snapshotter object
+#
+# Result: a reference to a hash containing the parameters supplied by
+# set() plus extra parameters collected or inferrred from snapshotter
+# responses.
+
 sub params {
     my $self = shift;
     my @plist = qw( freq sfreq bufsz bufhwm window sscorr isp nchan state dir );
@@ -357,6 +380,9 @@ sub params {
 }
 
 # Instruct snapshotter to start
+#
+# No arguments.  Assumes snapshotter is initialised (init state).
+
 sub start {
     my $self = shift;
 
@@ -373,6 +399,9 @@ sub start {
 }
 
 # Instruct a snapshotter to stop
+#
+# No arguments.  Assumes snapshotter is capturing (armed or run state).
+
 sub stop {
     my $self = shift;
 
@@ -391,6 +420,9 @@ sub stop {
 }
 
 # Instruct snapshotter to quit
+#
+# No arguments;  sends Q command to snapshotter and tidies up.
+
 sub quit {
     my $self = shift;
 
@@ -409,7 +441,10 @@ sub quit {
 }
 
 # Collect snapshotter status
-sub status {
+#
+# No arguments.  Sends a Z command and interprets the response.
+
+sub update {
     my $self = shift;
 
     unless( $self->{_run} ) {
@@ -421,6 +456,10 @@ sub status {
 }
 
 # Set up snapshotter: ends in init state
+#
+# Initialise the snapshotter.  Sends specified parameters, then init
+# command, then resets the snapshot working directory.
+
 sub setup {
     my $self = shift;
 
@@ -477,6 +516,12 @@ sub setup {
 }
 
 # Request a snapshot from the snapshotter
+#
+# Argument is a hash containing at least the necessary parameters to
+# cause a snapshot to be attempted.  Other parameters (key-value
+# pairs) are stored locally but not sent to the snapshotter.
+#
+# Returns the snapshot identifier on success.
 
 my @SnapParams = qw(begin end start finish length count path);
 
@@ -515,12 +560,13 @@ sub snap {
 	return;
     }
 
+    # NOT WITH THE CODE BELOW; IT DOESN'T
     # Note re-use of %SP here: this copies all the args into the
     # snapshot history entry, and leaves any parameters not set by
     # the %arg hash present as keys but with undefined value.
     #
     # The snapshot history entry is stored under the snapshotter's
-    # snapshot name (hex uid) prefixed with S.  Subsequent Zstatus
+    # snapshot name (hex uid) prefixed with 's:'.  Subsequent Zstatus
     # replies refresh and update the history (i.e. the 'state').
 
     my $snap = "s:" . lc($1);
@@ -530,13 +576,20 @@ sub snap {
 }
 
 # Set/get the snapshotter's working directory
+#
+# ARG is a path => set the dir locally and in the snapshotter
+# ARG unset => do not change the snapshotter's working directory
+#
+# Returns the old working directory on success.
+
 sub dir {
     my $self = shift;
     my $dir  = shift;
+    my $old  = $self->{dir} || '.';
 
     # Instruct the snapshotter to change directory if necessary
     if(defined $dir) {
-	return 1 if($dir eq $self->{dir});
+	return $old if($dir eq $self->{dir});
 
 	unless( $self->{_run} ) {
 	    $self->{_estr} = "Dir set command when not running";
@@ -547,8 +600,69 @@ sub dir {
 	return if( $self->{_estr} );
 	$self->{dir} = $dir;
     }
-    return $self->{dir};
+    return $old;
 }
+
+# Report the status of one or all snapshots
+#
+# ARG (optional) a snapshot name
+#
+# Returns on success a (copy of the) snapshot descriptor hash if a
+# name was given or a list of such hashes if no name was provided.
+# Always returns a list in list context, may sensibly return a scalar
+# if given a name in a scalar context call.
+
+sub status {
+    my $self = shift;
+    my $name = shift;
+
+    $self->{_reply} = '';
+    $self->{_estr}  = '';
+    if( defined $name ) {
+	my $snap = $self->{_snapshots}->{$name};
+	unless( $snap ) {
+	    $self->{_estr} = "Cannot locate history for snapshot $name";
+	    return;
+	}
+	my $ans = { %{$snap} };
+	return wantarray? ( $ans ) : $ans;
+    }
+    return ( map {
+	( { %{$self->{_snapshots}->{$_}} } );
+	     } keys %{$self->{_snapshots}}
+    );
+}
+
+# Clear a snapshot's status history
+#
+# ARG (mandatory) the snapshot name
+#
+# Returns 1 for successfully completed snapshot.
+# If snapshot failed, returns 0 and leaves snapshot error message in _estr.
+
+sub clear {
+    my $self = shift;
+    my $name = shift;
+
+    $self->{_reply} = '';
+    $self->{_estr}  = '';
+    unless( $name ) {
+	$self->{_estr} = "Clear command without named snapshot";
+	return;
+    }
+
+    my $snap = $self->{_snapshots}->{$name};
+    unless( $snap->{state} eq 'fin' or $snap->{state} eq 'err' ) {
+	$self->{_estr} = "Clear of unfinished snapshot $name";
+	return;
+    }
+    delete $self->{_snapshots}->{$name};
+    return 1 if( $snap->{state} eq 'fin' );
+    $self->{_estr} = $snap->{emsg};
+    return 0;
+}
+
+# Destroy the object after last reference drops.
 
 sub DESTROY {
     my $self = shift;
