@@ -70,6 +70,8 @@
 
 public int die_die_die_now = 0;
 
+public  const char *snapshot_uuid;
+
 import  rparams     reader_parameters;
 import  wparams     writer_parameters;
 import  const char *tmpdir_path;
@@ -125,6 +127,11 @@ public param_t globals[] ={
     PARAM_TYPE(double), PARAM_SRC_ENV|PARAM_SRC_ARG|PARAM_SRC_CMD,
     "ring buffer high-water mark fraction; default 0.9"
   }, 
+  { "sscorr",      "0",
+    &reader_parameters.r_sscorrelation,
+    PARAM_TYPE(double), PARAM_SRC_ENV|PARAM_SRC_ARG|PARAM_SRC_CMD,
+    "successive sample correlation coefficient [-1,1]; default 0"
+  },
   { "rtprio",   NULL,
     &schedprio,
     PARAM_TYPE(int32),  PARAM_SRC_ENV|PARAM_SRC_ARG,
@@ -170,6 +177,11 @@ public param_t globals[] ={
     PARAM_TYPE(double),  PARAM_SRC_ENV|PARAM_SRC_ARG,
     "maximum delay from capture start to first data [s]; default 10[s]"
   },
+  { "uuid",     NULL,
+    &snapshot_uuid,
+    PARAM_TYPE(string), PARAM_SRC_ENV|PARAM_SRC_ARG,
+    "unqiue ID string for this snapshot instance; default unset"
+  },
 };
 
 public const int n_global_params =      (sizeof(globals)/sizeof(param_t));
@@ -213,6 +225,7 @@ BEGIN_CMD_SYNTAX(main) {
         arg_str0("S",  "snapdir", "<path>",   "Path to samples directory; default 'snap'"),
         arg_dbl0("f",  "freq", "<real>",      "Per-channel sampling frequency [Hz]; default 312.5[kHz]"),
         arg_dbl0("w",  "window", "<real>",    "Min. capture window length [s]; default 10[s]"),
+        arg_dbl0("C",  "sscorr", "<real>",    "Sequential-sample correlation coefficient, in [-1,+1]; default 0"),
         arg_dbl0(NULL, "syncwait", "<real>",  "Max. delay from capture start to first data [s]; default 10[s]"),
         arg_dbl0("B",  "bufhwm", "<real>",    "Ring buffer High-water mark fraction; default 0.9"),
         arg_str0("d",  "dev", "<path>",       "Comedi device to use; default '/dev/comedi0'"),
@@ -220,6 +233,7 @@ BEGIN_CMD_SYNTAX(main) {
         arg_int0("R",  "rdprio", "<1-99>",    "Reader thread RT priority; default unset"),
         arg_int0("W",  "wrprio", "<1-99>",    "Writer thread RT priority; default unset"),
         arg_str0("u",  "user", "<name>",      "User to run as; default unset"),
+        arg_str0(NULL, "uuid", "<name>",      "Unique ID string; default unset"),
   g2 =  arg_strn("g",  "group", "<name>", 0, MAX_GROUPS, "Group(s) to run as; default unset"),
         arg_int0("b",  "bufsz", "<int>",      "Comedi ring buffer Size [MiB]; default 56[MiB]"),
         arg_int0("m",  "ram", "<int>",        "Data Transfer RAM size [MiB]; default 64[MiB]"),
@@ -259,17 +273,17 @@ private void print_usage(FILE *fp, void **argtable, int verbosity, char *program
  * Snapshot globals for this file.
  */
 
-private const char *snapshot_addr = NULL;  /* The address of the main command socket */
-private const char *snapshot_user = NULL;  /* The user we should run as, after startup */
-private const char *snapshot_group = NULL; /* The group(s) to run as, after startup */
-private int         schedprio;             /* Real-time priority for reader and writer */
+private const char *snapshot_addr  = NULL;  /* The address of the main command socket */
+private const char *snapshot_user  = NULL;  /* The user we should run as, after startup */
+private const char *snapshot_group = NULL;  /* The group(s) to run as, after startup */
+private int         schedprio;              /* Real-time priority for reader and writer */
 
 /*
  * Snapshot globals shared between threads
  */
 
 public void       *snapshot_zmq_ctx;    /* ZMQ context for messaging -- created by the TIDY thread */
-
+public const char *snapshot_uuid;       /* A unique ID string for use when publishing data */
 public int         tmpdir_dirfd;        /* The file descriptor obtained for the TMPDIR directory */
 public const char *tmpdir_path;         /* The path for the file descriptor above */
 

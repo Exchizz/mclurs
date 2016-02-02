@@ -55,7 +55,11 @@ private sampl_t lut_raw_to_1Vpk_750mV[TABLE_SIZE];
 private long    lut_raw_to_1Vsq_500mV[TABLE_SIZE];       /* Energy tables, 24 bit positive fixed point in 32 bit words */
 private long    lut_raw_to_1Vsq_750mV[TABLE_SIZE];
 
-private int lut_not_ready = 1;
+private sampl_t lut_raw_to_sscorr_500mV[TABLE_SIZE];     /* Correlation-correction tables, 16 bit signed fixed point in 16 bit words */
+private sampl_t lut_raw_to_sscorr_750mV[TABLE_SIZE];
+
+private int    lut_not_ready = 1;
+private double lut_ssc_coeff = 0; /* Sequential sample correlation coefficient, used to build the lut_raw_to_sscorr_* tables */
 
 public void populate_conversion_luts() {
   short raw;
@@ -70,40 +74,64 @@ public void populate_conversion_luts() {
   for(raw=0; raw<=0xFFF; raw++) {
     short conv = RAW_500mV_TO_OUT_500mV(raw);
 
-    lut_raw_to_1Vpk_500mV[raw] = conv;                     /* Raw value maps to itself x 8 with sign corrected */
-    lut_raw_to_1Vsq_500mV[raw] = ((long) conv*conv) >> 8;
+    lut_raw_to_1Vpk_500mV[raw]   = conv;                     /* Raw value maps to itself x 8 with sign corrected */
+    lut_raw_to_sscorr_500mV[raw] = lut_ssc_coeff * lut_raw_to_1Vpk_500mV[raw];
+    lut_raw_to_1Vsq_500mV[raw]   = ((long) conv*conv) >> 8;
     
-    lut_raw_to_1Vpk_750mV[raw] = OUT_500mV_TO_OUT_750mV(conv);  /* Values in 0.75pk range are scaled by 1.5 */
-    lut_raw_to_1Vsq_750mV[raw] = ((long) OUT_500mV_TO_OUT_750mV(conv)*OUT_500mV_TO_OUT_750mV(conv)) >> 8;
-
-    lut_raw_to_1Vpk_500mV[raw+0x1000] = (raw&0x800)? USBDUXFAST_OOR_POS_500mV : USBDUXFAST_OOR_NEG_500mV;
-    lut_raw_to_1Vsq_500mV[raw+0x1000] = ((long) lut_raw_to_1Vpk_500mV[raw+0x1000]*lut_raw_to_1Vpk_500mV[raw+0x1000]) >> 8;
-
-    lut_raw_to_1Vpk_750mV[raw+0x1000] = (raw&0x800)? USBDUXFAST_OOR_POS_750mV : USBDUXFAST_OOR_NEG_750mV;
-    lut_raw_to_1Vsq_750mV[raw+0x1000] = ((long) lut_raw_to_1Vpk_750mV[raw+0x1000]*lut_raw_to_1Vpk_750mV[raw+0x1000]) >> 8;
+    lut_raw_to_1Vpk_750mV[raw]   = OUT_500mV_TO_OUT_750mV(conv);  /* Values in 0.75pk range are scaled by 1.5 */
+    lut_raw_to_sscorr_750mV[raw] = lut_ssc_coeff * lut_raw_to_1Vpk_750mV[raw];
+    lut_raw_to_1Vsq_750mV[raw]   = ((long) OUT_500mV_TO_OUT_750mV(conv)*OUT_500mV_TO_OUT_750mV(conv)) >> 8;
+    
+    lut_raw_to_1Vpk_500mV[raw+0x1000]   = (raw&0x800)? USBDUXFAST_OOR_POS_500mV : USBDUXFAST_OOR_NEG_500mV;
+    lut_raw_to_sscorr_500mV[raw+0x1000] = lut_ssc_coeff * lut_raw_to_1Vpk_500mV[raw+0x1000];
+    lut_raw_to_1Vsq_500mV[raw+0x1000]   = ((long) lut_raw_to_1Vpk_500mV[raw+0x1000]*lut_raw_to_1Vpk_500mV[raw+0x1000]) >> 8;
+    
+    lut_raw_to_1Vpk_750mV[raw+0x1000]   = (raw&0x800)? USBDUXFAST_OOR_POS_750mV : USBDUXFAST_OOR_NEG_750mV;
+    lut_raw_to_sscorr_750mV[raw+0x1000] = lut_ssc_coeff * lut_raw_to_1Vpk_750mV[raw+0x1000];
+    lut_raw_to_1Vsq_750mV[raw+0x1000]   = ((long) lut_raw_to_1Vpk_750mV[raw+0x1000]*lut_raw_to_1Vpk_750mV[raw+0x1000]) >> 8;
   }
   lut_not_ready = 0;            /* The tables are ready now... */
 }
 
-public void convert_raw_500mV(sampl_t *dst, sampl_t *src, int nsamples) {
+/*
+ * Set the successive-sample correlation correction coefficient;  rebuild the tables.
+ */
+
+public void lut_set_ssc_coeff(double coeff) {
+  lut_ssc_coeff = coeff;
+  lut_not_ready = 1;
+  populate_conversion_luts();
+}
+
+public void convert_raw_500mV(sampl_t *dst, sampl_t *src, int nsamples, sampl_t first) {
+  sampl_t prev = first;
+  
   if(lut_not_ready)
     populate_conversion_luts();
 
   while(nsamples-- > 0) {
-    *dst++ = lut_raw_to_1Vpk_500mV[*src++ & (USBDUXFAST_OOR | USBDUXRAW_MAX)];
+    sampl_t conv = *src++ & (USBDUXFAST_OOR | USBDUXRAW_MAX);
+    
+    *dst++ = lut_raw_to_1Vpk_500mV[conv] - lut_raw_to_sscorr_500mV[prev];
+    prev = conv;
   }
 }
 
-public void convert_raw_750mV(sampl_t *dst, sampl_t *src, int nsamples) {
+public void convert_raw_750mV(sampl_t *dst, sampl_t *src, int nsamples, sampl_t first) {
+  sampl_t prev = first;
+
   if(lut_not_ready)
     populate_conversion_luts();
 
   while(nsamples-- > 0) {
-    *dst++ = lut_raw_to_1Vpk_750mV[*src++ & (USBDUXFAST_OOR | USBDUXRAW_MAX)];
+    sampl_t conv = *src++ & (USBDUXFAST_OOR | USBDUXRAW_MAX);
+	
+    *dst++ = lut_raw_to_1Vpk_750mV[conv] - lut_raw_to_sscorr_750mV[prev];
+    prev = conv;
   }
 }
 
-public void convert_raw_raw(sampl_t *dst, sampl_t *src, int nsamples) {
+public void convert_raw_raw(sampl_t *dst, sampl_t *src, int nsamples, sampl_t first) {
   if(dst == src)
     return;
   memcpy(dst, src, nsamples*sizeof(sampl_t));

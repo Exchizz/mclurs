@@ -1,0 +1,30 @@
+Main box
+--------
+
+ - contains hardware Box unit
+ - 8 sockets for microphone cables
+ - power socket for 12V lead-acid input (11-15V)
+ - waetherproof network socket
+ - 2 weatherproof USB sockets
+ - 3 LEDs (r, g, y)
+
+Power box
+---------
+
+ - contains battery, e.g 48V 30Ah LiPo
+ - contains power convertor / voltage monitor
+ - power socket (output plus charger)
+ - LED (r/g dual colour)
+
+Storage box
+-----------
+
+ - contains USB hard disk
+ - weatherproof USB socket
+
+
+Power connector on main box needs GND, PWR and a monitoring connection
+Power connector on power box needs GND-out, PWR-out, GND-in, CHRG-in, monitor
+
+All connectors IP67 rated.
+

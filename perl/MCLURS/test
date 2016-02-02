@@ -1,0 +1,127 @@
+#!/usr/bin/perl -w
+
+use strict;
+use lib "/home/pi/mclurs/perl";
+
+BEGIN {
+    $ENV{ PERL_ZMQ_BACKEND } = 'ZMQ::LibZMQ3';
+}
+
+use ZMQ;
+use ZMQ::Constants qw(:all);
+
+use MCLURS::Snap;
+
+my $snapshot = "tcp://127.0.0.1:7777/";
+
+my $zmq_ctx = ZMQ::Context->new() or die "Cannot create ZMQ context";
+my $skt = $zmq_ctx->socket(ZMQ_REQ) or die "Cannot create ZMQ REQ socket";
+
+$skt->connect($snapshot);
+
+print STDERR "ZMQ socket is $skt\n";
+
+my $snap = MCLURS::Snap->new(skt => $skt, timeout => 1500, freq => 312500);
+
+print "\n";
+print "Obj";
+dumphash($snap);
+print "\n";
+
+unless( $snap->set(freq => 312500, bufhwm => 0.8) ) {
+    print $snap->error(), "\n";
+}
+
+print "Params";
+dumphash( $snap->params() );
+print "\n";
+
+$snap->setup();
+print "Setup err: ", $snap->error(), "\n" if( $snap->error() );
+print "Setup rpl: ", $snap->reply(), "\n" if( $snap->reply() );
+print "\n";
+
+print "Obj1";
+dumphash($snap);
+print "\n";
+
+$snap->start();
+print "Start err: ", $snap->error(), "\n" if( $snap->error() );
+print "Start rpl: ", $snap->reply(), "\n" if( $snap->reply() );
+print "\n";
+
+$snap->dir('test1');
+print "Dir err: ", $snap->error(), "\n" if( $snap->error() );
+print "Dir rpl: ", $snap->reply(), "\n" if( $snap->reply() );
+print "\n";
+
+my $sn = $snap->snap(start => 0, finish => (1024*1024), path => "testing");
+print "Snap err: ", $snap->error(), "\n" if( $snap->error() );
+print "Snap rpl: ", $snap->reply(), "\n" if( $snap->reply() );
+print "\n";
+$snap->update();
+
+print "Snapshot $sn\n";
+dumphash( scalar $snap->status($sn));
+print "\n";
+
+$snap->clear($sn);
+print "Clear err: ", $snap->error(), "\n" if( $snap->error() );
+print "Clear rpl: ", $snap->reply(), "\n" if( $snap->reply() );
+print "\n";
+
+sleep(2);
+$snap->update();
+
+print "All snapshots\n";
+for my $s ( $snap->status() ) {
+    print "  $s->{name}\n";
+    dumphash($s);
+    print "\n";
+}
+
+sleep(1);
+$snap->clear($sn);
+print "Clear err: ", $snap->error(), "\n" if( $snap->error() );
+print "Clear rpl: ", $snap->reply(), "\n" if( $snap->reply() );
+print "\n";
+
+$snap->stop();
+print "Stop err: ", $snap->error(), "\n" if( $snap->error() );
+print "Stop rpl: ", $snap->reply(), "\n" if( $snap->reply() );
+print "\n";
+
+$snap->quit();
+print $snap->error() if($snap->error());
+print "\n";
+
+print "Obj4";
+dumphash($snap);
+print "\n";
+
+undef $snap;
+$skt->close();
+undef $zmq_ctx;
+
+exit(0);
+
+# ================================================================
+
+sub dumphash {
+    local $_;
+    my ($n,$h) = @_;
+
+    unless($h) {
+	($h,$n) = ($n,4);
+    }
+
+    for $_ ( sort keys %{$h} ) {
+	if( ref($h->{$_}) eq 'HASH' ) {
+	    print " " x $n, "$_: {\n";
+	    dumphash($n+4, $h->{$_});
+	    print " " x ($n+4), "}\n";
+	} else {
+	    print " " x $n, "$_: ", $h->{$_}, "\n";
+	}
+    }
+}

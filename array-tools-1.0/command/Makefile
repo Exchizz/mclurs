@@ -1,6 +1,6 @@
+DOCS	= array-cmd.pdf
 
-build:
-	pod2man --name=array-cmd --section=8a -c "MCLURS ARRAY TOOLS" < array-cmd > array-cmd.8a
+build:  array-cmd.8a
 
 install:
 	install -D array-cmd	${DESTDIR}/usr/sbin
@@ -9,4 +9,20 @@ install:
 	for A in docs/*; do install $A ${DESTDIR}/usr/share/doc/array-cmd; done
 
 clean:
-	rm array-cmd.8a
+	rm -f array-cmd.8a ${DOCS} print.pdf
+
+print.pdf:	array-cmd
+	a2ps -1r -L99 -l198 -o print.ps array-cmd 
+	ps2pdf print.ps
+	rm print.ps
+
+docs:	${DOCS} print.pdf
+.PHONY:	docs
+
+array-cmd.pdf:	array-cmd.8a
+	groff -Tps -man $< > xx.ps
+	ps2pdf xx.ps $@
+	@rm -f xx.ps
+
+array-cmd.8a:	array-cmd
+	pod2man --name=array-cmd --section=8a -c "MCLURS ARRAY TOOLS" < array-cmd > array-cmd.8a

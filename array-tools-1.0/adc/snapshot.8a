@@ -254,6 +254,14 @@ of a snapshot, since a single snapshot must fit within the Comedi
 buffer (currently).  If the window is not given explicitly, it will be
 computed; see the NOTES section below.
 .TP
+.B \-C | \-\-sscorr=\fIcoefficient\fP " (*)"
+is used to correct for the charge storage in the USBDUXfast analogue
+multiplexer at high sampling frequencies.  The \fIcoefficient\fP in
+[-1,+1] measures the correlation between successive samples taken by
+the USBDUXfast.  If non-zero, the given fraction of each sample will
+be subtracted from the following sample to correct for the
+inter-sample leakage.
+.TP
 .B \-B | \-\-bufhwm=\fIfraction\fP " (*)"
 determines the proportion of the streaming buffer available for data.
 The remainder is used as a no-man's land between the newly arriving
@@ -378,6 +386,14 @@ calculated as the duration required to fill \fB\-\-bufhwm\fP times
 \fB\-\-bufsz\fP less one chunk of the streaming buffer at the
 specified sampling frequency \fB\-\-freq\fP.  If the computed duration
 is less than the minimum of 1s, an error is reported.
+.PP
+\fBsnapshot\fP tries to correct for misbehaviour of the USBDUXfast ADC
+at high sampling rates.  Because of the time constants in the channel
+multiplexer circuitry, at full speed there is some leakage into each
+channel from the previously taken sample.  The decorrelation mechanism
+controlled by the \fB\-\-sscorr\fP parameter attempts to deal with
+this by subtracting a given proportion of the previous channel sample
+from the current channel sample during data conversion.
 .SH BUGS
 The command sequence \fBInit\fP \- \fBGo\fP \- \fBHalt\fP \-
 \fBParam\fP \- \fBInit\fP \- \fBGo\fP completes successfully but does

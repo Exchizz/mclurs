@@ -26,7 +26,7 @@ BEGIN {
 #
 # Author:     John Hallam
 # Created:    2013-09-30
-# Last Edit:  2015-07-28
+# Last Edit:  2016-01-12
 
 #=============== OPTIONS, GLOBALS, DEFAULTS ===============
 
@@ -81,7 +81,7 @@ my %gpio = (); 			# Hash comprising GPIO descriptors for actual ADC board, gener
 my @def_gpio	= ( $ENV{GPIO_PATH}, "/sys/class/gpio", );
 my @def_ltc2637 = ( $ENV{LTC2637}, "/dev/i2c-1", );
 my @def_sys1w   = ( $ENV{'1WIRE'}, safe_concat($ENV{TMPDIR}, "/1wire/"), "/tmp/1wire", );
-my @def_snap    = ( $ENV{SNAPSHOT}, safe_concat($ENV{TMPDIR}, "/array-snapshot"), "/tmp/array-snapshot", );
+my @def_snap    = ( $ENV{SNAPSHOT}, "tcp://127.0.0.1:7777", );
 my @def_tmp	= ( $ENV{TMPDIR}, "/tmp", );
 my @def_snapdir = ( $ENV{SNAPDIR}, safe_concat($ENV{TMPDIR}, "/snapshots"), "/tmp/snapshots", );
 my @def_listen  = ( $ENV{LISTEN}, );
@@ -106,7 +106,7 @@ my $owfs	 = "/usr/bin/owfs";
 my $gpio;			# Path to GPIO pin sysfs interface
 my $ltc2637;			# Device for talking to the DAC
 my $sys1w;			# Mountpoint for 1-wire filesystem
-my $snap;			# UNIX named pipe (FIFO) for snapshot process
+my $snap;			# Snapshot process address:  a ZMQ address url
 my $tmp;			# Location for temporary files
 my $snapdir;			# Location where snapshot sample data is dumped
 
@@ -128,23 +128,23 @@ my $mode;
 # The second list element is a function that checks the arg count provided
 
 my %commands = (
-    quit => [ \&quit, check_arg_fn(0), ],
-    trig => [ \&trigger, check_arg_fn(2), ],
-    snap => [ \&snapshot, check_arg_fn(3), ],
-    msnap=> [ \&multisnap, check_arg_fn(4), ],
-    set  => [ \&set, check_arg_fn(2), ],
+    quit => [ \&quit, check_arg_fn(0, 0), ],
+    trig => [ \&trigger, check_arg_fn(2, 2), ],
+    snap => [ \&snapshot, check_arg_fn(3, 3), ],
+    msnap=> [ \&multisnap, check_arg_fn(4, 4), ],
+    set  => [ \&set, check_arg_fn(2, 2), ],
     gain => [ \&channel_gain, check_arg_fn(3, 4), ],
-    chan => [ \&channel_list, check_arg_fn(0), ],
+    chan => [ \&channel_list, check_arg_fn(0, 0), ],
     ping => [ \&pong, check_arg_fn(), ],
-    scan => [ \&rescan1w, check_arg_fn(0), ],
-    time => [ \&mytime, check_arg_fn(0), ],
-    cal  => [ \&calibrate, check_arg_fn(0) ],	# Unimplemented in Vn 1.0
-    hold => [ \&hold_adc, check_arg_fn(0), ],
-    free => [ \&free_adc, check_arg_fn(0), ],
-    led  => [ \&set_led, check_arg_fn(2), ],
-    adc  => [ \&set_adc_board, check_arg_fn(0, 1), ],
+    scan => [ \&rescan1w, check_arg_fn(0, 0), ],
+    time => [ \&mytime, check_arg_fn(0, 0), ],
+    cal  => [ \&calibrate, check_arg_fn(0, 0) ],	# Unimplemented in Vn 1.0
+    hold => [ \&hold_adc, check_arg_fn(0, 0), ],
+    free => [ \&free_adc, check_arg_fn(0, 0), ],
+    led  => [ \&set_led, check_arg_fn(2, 2), ],
+    adc  => [ \&set_adc_board, check_arg_fn(1, 1), ],
     start=> [ \&sys_start, check_arg_fn(0, 1), ],
-    help => [ \&cmd_help, check_arg_fn(0), ],
+    help => [ \&cmd_help, check_arg_fn(0, 0), ],
     );
 
 # The snapshotter program accepts commands given below.  We assume that whenever this script starts there is
@@ -310,7 +310,7 @@ do {
 
     my ($h, $p);
     if( $listen = apply_defaults($listen, @def_listen) ) {
-	if( $listen !~ m|tcp://(\d+\.\d+\.\d+\.\d+\.):(\d+)| ) {
+	if( $listen !~ m|tcp://(\d+\.\d+\.\d+\.\d+):(\d+)| ) {
 	    error("Listen address $listen is not a ZMQ TCP transport URL");
 	} else {
 	    $h = $1;
@@ -350,19 +350,15 @@ do {
     debug(2, "$$: will mount 1-wire filesystem at $sys1w") unless( $errors > $errs );
 };
 
-# Verify the FIFO for talking to the snapshot process
-# It may not exist;  create it if necessary.
+# Verify the address for talking to the snapshot process
+# It must be a tcp or ipc ZMQ URL
 do {
     my $errs = $errors;
 
     $snap = apply_defaults($snap, @def_snap);
-    if( -e $snap ) {		# It exists already
-	error("Not a UNIX named pipe $snap\n") unless( -p $snap );
-    } else {
-	debug(2, "Creating named pipe $snap");
-	error("Unable to create named pipe $snap; mkfifo failed") unless( mkfifo( $snap, 0770 ) );
+    unless($snap =~ m"(tcp://\d+\.\d+\.\d+\.\d+:\d+)|(ipc://[-\w/]+)") {
+	error("Snapshot address $snap is not an acceptable ZMQ address\n");
     }
-
     debug(2, "$$: will use $snap to talk with snapshot process") unless( $errors > $errs );
 };
 
@@ -433,6 +429,19 @@ exit_on_error(2);
 
 debug(1, "Created listening sockets at $listen and at udp://$host:$port");
 
+# Set up ZMQ socket to talk to snapshotter
+my $zmq_snapshot = $zmq_ctx->socket(ZMQ_REQ) 
+    or error("Unable to create ZMQ request socket to talk to snapshotter");;
+
+if( defined($zmq_snapshot) ) {
+    $zmq_snapshot->connect($snap) >= 0
+	or error("Cannot connect to snapshotter at $snap");
+}
+
+exit_on_error(2);
+
+debug(1, "Created snapshotter comms socket at $snap");
+
 # Initialise the GPIO system
 if( my $errstring = init_gpio_pins() ) {
     error("Unable to initialise the sysfs GPIO interface at $gpio: $errstring");
@@ -479,17 +488,6 @@ exit_on_error(2);
 
 debug(1, "1-wire filesystem mounted and initial scan complete");
 
-# Try to open the snapshot pipe
-$SIG{PIPE} = 'IGNORE';
-unless( $SNAP = FileHandle->new($snap, O_WRONLY | O_NONBLOCK) ) { # Fails ENXIO if no listener
-    debug(0, "Cannot open snapshot pipe $snap; is snapshot process running?");
-    error("Cannot access snapshot socket $snap") unless( $!{ENXIO} );
-}
-exit_on_error(2);
-
-debug(1, "Opened the named pipe $snap to snapshot process") if( $SNAP );
-debug(1, "Deferring open of named pipe $snap until snapshot required") unless( $SNAP );
-
 # Catch SIGINT, SIGQUIT and use to generate clean exit
 $SIG{INT}  = \&quit;
 $SIG{QUIT} = \&quit;
@@ -497,28 +495,60 @@ $SIG{QUIT} = \&quit;
 # Main loop: listen for commands, do them
 # Given the ZMQ socket pattern every command must generate a reply:  they return it as a string.
 
-my ($n_dgrams,$n_cmds) = (0,0);
-$zmq_poll->register($socket, ZMQ_POLLIN);
+my ($n_dgrams,$n_udp_dgrams,$n_zmq_dgrams,$n_cmds) = (0,0,0,0);
+
+$zmq_poll->register($socket,  ZMQ_POLLIN);
 $zmq_poll->register($zmq_cmd, ZMQ_POLLIN);
+
+my %callbacks =(
+    $socket  => sub { my $skt = shift;
+		      my $dgram = '';
+		      
+		      # Get a datagram from UDP
+		      return unless( my $from = $skt->recv($dgram, 1024) );
+		      
+		      chomp $dgram;
+		      $dgram =~ s/\s#\s+/ #/g;	# Attach prefix # to following argument, if separated by whitespace
+		      my @dgram = split /\s+/, $dgram;
+		      
+		      debug(2, "Got UDP datagram: '", join("','", @dgram), "' from ", ip_to_string($from));
+		      $n_dgrams++;
+		      $n_udp_dgrams++;
+		      do_command(sub { send_udp_reply($from, $dgram[0], @_); }, @dgram);
+		      return 1;
+    },
+    $zmq_cmd => sub { my $skt = shift;
+		      my $dgram = '';
+
+		      # Get a datagram from ZMQ
+		      return unless( my $msg = $skt->recvmsg(0) );
+		      return unless( $dgram = $msg->data() );
+		      $msg->close();
+		      
+		      chomp $dgram;
+		      $dgram =~ s/\s#\s+/ #/g;	# Attach prefix # to following argument, if separated by whitespace
+		      my @dgram = split /\s+/, $dgram;
+		      
+		      debug(2, "Got ZMQ datagram: '", join("','", @dgram), "' via command socket");
+		      $n_dgrams++;
+		      $n_zmq_dgrams++;
+		      do_command(sub { send_zmq_reply($skt, $dgram[0], @_); }, @dgram);
+		      return 1;
+    },
+    );
 
 debug(2, "Starting main command loop");
 send_pin_output('red', 1);
-my $msg = '';
 MAIN: while($running) {
-    last MAIN unless( my $from = $socket->recv($msg, 1024) );
+    my @ready = map { $_->{socket} } $zmq_poll->poll(1000);
+    next MAIN unless( @ready );
 
-    chomp $msg;
-    $msg =~ s/\s#\s+/ #/g;	# Attach prefix # to following argument, if separated by whitespace
-    my @msg = split /\s+/, $msg;
-
-    debug(2, "Got datagram: '", join("','", @msg), "' from ", ip_to_string($from));
-    $n_dgrams++;
-    my $reply;			# A reply consumer
-
-    $reply = sub { send_udp_reply($from, $msg[0], @_); };
-    do_command($reply, @msg);
+    for my $s ( @ready ) { 
+	my $fn = $callbacks{$s};	
+	last MAIN unless( $fn and &{$fn}($s) );
+    }
 }
-debug(2, "Finishing main command loop, $n_cmds/$n_dgrams executed, ",
+debug(2, "Finishing main command loop, (cmds $n_cmds)/(dgrams $n_dgrams: udp $n_udp_dgrams; zmq $n_zmq_dgrams) executed, ",
       ($errors ? $errors : "no"), " error", ($errors != 1? "s" : ""), " during command execution"
     );
 
@@ -529,13 +559,23 @@ for my $led ( qw(red yellow green) ) {
 
 send_pin_output('enable', 0);
 
-if( $snap_started ) {
-    send_snap_cmd('hold');
-    send_snap_cmd('quit');
+if( $snap_started ) {		# Tell snapshot to quit, wait 3 sec for answer
+    my (@res) = zmq_transaction($zmq_snapshot, 3000, "Quit");
+    debug(2, "Sent quit command to snapshot, got @res");
 }
 
-$SNAP->close() if( $SNAP );
-$socket->close() if( $socket );
+# Tidy up networking
+
+$zmq_poll->unregister($socket->fileno, ZMQ_POLLIN);
+$socket->close();
+$zmq_poll->unregister($zmq_cmd, ZMQ_POLLIN);
+$zmq_cmd->close();
+undef $zmq_poll;
+
+$zmq_snapshot->close();
+
+$zmq_ctx->term();
+
 close_dac();
 send_pin_output('green', 0);
 
@@ -714,7 +754,7 @@ sub zmq_setup {
     my $zmq_cmd = $zmq_ctx->socket(ZMQ_REP) or error("Failed to create the ZMQ command socket");
     return unless($zmq_cmd);
 
-    unless( $zmq_cmd->bind($listen) ) {
+    if( $zmq_cmd->bind($listen) < 0 ) {
 	error("Cannot bind the ZMQ command socket to the address $listen");
 	return;
     }
@@ -934,7 +974,8 @@ sub ip_to_string {
 
 # Send a datagram on the UDP command socket
 sub send_udp_reply {
-    my ($to,$who,$msg) = @_;
+    my ($to,$who,@msg) = @_;
+    my $msg = join('', @msg);
 
     my $ret = $socket->send($msg, 0, $to);
 
@@ -951,8 +992,8 @@ sub send_udp_reply {
 
 # Send a datagram on the ZMQ command socket
 sub send_zmq_reply {
-    my ($to,$who,$data) = @_;
-    my $msg = ZMQ::Message->new($data);
+    my ($to,$who,@data) = @_;
+    my $msg = ZMQ::Message->new(join('', @data));
 
     my $ret = $to->send($msg, $msg->size());
 
@@ -961,10 +1002,49 @@ sub send_zmq_reply {
 	debug(0, "Error sending $who reply to $h: $!");
 	return;
     } else {
-	chomp $msg;
-	debug(2, "Sent $who reply '$msg'");
+	my $str = $msg->data();
+	chomp $str;
+	debug(2, "Sent $who reply '$str'");
 	return $ret;
     }
+}
+
+# Send a command message to a ZMQ socket and wait for a reply;  for talking to SNAPSHOT
+sub zmq_transaction {
+    my ($skt,$timeout,$cmd,$data) = @_;
+    my $msg = ZMQ::Message->new( $cmd . " " . $data );
+
+    unless($msg) {
+	return ( undef, "NO: $cmd -- local error" );
+    }
+
+    $skt->send($msg, $msg->size());
+    debug(2, "Sent '$data' to ZMQ socket\n");
+
+    if( $timeout > 0 ) {
+	my $p;
+
+	unless( $p = ZMQ::Poller->new() ) {
+	    return ( undef, "NO: $cmd -- local poll error" );
+	}
+	$p->register($skt, ZMQ_POLLIN);
+	unless( $p->poll($timeout) ) {
+	    return ( undef, "NO: $cmd -- local timeout" );
+	}
+    }
+    
+    $msg = $skt->recvmsg(0);
+    $data = $msg && $msg->data();
+    if($data) {
+	debug(2, "Recv '$data' from ZMQ socket\n");
+    } else {
+	debug(2, "Recv returns undef from ZMQ socket\n");
+    }
+
+    my $val;
+    $val = 1 if($data =~ m/^OK/);
+    $val = 0 if($data =~ m/^NO:/);
+    return ($val, $data);
 }
 
 ## 1-wire filesystem utilities, interact with owfs, etc.
@@ -1285,6 +1365,47 @@ sub do_snapshot {
 }
 
 ### Command subroutines for this program
+
+# Find, verify and execute a command
+# Called with the reply-consumer, the first word and the argument list
+sub do_command {
+    my $reply = shift;
+    my $name = shift;
+
+    if( my $cmd = $commands{$name} ) {
+	unless( ref($cmd->[0]) =~ m/code/i ) {
+	    error("Command $name has unexpected hash return $cmd\n");
+	    &{$reply}("NO: ", $name, " -- internal error");
+	    return;
+	}
+	my $na = scalar(@_);
+	debug(2, "Check argument count for command $name ($na given, ", &{$cmd->[1]}(), " expected)");
+	unless( &{$cmd->[1]}($na) ) {
+	    error("Command $name has wrong argument count ($na)\n");
+	    &{$reply}("NO: ", $name, " -- wrong number ($na) of arguments given\n");
+	    return;
+	}
+	debug(2, "Executing command ", $name, "(", join(',', @_), ")");
+	my ($s,$m) = &{$cmd->[0]}( @_ );
+	if( not($s) ) {
+	    &{$reply}("NO: ", $name, " -- ", $m);
+	    error("Command $name(", join(' ', @_), ") failed: $m\n");
+	} else {
+	    my $r = "OK $name";
+	    if($m) {
+		chomp $m;
+		$r .= " " . $m;
+	    }
+	    &{$reply}($r);
+	    $n_cmds++;
+	    $r = $m? " -- $m" : "";
+	    debug(1, "Command $name succeeded$r");
+	}
+    } else {
+	&{$reply}("NO: $name -- $name(" . join(' ', @_) . ") is not recognised\n");
+	error("Unknown command message: $name(", join(' ', @_), ")\n");
+    }
+}
 
 # Quit:  stop main loop and trigger clean up
 sub quit {
@@ -1676,7 +1797,7 @@ sub channel_gain {
 
 # Send back a 'pong' response to a 'ping', for testing
 sub pong {
-    my $msg  = "pong " . join(' ', @_) . "\n";
+    my $msg  = join(' ', @_) . "\n";
 
     return 1, $msg;
 }
@@ -1754,7 +1875,8 @@ sub lte {
 #
 sub sys_start {
     my $run = $_[0] && $_[0] eq 'run';
-
+    my @res = ();
+    
     send_pin_output('red', 0);
     if( not $run ) {    # Make sure everything is set up ready for capture
 
@@ -1775,8 +1897,9 @@ sub sys_start {
 
 	# Now initialise the snapshotter: tell it to start ADC capture (blocked on external trigger just now)
 	debug(2, "Start: checking snapshotter status");
-	unless( send_snap_cmd('rate', NCHANNELS*$freq) and send_snap_cmd('start') ) {
-	    error("Unable to talk to snapshotter");
+	@res = zmq_transaction($zmq_snapshot, 3000, "? ping");
+	unless( $res[0] ) {
+	    error("Unable to talk to snapshotter: $res[1]");
 	    return 0, "snapshotter comms failure\n";
 	}
 	$snap_started = 1;	# Assume snapshotter is running and ready
@@ -1873,45 +1996,6 @@ cal - calibration sequence, currently not implemented
 END
     return 1, $txt;
 }
-
-# Find, verify and execute a command
-# Called with the reply-consumer, the first word and the argument list
-sub do_command {
-    my $reply = shift;
-    my $name = shift;
-
-    if( my $cmd = $commands{$name} ) {
-	unless( ref($cmd->[0]) =~ m/code/i ) {
-	    error("Command $name has unexpected hash return $cmd\n");
-	    &{$reply}("NO: ", $name, " -- internal error");
-	    return;
-	}
-	my $na = scalar(@_);
-	debug(2, "Check argument count for command $name ($na given, ", &{$cmd->[1]}(), " expected)");
-	unless( &{$cmd->[1]}($na) ) {
-	    error("Command $name has wrong argument count ($na)\n");
-	    &{$reply}("NO: ", $name, " -- wrong number ($na) of arguments given\n");
-	    return;
-	}
-	debug(2, "Executing command ", $name, "(", join(',', @_), ")");
-	my ($s,$m) = &{$cmd->[0]}( @_ );
-	if( not($s) ) {
-	    &{$reply}("NO: ", $name, " -- ", $m);
-	    error("Command $name(", join(' ', @_), ") failed: $m\n");
-	} else {
-	    my $r = "OK $name";
-	    $r .= $m if($m);
-	    &{$reply}($r);
-	    $n_cmds++;
-	    $r = $m? "-- $m" : "";
-	    debug(1, "Command $name succeeded$r");
-	}
-    } else {
-	&{$reply}("NO: $name(", join(' ', @_), ") -- not recognised\n");
-	error("Unknown command message: $name(", join(' ', @_), ")\n");
-    }
-}
-
 
 # =============== DATA/DOCUMENTATION ===============
 

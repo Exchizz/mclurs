@@ -66,6 +66,7 @@ struct _adc {
   int         a_bufsz_samples;          /* Size of the buffer in samples */
   sampl_t    *a_comedi_ring;            /* Ring buffer for the device */
   double      a_totfrequency;           /* Total sampling frequency */
+  double      a_ssc_coeff;		/* Successive sample correlation, passed to LUT module for table generation */
   int         a_intersample_ns;         /* Time between samples [ns] */
   int         a_range;                  /* Current conversion range */
   int         a_raw;                    /* Don't convert the data, deliver it raw */
@@ -235,6 +236,15 @@ public void adc_set_raw_mode(adc a, int on) {
 }
 
 /*
+ * Set ADC successive-sample correlation coefficient.
+ */
+
+public void adc_set_ssc_coeff(adc a, double coeff) {
+  a->a_ssc_coeff = coeff;
+  LOG(READER, 2, "ADC set SSC coeff to %g\n", coeff);
+}
+
+/*
  * Initialise the ADC structure for data capture.
  */
 
@@ -327,8 +337,9 @@ public int adc_init(adc a, strbuf e) {
   a->a_comedi_ring = map;
   LOG(READER, 2, "Mapped Comedi Buffer, size %d[B] from fd %d\n", a->a_bufsz_bytes, a->a_fd);
 
-  /* Initialise the look-up tables for data conversion */
-  populate_conversion_luts();
+  /* Set SSC coefficient and initialise the look-up tables for data conversion */
+  lut_set_ssc_coeff(a->a_ssc_coeff);
+  LOG(READER, 2, "Initialised conversion LUTs with SSC coefficient %g\n", a->a_ssc_coeff);
 
   /* Initialise the sample position indices */
   a->a_head = 0;
