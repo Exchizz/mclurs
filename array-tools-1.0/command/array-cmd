@@ -22,11 +22,14 @@ BEGIN {
     eval( "use UUID;" );
 }
 
+# Module to handle communication with the new snapshotter
+use MCLURS::Snap;
+
 # Command listener daemon for network commands in the recording array
 #
 # Author:     John Hallam
 # Created:    2013-09-30
-# Last Edit:  2016-01-12
+# Last Edit:  2016-02-02
 
 #=============== OPTIONS, GLOBALS, DEFAULTS ===============
 
@@ -193,7 +196,6 @@ my $adc_board_state = 0;
 
 # File handles
 my $LTC2637;			#  for the LTC2637 DAC
-my $SNAP;			#  for the named pipe to snapshot
 
 #=============== PROCESS COMMAND LINE ARGUMENTS ===============
 
@@ -438,6 +440,17 @@ if( defined($zmq_snapshot) ) {
 	or error("Cannot connect to snapshotter at $snap");
 }
 
+# Snapshotter Communication Object
+my $SNAP = MCLURS::Snap->new( skt => $zmq_snapshot, timeout => 3000 );
+
+unless($SNAP) {
+    error("Unable to create and initialise the Snap object");
+}
+
+if( my $e = $SNAP->error() ) {
+    error("Cannot initialise the Snap object: $e");
+}
+
 exit_on_error(2);
 
 debug(1, "Created snapshotter comms socket at $snap");
@@ -540,7 +553,10 @@ my %callbacks =(
 debug(2, "Starting main command loop");
 send_pin_output('red', 1);
 MAIN: while($running) {
-    my @ready = map { $_->{socket} } $zmq_poll->poll(1000);
+    my @ready = map { $_->{socket} } $zmq_poll->poll(5000);
+    unless( $SNAP->update() ) {
+	error("Problem with Snap status update: " . $SNAP->error());
+    }
     next MAIN unless( @ready );
 
     for my $s ( @ready ) { 
