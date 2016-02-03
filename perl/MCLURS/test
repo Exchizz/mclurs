@@ -1,5 +1,7 @@
 #!/usr/bin/perl -w
 
+# TEST PROGRAM for Snap module
+
 use strict;
 #use lib "/home/pi/mclurs/perl";
 
