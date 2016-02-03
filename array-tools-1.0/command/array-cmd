@@ -550,15 +550,33 @@ my %callbacks =(
     },
     );
 
+debug(2, "Probing the snapshotter");
+unless( $SNAP->probe() ) {
+    error("Cannot talk to snapshotter: " . $SNAP->error() ) unless( $SNAP->busy() );
+}
+
 debug(2, "Starting main command loop");
 send_pin_output('red', 1);
+
 MAIN: while($running) {
+
+    # Wait for incoming messages
     my @ready = map { $_->{socket} } $zmq_poll->poll(5000);
-    unless( $SNAP->probe() ) {
-	error("Problem with Snap status update: " . $SNAP->error());
+
+    # Check snapshotter is available and update status
+    unless( $SNAP->update() ) {
+	if( $SNAP->busy() ) {
+	    $SNAP->probe();
+	    debug(2, "Snapshot probe loop cycled");
+	} else {
+	    error("Problem with Snap status update: " . $SNAP->error());
+	}
     }
+
+    # Loop if no messages
     next MAIN unless( @ready );
 
+    # Otherwise, deal with messages that just arrived
     for my $s ( @ready ) { 
 	my $fn = $callbacks{$s};	
 	last MAIN unless( $fn and &{$fn}($s) );
