@@ -36,6 +36,15 @@ print "Params";
 dumphash( $snap->params() );
 print "\n";
 
+my $n = 0;
+until( $snap->probe() ) {
+    exit(1) unless( $snap->busy() );
+    sleep 5;
+    $n++;
+    print STDERR "Probe loop cycle $n finished\n";
+}
+
+
 $snap->setup();
 print "Setup err: ", $snap->error(), "\n" if( $snap->error() );
 print "Setup rpl: ", $snap->reply(), "\n" if( $snap->reply() );
