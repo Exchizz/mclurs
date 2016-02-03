@@ -120,7 +120,8 @@ my ($listen, $port, $host);	# Network address/interface elements
 my $buuid;
 
 # Sample rate
-my $freq;
+my $freq;			# per channel
+my $rate;			# total ADC rate
 
 # Operation mode (master, slave, single)
 my $mode;
@@ -149,24 +150,6 @@ my %commands = (
     start=> [ \&sys_start, check_arg_fn(0, 1), ],
     help => [ \&cmd_help, check_arg_fn(0, 0), ],
     );
-
-# The snapshotter program accepts commands given below.  We assume that whenever this script starts there is
-# a clean snapshotter process waiting for commands from it:  it is the job of the daemontools/runit logic to
-# ensure that is so.  The $snap_started variable keeps track of whether we have told the current snapshotter
-# to start yet, since the snapshotter doesn't like duplicate commands.
-
-# Commands to send to the snapshotter
-my %snap_cmds = (		# See snapshotter C++ code for more details
-    quit => 'exit',				# Cause snapshotter to exit
-    snap => 'snapshot %Lu %lu %s',		# Take a simple single snapshot <from,U64> <to,U64> <path>
-    msnap=> 'serial_snapshot %Lu %lu %lu %s',	# Take snapshot sequence <start,U64> <length,U32> <count,U32> <path>
-    mstop=> 'serial_stop',			# Stop snapshot sequence thread
-    hold => 'stop_rec',				# Stop ADC conversion process
-    start=> 'start_rec',			# Begin ADC conversion (trigger permitting)
-    rate => 'set_sr %d',			# Set sample rate <sr[Hz]> (default and max 3[MHz])
-    );
-
-my $snap_started = 0;		# Is the snapshotter capturing ('start' sent, not 'held')
 
 # Parameter store for parameters set using 'set' command
 my %params;
@@ -236,6 +219,7 @@ do {
 	error("Sample rate '$freq' not a number or zero");
     } else {
 	$freq = $f;
+	$rate = $freq * NCHANNELS;
     }
     debug(2, "$$: Sampling rate is $freq Hz") unless( $errors > $errs );
 };
@@ -593,10 +577,12 @@ for my $led ( qw(red yellow green) ) {
 
 send_pin_output('enable', 0);
 
-if( $snap_started ) {		# Tell snapshot to quit, wait 3 sec for answer
-    my (@res) = zmq_transaction($zmq_snapshot, 3000, "Quit");
-    debug(2, "Sent quit command to snapshot, got @res");
-}
+# Tell snapshot to quit
+do { my $res = $SNAP->quit();
+     $res = $res? 'ok' : $SNAP->error();
+     debug(2, "Sent quit command to snapshot, got $res");
+     undef $SNAP;
+};
 
 # Tidy up networking
 
@@ -1295,23 +1281,23 @@ sub new_uuid {
 
 # Send snap command over the named pipe
 sub send_snap_cmd {
-    unless($SNAP) {
-	debug(2, "Opening the named pipe $snap to write a command");
-	unless( $SNAP = FileHandle->new($snap, O_WRONLY | O_NONBLOCK) ) {
-	    error("Cannot access snapshot socket $snap");
-	    return undef;
-	}
-	$SNAP->autoflush(1);	# Appears not to work...
-	debug(2, "Named pipe $snap is now open");
-    }
-    my $type = shift;
-    return 0 unless( defined( $snap_cmds{$type} ) );
-    my $fmt = $snap_cmds{$type};
-    my $cmd = sprintf($fmt, @_);
-    debug(3, "sending command '", $cmd, "' to snapshotter");
-    print $SNAP $cmd, "\n";
-    $SNAP->flush;
-    debug(3, "command sent to snapshotter");
+    # unless($SNAP) {
+    # 	debug(2, "Opening the named pipe $snap to write a command");
+    # 	unless( $SNAP = FileHandle->new($snap, O_WRONLY | O_NONBLOCK) ) {
+    # 	    error("Cannot access snapshot socket $snap");
+    # 	    return undef;
+    # 	}
+    # 	$SNAP->autoflush(1);	# Appears not to work...
+    # 	debug(2, "Named pipe $snap is now open");
+    # }
+    # my $type = shift;
+    # return 0 unless( defined( $snap_cmds{$type} ) );
+    # my $fmt = $snap_cmds{$type};
+    # my $cmd = sprintf($fmt, @_);
+    # debug(3, "sending command '", $cmd, "' to snapshotter");
+    # print $SNAP $cmd, "\n";
+    # $SNAP->flush;
+    # debug(3, "command sent to snapshotter");
     return 1;
 }
 
@@ -1356,7 +1342,7 @@ sub do_snapshot {
     my $sndir = $tmp . "/" . $s_uuid;
     unless( mkdir($sndir) ) {
 	error("Cannot create snapshot directory $sndir");
-	return 0, "snapshot $m_uuid server dir error: $!\n";
+	return (0, "snapshot $m_uuid server dir error: $!\n");
     }
     # Create the various file paths for the snapshot components
     my $snpath   = $sndir . "/vars.sh";
@@ -1382,20 +1368,20 @@ sub do_snapshot {
 			))
 	) {
 	error("Cannot create snapshot variables $snpath");
-	return 0, "snapshot $m_uuid server varfile error: $!\n";
+	return (0, "snapshot $m_uuid server varfile error: $!\n");
     }
     # Write out the FLAC metadata file
     unless( spurt_file( $metadata, channel_meta( BOX => $buuid, FIRST => $first, CTIME => time(), FREQ => $freq, ) ) ) {
 	error("Cannot create metadata file $metadata");
-	return 0, "snapshot $m_uuid metadata error: $!\n";
+	return (0, "snapshot $m_uuid metadata error: $!\n");
     }
     # Send command to snapshot process
     unless( send_snap_cmd( 'msnap', $first, $length, $count, $samples ) ) {
 	error("Cannot initiate $m_uuid");
-	return 0, "snapshot $m_uuid comms error: $!\n";
+	return (0, "snapshot $m_uuid comms error: $!\n");
     }
     # Reply to master
-    return 1, "snapshot $m_uuid in progress\n";
+    return (1, "snapshot $m_uuid in progress\n");
 }
 
 ### Command subroutines for this program
@@ -1453,7 +1439,7 @@ sub unimplemented {
     my $msg = $func . '(' . join(' ', @_) . ") is not implemented yet";
 
     debug(0, $msg);
-    return 0, $msg . "\n";
+    return (0, $msg . "\n");
 }
 
 # Set/clear one of the three LEDs
@@ -1463,19 +1449,19 @@ sub set_led {
     unless( $led =~ m/red|green|yellow/ ) {
 	my $msg = "Attempt to change unrecognised LED '$led' to '$state'\n";
 	error($msg);
-	return 0, $msg;
+	return (0, $msg);
     }
     unless( $state =~ m/on|off/ ) {
 	my $msg = "Change '$led' to illegal '$state' (on/off only are allowed)\n";
 	error($msg);
-	return 0, $msg;
+	return (0, $msg);
     }
     unless( send_pin_output($led,  ($state eq 'on' ? 1 : 0 )) ) {
 	my $msg = "Change '$led' to '$state' failed";
 	error($msg);
-	return 0, $msg . "\n";
+	return (0, $msg . "\n");
     }
-    return 1, "'$led' is now '$state'";
+    return (1, "'$led' is now '$state'");
 }
 
 # Stop the ADC by driving the trigger line ('hold') true
@@ -1483,10 +1469,10 @@ sub hold_adc {
     unless( send_pin_output('hold', 1) ) {
 	my $msg = "Hold ADC assertion failed";
 	error($msg);
-	return 0, $msg . "\n";
+	return (0, $msg . "\n");
     }
     my $v = find_pin_value('sense');
-    return 1, "Trigger hold asserted (read $v)\n";
+    return (1, "Trigger hold asserted (read $v)\n");
 }
 
 # Free the ADC by releasing the trigger line drive
@@ -1494,10 +1480,10 @@ sub free_adc {
     unless( send_pin_output('hold', 0) ) {
 	my $msg = "Hold ADC release failed";
 	error($msg);
-	return 0, $msg . "\n";
+	return (0, $msg . "\n");
     }
     my $v = find_pin_value('sense');
-    return 1, "Trigger release asserted (read $v)\n";
+    return (1, "Trigger release asserted (read $v)\n");
 }
 
 # Turn the analogue board on/off
@@ -1511,36 +1497,36 @@ sub set_adc_board {
 	unless( $val == $adc_board_state ) {
 	    my $msg = "Recorded ADC Board state " . ($adc_board_state? 'ON' : 'OFF') . " inconsistent with enable pin state " . ($val? 'ON' : 'OFF');
 	    error($msg);
-	    return 0, $msg . "\n";
+	    return (0, $msg . "\n");
 	}	
 	my $msg = "ADC Board is currently " . ($val? "on" : "off");
-	return 1, $msg . "\n";
+	return (1, $msg . "\n");
     }
     unless( $state =~ m/on|off/ ) {
 	my $msg = "Set ADC to illegal '$state' (on/off only are allowed)\n";
 	error($msg);
-	return 0, $msg;
+	return (0, $msg);
     }
     my $val = $state eq 'on' ? 1 : 0;
     unless( send_pin_output('enable', $val) ) {	 # Change the state of the analogue board PSU
 	my $msg = "ADC enable $state failed";
 	error($msg);
-	return 0, $msg . "\n";
+	return (0, $msg . "\n");
     }
     $adc_board_state = $val;
     if( $val == 1 ) {				 # Re-initialise the DAC to saved gain values
 	unless( start_dac() && gain_reset_in_dac() ) {
 	    my $msg = "ADC turn on failed: unable to reset DAC gains";
 	    error($msg);
-	    return 0, $msg . "\n";
+	    return (0, $msg . "\n");
 	}
 	unless( gain_set_to_saved() ) {
 	    my $msg = "ADC turn on failed: unable to restore DAC gain settings";
 	    error($msg);
-	    return 0, $msg . "\n";
+	    return (0, $msg . "\n");
 	}
     }
-    return 1, "ADC Board turned $state\n";
+    return (1, "ADC Board turned $state\n");
 }
 
 # Return the current local time
@@ -1548,7 +1534,7 @@ sub mytime {
     my $now = time();
     my $msg = join(' ', @_, sprintf("Time: %.9f\n", $now));
 
-    return 1, $msg;
+    return (1, $msg);
 }
 
 # Instruct the snapshot process to make a data snapshot
@@ -1563,18 +1549,18 @@ sub trigger {
 	my $t = POSIX::strtod($trigger);
 	if( $! ) {
 	    error("Snapshot start time illegal");
-	    return 0, "snapshot start '$trigger' illegal: $!\n";
+	    return (0, "snapshot start '$trigger' illegal: $!\n");
 	}
 	$trigger = $t - $offset;
     };
     my ($now,$begin,$end) = ( time() - $offset, ($trigger - ( $params{pre_T}/1000.0 || 1 )), ($trigger + ( $params{pst_T}/1000.0 || 1 )) );
     if( $begin <= ($now - RINGBUFLENGTH/1000.0) ) { # Snapshot start falls outside the ring buffer
 	error("Snapshot command $m_uuid misses ringbuffer\n");
-	return 0, "snapshot command $m_uuid misses ringbuffer\n";
+	return (0, "snapshot command $m_uuid misses ringbuffer\n");
     }
     # Convert to sample indices
-    my $first = int($begin * $freq + 0.5);
-    my $length = int($freq*($end - $begin) + 0.5);
+    my $first = int($begin * $rate + 0.5);
+    my $length = int($rate*($end - $begin) + 0.5);
     return do_snapshot($first, $length, 1, $m_uuid);
 }
 
@@ -1593,7 +1579,7 @@ sub snapshot {
 	    my $b = POSIX::strtoul($1);
 	    if( $! ) {
 		error("Snapshot start time illegal");
-		return 0, "snapshot start '$begin' illegal: $!\n";
+		return (0, "snapshot start '$begin' illegal: $!\n");
 	    }
 	    # Check that the first sample is within the ring buffer NOT DONE YET
 	    $first = $b;
@@ -1601,15 +1587,15 @@ sub snapshot {
 	    my $b = POSIX::strtod($begin);
 	    if( $! ) {
 		error("Snapshot start time illegal");
-		return 0, "snapshot start '$begin' illegal: $!\n";
+		return (0, "snapshot start '$begin' illegal: $!\n");
 	    }
 	    $begin = $b - $offset;
 	    if( $begin <= ($now - RINGBUFLENGTH/1000.0) ) { # Snapshot start falls outside the ring buffer
 		error("Snapshot command $m_uuid misses ringbuffer\n");
-		return 0, "snapshot command $m_uuid misses ringbuffer\n";
+		return (0, "snapshot command $m_uuid misses ringbuffer\n");
 	    }
 	    # Convert to sample indices
-	    $first = int($begin * $freq + 0.5);
+	    $first = int($begin * $rate + 0.5);
 	}
     };
     do {
@@ -1618,26 +1604,26 @@ sub snapshot {
 	    my $e = POSIX::strtoul($1);
 	    if( $! ) {
 		error("Snapshot finish time illegal");
-		return 0, "snapshot finish '$end' illegal: $!\n";
+		return (0, "snapshot finish '$end' illegal: $!\n");
 	    }
 	    $length = $e - $first;
-	    if( $length > $freq*MAXSNAPSHOT/1000 ) {
+	    if( $length > $rate*MAXSNAPSHOT/1000 ) {
 		error("Snapshot command $m_uuid is too long ($length samples)\n");
-		return 0, "snapshot command $m_uuid is too long ($length samples)\n";		
+		return (0, "snapshot command $m_uuid is too long ($length samples)\n");
 	    }
 	} else {						 # Wall-clock-based finish
 	    my $e = POSIX::strtod($end);
 	    if( $! ) {
 		error("Snapshot finish time illegal");
-		return 0, "snapshot finish '$end' illegal: $!\n";
+		return (0, "snapshot finish '$end' illegal: $!\n");
 	    }
 	    $end = $e - $offset;
 	    if( $end - $begin > MAXSNAPSHOT/1000.0 ) {
 		my $d = $end - $begin;
 		error("Snapshot command $m_uuid is too long ($d seconds)\n");
-		return 0, "snapshot command $m_uuid is too long ($d seconds)\n";		
+		return (0, "snapshot command $m_uuid is too long ($d seconds)\n");
 	    }
-	    $length = int($freq*($end - $begin) + 0.5);
+	    $length = int($rate*($end - $begin) + 0.5);
 	}
     };
     return do_snapshot($first, $length, 1, $m_uuid);
@@ -1658,7 +1644,7 @@ sub multisnap {
 	    my $b = POSIX::strtoul($1);
 	    if( $! ) {
 		error("MSnapshot start time illegal");
-		return 0, "snapshot start '$begin' illegal: $!\n";
+		return (0, "snapshot start '$begin' illegal: $!\n");
 	    }
 	    # Check that the first sample is within the ring buffer NOT DONE YET
 	    $first = $b;
@@ -1666,15 +1652,15 @@ sub multisnap {
 	    my $b = POSIX::strtod($begin);
 	    if( $! ) {
 		error("MSnapshot start time illegal");
-		return 0, "snapshot start '$begin' illegal: $!\n";
+		return (0, "snapshot start '$begin' illegal: $!\n");
 	    }
 	    $begin = $b - $offset;
 	    if( $begin <= ($now - RINGBUFLENGTH/1000.0) ) { # Snapshot start falls outside the ring buffer
 		error("MSnapshot command $m_uuid misses ringbuffer\n");
-		return 0, "snapshot command $m_uuid misses ringbuffer\n";
+		return (0, "snapshot command $m_uuid misses ringbuffer\n");
 	    }
 	    # Convert to sample indices
-	    $first = int($begin * $freq + 0.5);
+	    $first = int($begin * $rate + 0.5);
 	}
     };
     do {
@@ -1683,24 +1669,24 @@ sub multisnap {
 	    my $d = POSIX::strtoul($1);
 	    if( $! ) {
 		error("MSnapshot duration illegal");
-		return 0, "snapshot duration '$duration' illegal: $!\n";
+		return (0, "snapshot duration '$duration' illegal: $!\n");
 	    }
 	    $length = $d;
-	    if( $length > $freq*MAXSNAPSHOT/1000 ) {
+	    if( $length > $rate*MAXSNAPSHOT/1000 ) {
 		error("MSnapshot command $m_uuid is too long ($length samples)\n");
-		return 0, "snapshot command $m_uuid is too long ($length samples)\n";		
+		return (0, "snapshot command $m_uuid is too long ($length samples)\n");
 	    }
 	} else {						 # Wall-clock-based duration
 	    my $d = POSIX::strtod($duration);
 	    if( $! ) {
 		error("MSnapshot duration '$duration' illegal");
-		return 0, "snapshot duration '$duration' illegal: $!\n";
+		return (0, "snapshot duration '$duration' illegal: $!\n");
 	    }
 	    if( $d > MAXSNAPSHOT/1000.0 ) {
 		error("MSnapshot command $m_uuid is too long ($d seconds)\n");
-		return 0, "snapshot command $m_uuid is too long ($d seconds)\n";		
+		return (0, "snapshot command $m_uuid is too long ($d seconds)\n");
 	    }
-	    $length = int($freq*$d + 0.5);
+	    $length = int($rate*$d + 0.5);
 	}
     };
     do {
@@ -1710,7 +1696,7 @@ sub multisnap {
     	$c = POSIX::strtol($c);					 # Always a number!
     	if( $! ) {
      	    error("MSnapshot repeat count '$count' illegal");
-    	    return 0, "snapshot repeat count '$count' illegal: $!\n";
+    	    return (0, "snapshot repeat count '$count' illegal: $!\n");
     	}
 	$count = $c;
     };
@@ -1724,7 +1710,7 @@ sub rescan1w {
 
     @rescan_channels = scan_1w( $sys1w );
     if( $errs > $errors ) {
-	return 0, "rescan of 1-wire filesystem failed";
+	return (0, "rescan of 1-wire filesystem failed");
     }
     # Copy the gains across from the old channel descriptors
     for my $i ( 0..NCHANNELS-1 ) {
@@ -1739,9 +1725,9 @@ sub rescan1w {
     @channels = @rescan_channels;
     # Now reinitialise the ADC hardware settings, even for unchanged channels
     if( gain_set_to_saved() ) {
-	return 1, "1-wire rescan completed\n";
+	return (1, "1-wire rescan completed\n");
     } else {
-	return 0, "gain reset error: $!\n";
+	return (0, "gain reset error: $!\n");
     }
 }
 
@@ -1753,12 +1739,12 @@ sub channel_gain {
 	unless( $chan >= 1 && $chan <= NCHANNELS ) {
 	    my $msg = "Attempt to set gain on channel $chan:  out of range\n";
 	    error( $msg );
-	    return 0, $msg;
+	    return (0, $msg);
 	}
 	if( not defined($channels[$chan-1]) ) {
 	    my $msg = "Attempt to set gain of channel $chan:  disconnected\n";
 	    error( $msg );
-	    return 0, $msg;
+	    return (0, $msg);
 	}
     }
     if( $gain && $gain !~ m/^(hi(gh)?|low?|hp|ap|on|off)$/ ) {
@@ -1767,19 +1753,19 @@ sub channel_gain {
 	if( $! ) {
 	    my $msg = "Desired set gain '$gain' of channel $chan illegal";
 	    error( $msg );
-	    return 0, $msg . ": $!\n";
+	    return (0, $msg . ": $!\n");
 	}
 	$gain = $g;
 	if( $gain < 0 || $gain > 255 ) {
 	    my $msg = "Desired set gain '$gain' of channel $chan out of range";
 	    error( $msg );
-	    return 0, $msg . "\n";
+	    return (0, $msg . "\n");
 	}
     } else {
 	if( $filt ) {
 	    my $msg = "Missing gain argument with defined filter argument '$filt''";
 	    error( $msg );
-	    return 0, $msg . "\n";
+	    return (0, $msg . "\n");
 	}
 	($gain,$filt) = (undef,$gain);
     };
@@ -1788,7 +1774,7 @@ sub channel_gain {
 	unless( $filt =~ m/^(hi(gh)?|low?|hp|ap|on|off)$/ ) {
 	    my $msg = "Unknown filter specification '$filt' for channel '$chan'";
 	    error( $msg );
-	    return 0, $msg . "\n";
+	    return (0, $msg . "\n");
 	}
 	$filt = 'hp' if( $filt =~ m/on|hi(gh)?/ );
 	$filt = 'ap' if( $filt =~ m/off|low?/ );
@@ -1796,7 +1782,7 @@ sub channel_gain {
 	    if( $filt ne 'hp' ) {
 		my $msg = "Cannot turn off high-pass filter in default ADC board revision";
 		error( $msg );
-		return 0, $msg . "\n";
+		return (0, $msg . "\n");
 	    }
 	}
     };
@@ -1810,11 +1796,11 @@ sub channel_gain {
 	unless( send_gain_to_dac($chan-1, $gain, $filt) ) {
 	    my $msg = "Unable to set gain of channel $chan: hardware error";
 	    error( $msg );
-	    return 0, $msg . ": $!\n";
+	    return (0, $msg . ": $!\n");
 	}
 	my $msg = sprintf("Gain set to %s on channel %d", $gainval, $chan);
 	debug(1, $msg);
-	return 1, $msg . "\n";
+	return (1, $msg . "\n");
     } else {
 	my $m = '';
 	for my $chan ( 1..NCHANNELS ) {
@@ -1825,7 +1811,7 @@ sub channel_gain {
 	    }
 	}
 	$m ||= sprintf("Gain set to %s on all active channels", $gainval);
-	return 1, $m . "\n";
+	return (1, $m . "\n");
     }
 }
 
@@ -1833,7 +1819,7 @@ sub channel_gain {
 sub pong {
     my $msg  = join(' ', @_) . "\n";
 
-    return 1, $msg;
+    return (1, $msg);
 }
 
 # Send back a list of connected channels
@@ -1848,7 +1834,7 @@ sub channel_list {
     }
     $msg .= "end channel list\n";
 
-    return 1, $msg;
+    return (1, $msg);
 }
 
 # Set parameters for snapshots etc
@@ -1862,22 +1848,22 @@ sub set {
 	if( $! ) {
 	    $msg = "parameter '$key' given illegal '$value'";
 	    error( $msg );
-	    return 0, $msg . "\n";
+	    return (0, $msg . "\n");
 	}
     };
     if( my $tests = $set_params{$key} ) {
 	for my $s ( @{$tests} ) {
 	    unless( &{$s}($value) ) {
 		$msg = "Parameter value for $key fails tests\n";
-		return 0, $msg;
+		return (0, $msg);
 	    } 
 	}
 	$params{$key} = $value;
 	debug(2, "Set parameter '$key' to '$value'");
-	return 1, "parameter '$key' set to '$value'\n";
+	return (1, "parameter '$key' set to '$value'\n");
     } else {
 	$msg = "Unrecognised parameter $key\n";
-	return 0, $msg;
+	return (0, $msg);
     }
 }
 
@@ -1907,6 +1893,8 @@ sub lte {
 # associated snapshotter is shut down.  A snapshotter that crashes is not restarted,
 # so writes to the pipe will fail if that is the case.
 #
+my $snap_started = 0;		# Has the start command been given?
+
 sub sys_start {
     my $run = $_[0] && $_[0] eq 'run';
     my @res = ();
@@ -1916,13 +1904,13 @@ sub sys_start {
 
 	if( $snap_started ) {
 	    error("Start command given after start\n");
-	    return 0, "repeated start given\n";
+	    return (0, "repeated start given\n");
 	}
 
 	debug(2, "Start: checking hardware status");
 	unless( send_pin_output('hold', 1) ) {
 	    error("Start: trigger hold failed\n");
-	    return 0, "trigger hold failed\n";
+	    return (0, "trigger hold failed\n");
 	}
 	# Array is now locked.  Initialise our hardware: scan 1-wire bus, write DAC gains.
 	debug(2, "Start: running channel scan and gain initialisation");
@@ -1931,35 +1919,37 @@ sub sys_start {
 
 	# Now initialise the snapshotter: tell it to start ADC capture (blocked on external trigger just now)
 	debug(2, "Start: checking snapshotter status");
-	@res = zmq_transaction($zmq_snapshot, 3000, "? ping");
-	unless( $res[0] ) {
-	    error("Unable to talk to snapshotter: $res[1]");
-	    return 0, "snapshotter comms failure\n";
-	}
-	$snap_started = 1;	# Assume snapshotter is running and ready
+	return (0, $SNAP->error()) unless( $SNAP->update() ); # Check communications
+	return (0, $SNAP->error()) unless(		      # Set the parameters (sampling rate)
+	    $SNAP->set( freq => int($freq + 0.5),
+			window => MAXSNAPSHOT/1000 )
+	    );
+	return (0, $SNAP->error()) unless( $SNAP->setup() );  # Initialise the snapshotter
+	return (0, $SNAP->error()) unless( $SNAP->start() );  # Start capture
+	$snap_started = 1;	# Assume snapshotter is now running and ready
 
 	# The slave releases the trigger synch line now, so the master will be able to let it float
 	if( in_mode('slave') ) {
 	    debug(2, "Start: in slave mode, releasing trigger line");
 	    unless( send_pin_output('hold', 0) ) {
 		error("Start: slave trigger release failed\n");
-		return 0, "slave trigger release failed\n";
+		return (0, "slave trigger release failed\n");
 	    }
 	    debug(2, "Start: slave mode, trigger armed");
 	}
 	send_pin_output('yellow', 1);
-	return 1, "Completed, system ready\n";
+	return (1, "Completed, system ready\n");
 
     } elsif( in_mode( 'master|single') ) {	# 'Run' command, in Master and Single mode, releases the trigger
 
 	unless( $snap_started ) {
 	    error("Start RUN command given before started\n");
-	    return 0, "RUN command given before started\n";
+	    return (0, "RUN command given before started\n");
 	}
 
 	unless( find_pin_value('sense') == 0 ) {
 	    error("Start RUN given with ADC already free\n");
-	    return 0, "RUN command given with ADC already free\n";
+	    return (0, "RUN command given with ADC already free\n");
 	}
 
 	# Try to release the ADC block -- let the trigger line float to logic 1
@@ -1967,7 +1957,7 @@ sub sys_start {
 	my $now = time();
 	unless( send_pin_output('hold', 0) ) {
 	    error("Start RUN: trigger release failed\n");
-	    return 0, "RUN trigger release failed\n";
+	    return (0, "RUN trigger release failed\n");
 	}
 
 	# Wait up to 0.5 second for the trigger line to float high, count the time in 5[ms] increments
@@ -1978,7 +1968,7 @@ sub sys_start {
 			 0.5, 0.005)
 	    ) {
 	    error("Start RUN: no trigger enable within 0.5 second window\n");
-	    return 0, "RUN trigger release timed out\n";
+	    return (0, "RUN trigger release timed out\n");
 	}
 
 	# If all went well, $now is a (master) local time close to the start time of the USB-DUXfast
@@ -1987,7 +1977,7 @@ sub sys_start {
 	$params{offset} = $now if( in_mode('single') );
 	send_pin_output('yellow', 0);
 	send_pin_output('green', 1);
-	return 1, "RUN offset $now\n";
+	return (1, "RUN offset $now\n");
     }
     debug(1, "start RUN: on slave, awaiting master synch");
     send_pin_output('green', 1);
@@ -2028,7 +2018,7 @@ msnap <from>(double|#uint64) <duration>(double|#uint32) <count>(uint32) <uuid> -
 cal - calibration sequence, currently not implemented
 
 END
-    return 1, $txt;
+    return (1, $txt);
 }
 
 # =============== DATA/DOCUMENTATION ===============
@@ -2130,9 +2120,10 @@ Environment variable B<LTC2637>.
 
 =item B<--freq|-f> <number>
 
-The sampling frequency used by the ADC system, in Hertz.  This is used to calculate the
-size of samples files.  Maximum for Raspberry Pi vn.2 is 100 kHz.  For Raspberry Pi2, the
-maximum is 375 kHz. The default value is 100 kHz.  Environment variable B<FREQ>.
+The sampling frequency I<per channel> to be used by the ADC system, in Hertz.  This is passed
+to the snapshotter (see snapshot(8)) and used locally to calculate the size of samples
+files.  Maximum for Raspberry Pi vn.2 is 100 kHz.  For Raspberry Pi2, the maximum is 375
+kHz. The default value is 100 kHz.  Environment variable B<FREQ>.
 
 =item B<--gpio|-g> <path>
 
