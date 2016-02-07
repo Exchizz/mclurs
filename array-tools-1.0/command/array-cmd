@@ -133,9 +133,9 @@ my $mode;
 
 my %commands = (
     quit => [ \&quit, check_arg_fn(0, 0), ],
-    trig => [ \&trigger, check_arg_fn(2, 2), ],
-    snap => [ \&snapshot, check_arg_fn(3, 3), ],
-    msnap=> [ \&multisnap, check_arg_fn(4, 4), ],
+#    trig => [ \&trigger, check_arg_fn(2, 2), ],
+    snap => [ \&snapshot, check_arg_fn(3), ],		# At least 3 arguments (start, size, path)
+    msnap=> [ \&metasnap, check_arg_fn(3), ],		# At least 3 arguments (start, size, path)
     set  => [ \&set, check_arg_fn(2, 2), ],
     gain => [ \&channel_gain, check_arg_fn(3, 4), ],
     chan => [ \&channel_list, check_arg_fn(0, 0), ],
@@ -506,7 +506,7 @@ my %callbacks =(
 		      
 		      chomp $dgram;
 		      $dgram =~ s/\s#\s+/ #/g;	# Attach prefix # to following argument, if separated by whitespace
-		      my @dgram = split /\s+/, $dgram;
+		      my @dgram = split /(?:[,;]?\s+)/, $dgram;
 		      
 		      debug(2, "Got UDP datagram: '", join("','", @dgram), "' from ", ip_to_string($from));
 		      $n_dgrams++;
@@ -524,7 +524,7 @@ my %callbacks =(
 		      
 		      chomp $dgram;
 		      $dgram =~ s/\s#\s+/ #/g;	# Attach prefix # to following argument, if separated by whitespace
-		      my @dgram = split /\s+/, $dgram;
+		      my @dgram = split /(?:[,;]?\s+)/, $dgram;
 		      
 		      debug(2, "Got ZMQ datagram: '", join("','", @dgram), "' via command socket");
 		      $n_dgrams++;
@@ -1279,42 +1279,24 @@ sub new_uuid {
     }
 }
 
-# Send snap command over the named pipe
-sub send_snap_cmd {
-    # unless($SNAP) {
-    # 	debug(2, "Opening the named pipe $snap to write a command");
-    # 	unless( $SNAP = FileHandle->new($snap, O_WRONLY | O_NONBLOCK) ) {
-    # 	    error("Cannot access snapshot socket $snap");
-    # 	    return undef;
-    # 	}
-    # 	$SNAP->autoflush(1);	# Appears not to work...
-    # 	debug(2, "Named pipe $snap is now open");
-    # }
-    # my $type = shift;
-    # return 0 unless( defined( $snap_cmds{$type} ) );
-    # my $fmt = $snap_cmds{$type};
-    # my $cmd = sprintf($fmt, @_);
-    # debug(3, "sending command '", $cmd, "' to snapshotter");
-    # print $SNAP $cmd, "\n";
-    # $SNAP->flush;
-    # debug(3, "command sent to snapshotter");
-    return 1;
-}
-
 # Generate channel metadata file
 # Arg: optional hash contents
 sub channel_meta {
     my $ch = 1;
     my %h  = ( @_ );
-
+    my $lua = '';
+    
     for my $c ( 0..$#channels ) {
 	next unless( defined( $channels[$c] ) );
 	$h{'CHAN' . $ch} = $channels[$c]->{chan};
 	$h{'GAIN' . $ch} = $channels[$c]->{gain};
 	$h{'FILT' . $ch} = $channels[$c]->{filt};
 	$h{'MIC'  . $ch} = $channels[$c]->{name};
+	$h{'SKEW' . $ch} = $channels[$c]->{chan}-1;
+	$lua .= "[$ch]=c{ }, ";
 	$ch++;
     }
+    $h{CHANLUA} = "f{ $lua }";
     return dump_hash( \%h );
 }
 
@@ -1330,58 +1312,72 @@ sub sox_arg {
 }
 
 # Set up snapshot data and send command to snapshotter
-# Args: from (IP address); first (U64), length (U32) count (U32); m_uuid (string)
+# Args: a hash reference to the snapshot parameters.
 sub do_snapshot {
-    my ($first, $length, $count, $m_uuid) = @_;
+    my $args = shift;
+    my $id   = $args->{id};
 
-    # Estimate the size of the file of samples to be generated
-    my $size = $length * NCHANNELS * 2;
+    my %sparams = $SNAP->params( qw(freq isp) );
+    
     # Construct local snapshot UUID
     my $s_uuid = new_uuid();
+
     # Construct the snapshot's processing directory
-    my $sndir = $tmp . "/" . $s_uuid;
+    my $sndir = $snapdir . "/" . $s_uuid;
     unless( mkdir($sndir) ) {
-	error("Cannot create snapshot directory $sndir");
-	return (0, "snapshot $m_uuid server dir error: $!\n");
+	error("Cannot create snapshot $id local directory $sndir");
+	return (0, "snapshot $id server dir error: $!\n");
     }
+
     # Create the various file paths for the snapshot components
     my $snpath   = $sndir . "/vars.sh";
     my $metadata = $sndir . "/metadata";
-    my $samples  = $snapdir . '/' . $s_uuid;
+    my $samples  = $sndir . "/samples";
+
     # Write out channel variables file for snapshot
     my @sox = sox_arg();
 
     unless( spurt_file( $snpath,
 			dump_hash(
-			    { MASTER_UUID	 => $m_uuid,
+			    { MASTER_UUID	 => $id,
 			      SAMPLES		 => $samples,
 			      METADATA		 => $metadata,
-			      SIZE		 => $size,
-			      FIRST		 => $first,
 			      NCHANNELS		 => $sox[0],
 			      SOXARG		 => $sox[1],
 			      BOX		 => $buuid,
-			      FREQ		 => $freq,
-			      NFILES		 => $count,
-			      THISFILE		 => $count - 1,
+			      FREQ		 => $params{freq},
+			      ISP		 => $params{isp},
+			      NFILES		 => ($args->{count} || 1),
 			    }
 			))
 	) {
-	error("Cannot create snapshot variables $snpath");
-	return (0, "snapshot $m_uuid server varfile error: $!\n");
+	error("Cannot create snapshot $id variables file $snpath");
+	return (0, "snapshot $id server varfile error: $!\n");
     }
-    # Write out the FLAC metadata file
-    unless( spurt_file( $metadata, channel_meta( BOX => $buuid, FIRST => $first, CTIME => time(), FREQ => $freq, ) ) ) {
-	error("Cannot create metadata file $metadata");
-	return (0, "snapshot $m_uuid metadata error: $!\n");
+
+    # Set the snapshotter working directory
+    unless( $SNAP->dir($sndir) ) {
+	error("snapshot $id dir command failed: " . $SNAP->error() . "\n");
+	return (0, $SNAP->error() . "\n");
     }
+    $args->{dir} = $sndir;
+    $args->{path} = "samples";
+
     # Send command to snapshot process
-    unless( send_snap_cmd( 'msnap', $first, $length, $count, $samples ) ) {
-	error("Cannot initiate $m_uuid");
-	return (0, "snapshot $m_uuid comms error: $!\n");
+    my $snap_name = $SNAP->snap( $args );
+    unless( $snap_name ) {
+	error("snapshot $id snap command failed: " . $SNAP->error() . "\n");
+	return (0, $SNAP->error() . "\n");
     }
+    
+    # Write out the metadata file
+    unless( spurt_file( $metadata, channel_meta( BOX => $buuid, CTIME => time(), FREQ => $sparams{freq}, ISP => $params{isp}, NAME => $snap_name, ) ) ) {
+	error("Cannot create metadata file $metadata");
+	return (0, "snapshot $id metadata error: $!\n");
+    }
+
     # Reply to master
-    return (1, "snapshot $m_uuid in progress\n");
+    return (1, "snapshot $id in progress as $snap_name\n");
 }
 
 ### Command subroutines for this program
@@ -1537,170 +1533,153 @@ sub mytime {
     return (1, $msg);
 }
 
-# Instruct the snapshot process to make a data snapshot
-# Args: from trigger-time master-uuid
-sub trigger {
-    my ($trigger, $m_uuid) = @_;
-    my $offset = $params{offset} || 0;
+# Instruct the snapshot process to make a data snapshot Args: a set of
+# key=value pairs comprising the parameters required by the snap
+# command of snapshot(8).
+#
+# Other key=value pairs are permitted and go into the snapshot metadata.
+#
+sub snapshot {
+    my @args = map { split /=/, $_ } @_;
 
-    # Check snapshot parameters: time should be within range
-    do {
-	local $! = 0;
-	my $t = POSIX::strtod($trigger);
-	if( $! ) {
-	    error("Snapshot start time illegal");
-	    return (0, "snapshot start '$trigger' illegal: $!\n");
-	}
-	$trigger = $t - $offset;
-    };
-    my ($now,$begin,$end) = ( time() - $offset, ($trigger - ( $params{pre_T}/1000.0 || 1 )), ($trigger + ( $params{pst_T}/1000.0 || 1 )) );
-    if( $begin <= ($now - RINGBUFLENGTH/1000.0) ) { # Snapshot start falls outside the ring buffer
-	error("Snapshot command $m_uuid misses ringbuffer\n");
-	return (0, "snapshot command $m_uuid misses ringbuffer\n");
+    if( (@args % 2) != 0 ) {
+	error("snapshot key=value pair imbalance: '" . join(', ', @_) . "'\n");
+	return (0, "snapshot key=value pair imbalance: '" . join(', ', @_) . "'");
     }
-    # Convert to sample indices
-    my $first = int($begin * $rate + 0.5);
-    my $length = int($rate*($end - $begin) + 0.5);
-    return do_snapshot($first, $length, 1, $m_uuid);
+
+    # Convert the provided arguments into key-value hash
+    my %args = @args;
+
+    # Check the parameters provided in the call: snapshot id must be present.
+    unless( defined $args{id} || defined $args{path} ) {
+	error("snapshot id=<value> missing: '" . join(', ', @_) . "'\n");
+	return (0, "snapshot id=<value> missing: '" . join(', ', @_) . "'\n");
+    }
+    $args{id} ||= $args{path};		# If path but no name, use path as name
+    delete $args{path};			# We shall regenerate the path later
+    
+    my $id = $args{id};
+
+    unless( @args{ ( qw(start finish begin end) ) } ) {
+	error("Snapshot $id does not specify start/finish or begin/end\n");
+	return (0, "Snapshot $id does not specify start/finish or begin/end\n");
+    }
+    
+    # At this point the parameter specification has been checked as
+    # much as we can without doing the full evaluation that
+    # snapshot(8) will do.
+
+    return do_snapshot(\%args); 
 }
 
 # Instruct the snapshot process to make a data snapshot
-# Args: from, data-start-time | #data-start-pos, data-end-time | #data-end-pos, master-uuid
-sub snapshot {
-    my ($begin, $end, $m_uuid) = @_;
-    my $offset = $params{offset} || 0;
-    my ($first, $length);
+# Args: a set of key=value pairs comprising:
+#
+# from=<time>  | from=#<sample>		start specification
+# until=<time> | until=#<sample>	finish specification
+# length=<samples>			length specification
+# count=<number>			repetition count (default 1)
+# name=<string>				snapshot name (according to requestor)
+#
+# Other key=value pairs are permitted and go into the snapshot metadata.
+#
+# If 'from' has a #<sample> value then so must 'until'.  These are
+# converted into begin..end for the <time> values and start..finish
+# for the #<sample> values.
+#
+sub metasnap {
+    my @args = map { split /=/, $_ } @_;
 
-    # Check snapshot parameters: time should be within range
+    if( (@args % 2) != 0 ) {
+	error("snapshot key=value pair imbalance: '" . join(', ', @_) . "'\n");
+	return (0, "snapshot key=value pair imbalance: '" . join(', ', @_) . "'");
+    }
+
+    # Convert the provided arguments into key-value hash
+    my %args = @args;
+
+    # Check the parameters provided in the call: snapshot name must be present.
+    unless( defined $args{id} || defined $args{path} ) {
+	error("snapshot id=<value> missing: '" . join(', ', @_) . "'\n");
+	return (0, "snapshot id=<value> missing: '" . join(', ', @_) . "'\n");
+    }
+    $args{id} ||= $args{path};		# If path but no name, use path as name
+    delete $args{path};			# We shall regenerate the path later
+    
+    my $offset = $params{offset} || 0;
+    my $id = $args{id};
+
+    if( @args{ ( qw(start finish begin end) ) } ) {
+	error("Snapshot $id specifies start/finish or begin/end;  use from/until\n");
+	return (0, "Snapshot $id specifies start/finish/begin/end;  use from/until\n");
+    }
+    
+    # Check snapshot parameters: correct times with offset parameter
     do {
 	local $! = 0;
+	my $begin = $args{from};
 	my $now = time() - $offset;
+
+	unless(defined $begin) {
+	    error("Snapshot request without start specification\n");
+	    return (0, "Snapshot request without start specification\n");
+	}
+	
 	if( $begin =~ m/^#(.+)$/ ) {				 # Sample-based start
 	    my $b = POSIX::strtoul($1);
 	    if( $! ) {
-		error("Snapshot start time illegal");
-		return (0, "snapshot start '$begin' illegal: $!\n");
+		error("Snapshot $id start sample number illegal");
+		return (0, "snapshot $id start '$begin' illegal: $!\n");
 	    }
-	    # Check that the first sample is within the ring buffer NOT DONE YET
-	    $first = $b;
+	    $args{first} = $b;
 	} else {						 # Wall-clock-based start
-	    my $b = POSIX::strtod($begin);
+	    my $b = POSIX::strtoul($begin);
 	    if( $! ) {
-		error("Snapshot start time illegal");
-		return (0, "snapshot start '$begin' illegal: $!\n");
-	    }
-	    $begin = $b - $offset;
-	    if( $begin <= ($now - RINGBUFLENGTH/1000.0) ) { # Snapshot start falls outside the ring buffer
-		error("Snapshot command $m_uuid misses ringbuffer\n");
-		return (0, "snapshot command $m_uuid misses ringbuffer\n");
+		error("Snapshot $id start time illegal");
+		return (0, "snapshot $id start '$begin' illegal: $!\n");
 	    }
 	    # Convert to sample indices
-	    $first = int($begin * $rate + 0.5);
+	    $args{begin} = $b - $offset;
 	}
     };
-    do {
+    if( my $end = $args{until} ) {
 	local $! = 0;
 	if( $end =~ m/^#(.+)$/ ) {				 # Sample-based finish
 	    my $e = POSIX::strtoul($1);
 	    if( $! ) {
-		error("Snapshot finish time illegal");
-		return (0, "snapshot finish '$end' illegal: $!\n");
+		error("Snapshot $id until sample number illegal");
+		return (0, "snapshot $id until '$end' illegal: $!\n");
 	    }
-	    $length = $e - $first;
-	    if( $length > $rate*MAXSNAPSHOT/1000 ) {
-		error("Snapshot command $m_uuid is too long ($length samples)\n");
-		return (0, "snapshot command $m_uuid is too long ($length samples)\n");
+	    unless( defined $args{start} ) {
+		error("Snapshot $id uses sampled end but not sampled start\n");
+		return (0, "Snapshot $id uses sampled end but not sampled start\n");
 	    }
+	    $args{finish} = $e;
 	} else {						 # Wall-clock-based finish
-	    my $e = POSIX::strtod($end);
+	    my $e = POSIX::strtoul($end);
 	    if( $! ) {
-		error("Snapshot finish time illegal");
-		return (0, "snapshot finish '$end' illegal: $!\n");
+		error("Snapshot $id finish time illegal");
+		return (0, "snapshot $id finish '$end' illegal: $!\n");
 	    }
-	    $end = $e - $offset;
-	    if( $end - $begin > MAXSNAPSHOT/1000.0 ) {
-		my $d = $end - $begin;
-		error("Snapshot command $m_uuid is too long ($d seconds)\n");
-		return (0, "snapshot command $m_uuid is too long ($d seconds)\n");
+	    unless( defined $args{begin} ) {
+		error("Snapshot $id uses timed end but not timed start\n");
+		return (0, "Snapshot $id uses timed end but not timed start\n");
 	    }
-	    $length = int($rate*($end - $begin) + 0.5);
+	    $args{end} = $e - $offset;
 	}
-    };
-    return do_snapshot($first, $length, 1, $m_uuid);
-}
+    } else {
+	unless( defined $args{length} ) {
+	    error("snapshot $id has neither until nor length");
+	    return (0, "snapshot $id has neither until nor length");
+	}
+    }
 
-# Instruct the snapshot process to make a data snapshot sequence
-# Args: from, data-start-time | #data-start-pos, data-block-duration, data-block-count, master-uuid
-sub multisnap {
-    my ($begin, $duration, $count, $m_uuid) = @_;
-    my $offset = $params{offset} || 0;
-    my ($first, $length);
+    # At this point the from/until parameter specification has been
+    # converted to a consistent set of parameters for passing to
+    # snapshot(8).  Note we are not doing full checks here -- in
+    # particular, timing checks are left to the snapshotter.
 
-    # Check snapshot parameters: time should be within range
-    do {
-	local $! = 0;
-	my $now = time() - $offset;
-	if( $begin =~ m/^#(.+)$/ ) {				 # Sample-based start
-	    my $b = POSIX::strtoul($1);
-	    if( $! ) {
-		error("MSnapshot start time illegal");
-		return (0, "snapshot start '$begin' illegal: $!\n");
-	    }
-	    # Check that the first sample is within the ring buffer NOT DONE YET
-	    $first = $b;
-	} else {						 # Wall-clock-based start
-	    my $b = POSIX::strtod($begin);
-	    if( $! ) {
-		error("MSnapshot start time illegal");
-		return (0, "snapshot start '$begin' illegal: $!\n");
-	    }
-	    $begin = $b - $offset;
-	    if( $begin <= ($now - RINGBUFLENGTH/1000.0) ) { # Snapshot start falls outside the ring buffer
-		error("MSnapshot command $m_uuid misses ringbuffer\n");
-		return (0, "snapshot command $m_uuid misses ringbuffer\n");
-	    }
-	    # Convert to sample indices
-	    $first = int($begin * $rate + 0.5);
-	}
-    };
-    do {
-    	local $! = 0;
-	if( $duration =~ m/^#(.+)$/ ) {				 # Sample-based duration
-	    my $d = POSIX::strtoul($1);
-	    if( $! ) {
-		error("MSnapshot duration illegal");
-		return (0, "snapshot duration '$duration' illegal: $!\n");
-	    }
-	    $length = $d;
-	    if( $length > $rate*MAXSNAPSHOT/1000 ) {
-		error("MSnapshot command $m_uuid is too long ($length samples)\n");
-		return (0, "snapshot command $m_uuid is too long ($length samples)\n");
-	    }
-	} else {						 # Wall-clock-based duration
-	    my $d = POSIX::strtod($duration);
-	    if( $! ) {
-		error("MSnapshot duration '$duration' illegal");
-		return (0, "snapshot duration '$duration' illegal: $!\n");
-	    }
-	    if( $d > MAXSNAPSHOT/1000.0 ) {
-		error("MSnapshot command $m_uuid is too long ($d seconds)\n");
-		return (0, "snapshot command $m_uuid is too long ($d seconds)\n");
-	    }
-	    $length = int($rate*$d + 0.5);
-	}
-    };
-    do {
-    	local $! = 0;
-	my $c = $count;
-	$c =~ s/^#//;						 # Optional #
-    	$c = POSIX::strtol($c);					 # Always a number!
-    	if( $! ) {
-     	    error("MSnapshot repeat count '$count' illegal");
-    	    return (0, "snapshot repeat count '$count' illegal: $!\n");
-    	}
-	$count = $c;
-    };
-    return do_snapshot($first, $length, $count, $m_uuid);
+    return do_snapshot(\%args);
 }
 
 # Rescan the 1-wire bus filesystem
@@ -2176,64 +2155,72 @@ copied verbatim from the incoming datagram.
 
 Send a command synopsis as a reply message -- useful when driving the daemon manually.
 
-=item B<chan>
+=item B<status> chan|snapshot
 
-Generate a listing of the connected channels.  The response datagram consists of the
-line I<begin channel list> followed by one line for each active channel followed by
-I<end channel list>.  Each channle descriptor comprises the string "ch", the
-channel's gain and filter settings, its type and its name (the ID of the 1-wire
-memory attached to that channel) -- separated by colons.
+With the argument <I>chan, generate a listing of the connected channels.  The
+response datagram consists of the line I<begin channel list> followed by one line
+for each active channel followed by I<end channel list>.  Each channel descriptor
+comprises the string "ch", the channel's gain and filter settings, its type and its
+name (the ID of the 1-wire memory attached to that channel) -- separated by colons.
 
-=item B<trig> I<trigger-time> I<master-uuid>
+With the I<snapshot> argument, generate a listing of currently known snapshots,
+giving their present status.  A status update is sought from the snapshot program
+during this request.
 
-=item B<snap> I<start-time-or-pos> I<end-time-or-pos> I<master-uuid>
+With no argument, generate a status report for the daemon, comprising information on
+number of connected channels, number of active/completed snapshots, state of the
+snapshot program and its parameters (such as sampling frequency, inter-sample
+period, etc.).
 
-Initiate a snapshot of the recorded audio signals.  The first parameter for B<trig> is
-the time of the trigger point for this snapshot; the segment recorded is defined by the
-pre-trigger and post-trigger duration parameters previously established by the B<set>
-command.  For a B<snap> command, the first two arguments define the start and end time
-points of the requested data samples.  They may be times (relative to the ADC start time
-offset determined when the array is started) or they may be sample numbers if prefixed
-with a hash (#).
+=item B<snap>  I<begin|start=begin-time-or-pos> I<end|finish=end-time-or-pos> I<path=master-uuid>
 
-Upon receipt of a B<trig> or B<snap> command, a local UUID is constructed and a
-directory of that name is created in the temporary storage directory.  Two files are
-written to that directory: the metadata variables describing the connected channels
-whose data will be captured, and a shall variable file containing the significant
-parameters of the snapshot request.  An instruction is then passed to the snapshot
-process comprising the start time, end time and the file name for the file of captured
-samples.  If all this succeeds, the daemon reports that the capture is in progress to
-the requesting master.
+Initiate a snapshot of recorded audio signals.  The arguments to B<snap> are exactly
+those accepted by the B<snap> command of <B>snapshot(8), that is, I<begin> and
+I<end> times expressed relative to the monotonic clock of the snapshotter, or
+I<start> and I<finish> sample indices in the sample stream.  See <B>snapshot(8) for
+more complete details.  The I<master-uuid> path parameter is recorded in the
+snapshot metadata as its I<id> and a new local UUID is generated for the storage
+location of the snapshot.  The arguments are expressed as comma-separated
+I<key=value> pairs; parameters not addressed to B<snapshot> are stripped out by the
+daemon before forwarding the request, and are instead included in the snapshot metadata.
 
-Once the samples have been written by the snapshotting process, a script is invoked
-using inotify, by a watch-n-do daemon, which loads the shall variables, converts the
-sample file to FLAC encoding, adds the metadata variables to the encoded file, and sends
-the file using rsync to the master.  The file is written to the directory on the master
-named I<master-uuid> and is named with the MAC address of the slave that generated it.
+=item B<msnap> I<from=begin-time-or-pos> I<until=end-time-or-pos> I<id=master-uuid>
 
-The snapshot command processor computes the approximate size of the samples file using
-the sampling rate, the fact that samples are two bytes per channel, and the duration of
-the snapshot requested.  This information is used to check the samples file produced by
-the snapshotter process before it is compressed for transmission to the master.
+Initiate a snapshot of the recorded audio signals.  Analogous to B<snap>, but for
+B<msnap> the I<from> and I<until> parameters specify the start and end of the
+snapshot and can be times (relative to the monotonic clock of the snapshot program)
+or sample numbers prefixed with a hash (#) sign.  Extra parameters are again added
+to the snapshot metadata.  In this command the snapshot I<id> is given explicitly;
+if absent it is copied from the I<path> parameter (assuming that is present).
 
-=item B<msnap> I<start-time-or-pos> I<block-length> I<repeat-count> I<master-uuid>
+Upon receipt of a B<snap> or an B<msnap> command, a local UUID is constructed and a
+directory of that name is created in the sample storage directory B<snapdir>.  Two
+files are written to that directory: the metadata variables describing the connected
+channels whose data will be captured, and a shell variable file containing the
+significant parameters of the snapshot request.  The snapshot process is then told
+the local unique directory as its working directory, and a <B>snap command is issued
+comprising the begin time and end time or start sample and finish sample and a fixed
+<I>path=samples.  If all this succeeds, the daemon reports that the capture is in
+progress to the requesting master.
 
-Initiate a repeating snapshot which begins at the I<start-time> or I<start-pos> and
-writes I<repeat-count> instances of I<block-length> to disk.  The start point may be
-expressed as a time or a sample number, and the duration of a block as a time or as a
-number of samples (hash prefixed).  This is done analogously to the two commands above.
-The variables and metadata written for the snapshot allow the watch-n-do script to
-distinguish multiple from single snapshots and behave accordingly.
+The result of this sequence is that in due course files of samples will appear in
+the samples/ subdirectory of the local unique directory constructed by the daemon
+and named with the local UUID.  Progess can be determined by querying the snapshot
+process for status or via the daemon.
+
+Once the samples have been written by the snapshotting process as a file of type
+s16, they are combined with the recorded metadata and delivered to the requestor.
+The file of shell variables can be sourced by the processign script to provide
+snapshot-specific data while the metadata file is in metaflac(1) format.
 
 =item B<set> I<parameter> I<value>
 
-Set the value of I<parameter> to I<value>, checking for legality of the given value as
-far as possible.  The current parameters are those for controlling snapshots: I<pre_T>
-is the pre-trigger period in milliseconds and I<pst_T> is the post-trigger period, also
-in milliseconds.  The I<offset> parameter can be set following the execution of a
-B<start run> command using the time offset returned.  Trigger and snapshot time
-arguments use that offset to determine whether a specific time point is available in the
-snapshot ring buffer.
+Set the value of I<parameter> to I<value>, checking for legality of the given value
+as far as possible.  The current parameters are those for controlling the behaviour
+of snapshot(8): the I<freq>, I<window> and I<bufhwm> parameters.  Additionally, the
+I<offset> parameter can be set following the execution of a B<start run> command
+using the time offset returned.  Snapshot time arguments for B<msnap> use that
+offset to compensate externally-determined time points for local clock skew.
 
 =item B<gain> I<channel> [I<value>] [I<filter>]
 

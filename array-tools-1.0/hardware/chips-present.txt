@@ -1,7 +1,7 @@
 Chips present on Analog Board
 
-DS2482   1-wire interface
-24AA64   EEPROM/UUID
-MCP79410 RTC chip
+DS2482   1-wire interface  x18
+24AA64   EEPROM  x50
+MCP79410 RTC/UUID chip x6F (RTC) x57 (UUID)
 PCA9534  Digital Output Port (V2A,V2B only)  x27
-LTC2637  Octal DAC
+LTC2637  Octal DAC x41
