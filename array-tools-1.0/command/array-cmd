@@ -46,7 +46,7 @@ use constant LTC2637_DAC => 0x41;
 use constant RINGBUFLENGTH => 115000/6;
 
 # MAX snapshot duration, in milliseconds
-use constant MAXSNAPSHOT => int(0.9 * RINGBUFLENGTH);
+use constant MAXSNAPSHOT => 9000;
 
 # GPIO Pins used by standard hardware (Pi rev. 2 numbering)
 #
@@ -235,6 +235,14 @@ do {
     }
 
     debug(2, "$$: Will use $tmp for temp directory") unless( $errors > $errs );
+};
+
+# Sort out box UUID
+do {
+    my $errs = $errors;
+
+    $buuid = apply_defaults($buuid, @def_buuid);
+    debug(2, "$$: Will use $buuid for box name") unless( $errors > $errs );
 };
 
 # Sort out directory where snapshot sample data should be written
@@ -1013,58 +1021,20 @@ sub send_udp_reply {
 # Send a datagram on the ZMQ command socket
 sub send_zmq_reply {
     my ($to,$who,@data) = @_;
-    my $msg = ZMQ::Message->new(join('', @data));
+    my $str = join('', @data);
+    my $msg = ZMQ::Message->new($str);
 
-    my $ret = $to->send($msg, $msg->size());
+    my $ret = $to->sendmsg($msg, 0);
 
-    if( $ret != $msg->size() ) {
-	my $h = $to->getsocopt(ZMQ_LAST_ENDPOINT);
+    if( $ret <0 ) {
+	my $h = $to->getsockopt(ZMQ_LAST_ENDPOINT);
 	debug(0, "Error sending $who reply to $h: $!");
 	return;
     } else {
-	my $str = $msg->data();
 	chomp $str;
 	debug(2, "Sent $who reply '$str'");
 	return $ret;
     }
-}
-
-# Send a command message to a ZMQ socket and wait for a reply;  for talking to SNAPSHOT
-sub zmq_transaction {
-    my ($skt,$timeout,$cmd,$data) = @_;
-    my $msg = ZMQ::Message->new( $cmd . " " . $data );
-
-    unless($msg) {
-	return ( undef, "NO: $cmd -- local error" );
-    }
-
-    $skt->send($msg, $msg->size());
-    debug(2, "Sent '$data' to ZMQ socket\n");
-
-    if( $timeout > 0 ) {
-	my $p;
-
-	unless( $p = ZMQ::Poller->new() ) {
-	    return ( undef, "NO: $cmd -- local poll error" );
-	}
-	$p->register($skt, ZMQ_POLLIN);
-	unless( $p->poll($timeout) ) {
-	    return ( undef, "NO: $cmd -- local timeout" );
-	}
-    }
-    
-    $msg = $skt->recvmsg(0);
-    $data = $msg && $msg->data();
-    if($data) {
-	debug(2, "Recv '$data' from ZMQ socket\n");
-    } else {
-	debug(2, "Recv returns undef from ZMQ socket\n");
-    }
-
-    my $val;
-    $val = 1 if($data =~ m/^OK/);
-    $val = 0 if($data =~ m/^NO:/);
-    return ($val, $data);
 }
 
 ## 1-wire filesystem utilities, interact with owfs, etc.
@@ -1317,7 +1287,7 @@ sub do_snapshot {
     my $args = shift;
     my $id   = $args->{id};
 
-    my %sparams = $SNAP->params( qw(freq isp) );
+    my $sparams = $SNAP->params( qw(freq isp) );
     
     # Construct local snapshot UUID
     my $s_uuid = new_uuid();
@@ -1345,8 +1315,8 @@ sub do_snapshot {
 			      NCHANNELS		 => $sox[0],
 			      SOXARG		 => $sox[1],
 			      BOX		 => $buuid,
-			      FREQ		 => $params{freq},
-			      ISP		 => $params{isp},
+			      FREQ		 => $sparams->{freq},
+			      ISP		 => $sparams->{isp},
 			      NFILES		 => ($args->{count} || 1),
 			    }
 			))
@@ -1364,14 +1334,14 @@ sub do_snapshot {
     $args->{path} = "samples";
 
     # Send command to snapshot process
-    my $snap_name = $SNAP->snap( $args );
+    my $snap_name = $SNAP->snap( %{$args} );
     unless( $snap_name ) {
 	error("snapshot $id snap command failed: " . $SNAP->error() . "\n");
 	return (0, $SNAP->error() . "\n");
     }
     
     # Write out the metadata file
-    unless( spurt_file( $metadata, channel_meta( BOX => $buuid, CTIME => time(), FREQ => $sparams{freq}, ISP => $params{isp}, NAME => $snap_name, ) ) ) {
+    unless( spurt_file( $metadata, channel_meta( BOX => $buuid, CTIME => time(), FREQ => $sparams->{freq}, ISP => $sparams->{isp}, NAME => $snap_name, ) ) ) {
 	error("Cannot create metadata file $metadata");
 	return (0, "snapshot $id metadata error: $!\n");
     }
@@ -1560,10 +1530,10 @@ sub snapshot {
     
     my $id = $args{id};
 
-    unless( @args{ ( qw(start finish begin end) ) } ) {
-	error("Snapshot $id does not specify start/finish or begin/end\n");
-	return (0, "Snapshot $id does not specify start/finish or begin/end\n");
-    }
+#    unless( @args{ ( qw(start finish begin end) ) } ) {
+#	error("Snapshot $id does not specify start/finish or begin/end\n");
+#	return (0, "Snapshot $id does not specify start/finish or begin/end\n");
+#    }
     
     # At this point the parameter specification has been checked as
     # much as we can without doing the full evaluation that

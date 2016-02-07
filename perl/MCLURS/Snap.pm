@@ -588,8 +588,8 @@ sub snap {
 	return;
     }
 
-    unless( $self->{state} eq 'armed' || $self->{state} eq 'run' ) {
-	$self->{_estr} = "Snap command before capture started";
+    unless( $self->{state} eq 'armed' || $self->{state} eq 'run' || $self->{state} eq 'active') {
+	$self->{_estr} = "Snap command before capture started, state " . $self->{state};
 	return;
     }
 
