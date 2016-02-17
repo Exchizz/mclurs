@@ -1,0 +1,103 @@
+#!/bin/sh
+
+# Simple script to start and stop the MCLURS array software
+
+case "x$1" in
+
+    xsetup)
+	echo Setting up the array control software
+	sudo sv o /home/suas/Services/command
+	sudo sv o /home/suas/Services/snapshot
+	echo Waiting for the software to be ready...
+	snapchat -s tcp://127.0.0.1:2468 status
+	exit 0
+	;;
+
+    xstop)
+	echo Stopping the array control software
+	snapchat -s tcp://127.0.0.1:2468 quit
+	exit 0
+	;;
+
+    xstart)
+	echo Starting the capture system
+	snapchat -s tcp://127.0.0.1:2468 start
+	echo To take snapshots, use the "'trig'" command
+	exit 0
+	;;
+
+    xchan|xchans)
+	snapchat -s tcp://127.0.0.1:2468 status chan
+	exit 0
+	;;
+
+    xsnap|xsnapshot)
+	snapchat -s tcp://127.0.0.1:2468 status snap
+	exit 0
+	;;
+
+    xeject)
+	if mount | grep -q /home/suas/Var/samples; then
+	    echo Unmapping the external USB disk...
+	    sudo umount /home/suas/Var/samples
+	    echo You can now unplug and remove the disk.
+	    exit 0
+	else
+	    echo No external disk seems to be present...
+	    exit 1
+	fi
+	;;
+
+    xhelp)
+	cat <<\EOF
+
+Usage:  array "cmd"
+
+The "cmd" can be one of the following words (without the " " marks):
+
+  setup
+	This starts all the software needed to operate the array, but it doesn't start
+	data capture.  This can take a little time (30 seconds or so).  Once the command
+	finishes, you can start the array, enquire about channel configuration, set gains,
+	and so forth, including the various other possibilities below.
+
+	N.B.  If you use one of the commands below without having first run setup, the
+	command will not finish!  Instead it will wait (forever) for the control software
+	to answer.  Use ctrl-C to interrupt it, in that case.
+
+  start
+	This causes the array software to begin capturing data from connected microphones.
+	The data is not stored, but is discarded until a request for a snapshot is issued
+	using -- for example -- the 'trig' command.
+
+  stop
+	The array software shuts down and tidies up after itself.
+
+  chan
+	Display a status message reporting which channels are connected and what
+	parameters (gain, filter state) are set for each connected channel.
+
+  snap
+	Display a status message reporting the list of all snapshots completed or in
+	progress, with their current status and name.
+
+  eject
+	Use this command before removing a USB disk you want to take away when the box is
+	running.  The command can only succeed when the array is stopped (or not yet
+	started) and is necessary to avoid possible corruption of the data written to the
+	disk.
+
+  help
+	Display this usage message
+
+EOF
+	exit 0
+	;;
+
+    x*)
+	echo Unknown or missing argument $1
+	exit 1
+	;;
+
+esac
+exit 0

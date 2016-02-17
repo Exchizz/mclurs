@@ -1789,12 +1789,19 @@ sub channel_list {
 
 # Send back a general status message
 sub general_status {
-    return (1, "a general status message");
+    return (1, "command processor is running");
 }
 
 # Send back a snapshot status message
-sub snapshot_status {
-    return (1, "a snapshot status message");
+sub snapshot_list {
+    my $msg = "\nbegin snapshot list\n";
+    my @snaps = $SNAP->status();
+
+    for my $s ( @snaps ) {
+	$msg .= "$s->{name} $s->{state} $s->{id}\n";
+    }
+    $msg .= "end snapshot list\n";
+    return (1, $msg);
 }
 
 # Respond to a status request
