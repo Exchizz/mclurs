@@ -90,7 +90,7 @@ my @def_snapdir = ( $ENV{SNAPDIR}, safe_concat($ENV{TMPDIR}, "/snapshots"), "/tm
 my @def_listen  = ( $ENV{LISTEN}, );
 my @def_port    = ( $ENV{PORT}, 2468, );
 my @def_host    = ( $ENV{HOST}, "0.0.0.0");
-my @def_buuid   = ( $ENV{UUID}, );
+my @def_buuid   = ( $ENV{UUID}, "BatBox");
 my @def_freq	= ( $ENV{FREQ}, 1e5, );
 my @def_mode    = ( $ENV{MODE}, 'single', );
 my @def_adc_rev = ( $ENV{ADC_BOARD_REVISION}, );
@@ -132,23 +132,24 @@ my $mode;
 # The second list element is a function that checks the arg count provided
 
 my %commands = (
-    quit => [ \&quit, check_arg_fn(0, 0), ],
+    quit   => [ \&quit, check_arg_fn(0, 0), ],
 #    trig => [ \&trigger, check_arg_fn(2, 2), ],
-    snap => [ \&snapshot, check_arg_fn(3), ],		# At least 3 arguments (start, size, path)
-    msnap=> [ \&metasnap, check_arg_fn(3), ],		# At least 3 arguments (start, size, path)
-    set  => [ \&set, check_arg_fn(2, 2), ],
-    gain => [ \&channel_gain, check_arg_fn(3, 4), ],
-    chan => [ \&channel_list, check_arg_fn(0, 0), ],
-    ping => [ \&pong, check_arg_fn(), ],
-    scan => [ \&rescan1w, check_arg_fn(0, 0), ],
-    time => [ \&mytime, check_arg_fn(0, 0), ],
-    cal  => [ \&calibrate, check_arg_fn(0, 0) ],	# Unimplemented in Vn 1.0
-    hold => [ \&hold_adc, check_arg_fn(0, 0), ],
-    free => [ \&free_adc, check_arg_fn(0, 0), ],
-    led  => [ \&set_led, check_arg_fn(2, 2), ],
-    adc  => [ \&set_adc_board, check_arg_fn(1, 1), ],
-    start=> [ \&sys_start, check_arg_fn(0, 1), ],
-    help => [ \&cmd_help, check_arg_fn(0, 0), ],
+    snap   => [ \&snapshot, check_arg_fn(3), ],		# At least 3 arguments (start, size, path)
+    msnap  => [ \&metasnap, check_arg_fn(3), ],		# At least 3 arguments (start, size, path)
+    set    => [ \&set, check_arg_fn(2, 2), ],
+    gain   => [ \&channel_gain, check_arg_fn(3, 4), ],
+    status => [ \&do_status, check_arg_fn(0,1), ],	# At most one argument (chan or snapshot)
+#    chan   => [ \&channel_list, check_arg_fn(0, 0), ],
+    ping   => [ \&pong, check_arg_fn(), ],
+    scan   => [ \&rescan1w, check_arg_fn(0, 0), ],
+    time   => [ \&mytime, check_arg_fn(0, 0), ],
+    cal    => [ \&calibrate, check_arg_fn(0, 0) ],	# Unimplemented in Vn 1.0
+    hold   => [ \&hold_adc, check_arg_fn(0, 0), ],
+    free   => [ \&free_adc, check_arg_fn(0, 0), ],
+    led    => [ \&set_led, check_arg_fn(2, 2), ],
+    adc    => [ \&set_adc_board, check_arg_fn(1, 1), ],
+    start  => [ \&sys_start, check_arg_fn(0, 1), ],
+    help   => [ \&cmd_help, check_arg_fn(0, 0), ],
     );
 
 # Parameter store for parameters set using 'set' command
@@ -1773,7 +1774,7 @@ sub pong {
 
 # Send back a list of connected channels
 sub channel_list {
-    my $msg = "begin channel list\n";
+    my $msg = "\nbegin channel list\n";
     my $ch = 1;
 
     for my $i ( 0..NCHANNELS-1 ) {
@@ -1784,6 +1785,29 @@ sub channel_list {
     $msg .= "end channel list\n";
 
     return (1, $msg);
+}
+
+# Send back a general status message
+sub general_status {
+    return (1, "a general status message");
+}
+
+# Send back a snapshot status message
+sub snapshot_status {
+    return (1, "a snapshot status message");
+}
+
+# Respond to a status request
+sub do_status {
+    if( @_ > 0 && $_[0] =~ m/chan(nels?)?/ ) {
+	return channel_list();
+    } elsif( @_ > 0 && $_[0] =~ m/snap(shots?)?/ ) {
+	return snapshot_list();
+    } elsif( @_ > 0 ) {
+	return (0, "unexpected status argument $_[0]");
+    } else {
+	return general_status();
+    }
 }
 
 # Set parameters for snapshots etc
@@ -2125,7 +2149,7 @@ copied verbatim from the incoming datagram.
 
 Send a command synopsis as a reply message -- useful when driving the daemon manually.
 
-=item B<status> chan|snapshot
+=item B<status> [chan|snapshot]
 
 With the argument <I>chan, generate a listing of the connected channels.  The
 response datagram consists of the line I<begin channel list> followed by one line
