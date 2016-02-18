@@ -76,7 +76,7 @@ ${LIBRARY}:	${LIBOBJS}
 	ar crs	$@ $?
 	ranlib	$@
 
-install:	all
+install:	build
 	install -D snapshot	 ${DESTDIR}/usr/sbin/snapshot
 	install -D snapchat	 ${DESTDIR}/usr/bin/snapchat
 	install -D trig	   	 ${DESTDIR}/usr/bin/trig
@@ -116,4 +116,3 @@ print.pdf:	*.c *.h
 	a2ps -1r -L99 -l198 -o print.ps *.[ch] 
 	ps2pdf print.ps
 	rm print.ps
-

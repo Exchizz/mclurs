@@ -1,0 +1,101 @@
+# Instruct the snapshot process to make a data snapshot
+# Args: from trigger-time master-uuid
+sub trigger {
+    my ($trigger, $m_uuid) = @_;
+    my $offset = $params{offset} || 0;
+
+    # Check snapshot parameters: time should be within range
+    do {
+	local $! = 0;
+	my $t = POSIX::strtod($trigger);
+	if( $! ) {
+	    error("Snapshot start time illegal");
+	    return (0, "snapshot start '$trigger' illegal: $!\n");
+	}
+	$trigger = $t - $offset;
+    };
+    my ($now,$begin,$end) = ( time() - $offset, ($trigger - ( $params{pre_T}/1000.0 || 1 )), ($trigger + ( $params{pst_T}/1000.0 || 1 )) );
+    if( $begin <= ($now - RINGBUFLENGTH/1000.0) ) { # Snapshot start falls outside the ring buffer
+	error("Snapshot command $m_uuid misses ringbuffer\n");
+	return (0, "snapshot command $m_uuid misses ringbuffer\n");
+    }
+    # Convert to sample indices
+    my $first = int($begin * $rate + 0.5);
+    my $length = int($rate*($end - $begin) + 0.5);
+    return do_snapshot($first, $length, 1, $m_uuid);
+}
+
+# Instruct the snapshot process to make a data snapshot sequence
+# Args: from, data-start-time | #data-start-pos, data-block-duration, data-block-count, master-uuid
+sub multisnap {
+    my ($begin, $duration, $count, $m_uuid) = @_;
+    my $offset = $params{offset} || 0;
+    my ($first, $length);
+
+    # Check snapshot parameters: time should be within range
+    do {
+	local $! = 0;
+	my $now = time() - $offset;
+	if( $begin =~ m/^#(.+)$/ ) {				 # Sample-based start
+	    my $b = POSIX::strtoul($1);
+	    if( $! ) {
+		error("MSnapshot start time illegal");
+		return (0, "snapshot start '$begin' illegal: $!\n");
+	    }
+	    # Check that the first sample is within the ring buffer NOT DONE YET
+	    $first = $b;
+	} else {						 # Wall-clock-based start
+	    my $b = POSIX::strtod($begin);
+	    if( $! ) {
+		error("MSnapshot start time illegal");
+		return (0, "snapshot start '$begin' illegal: $!\n");
+	    }
+	    $begin = $b - $offset;
+	    if( $begin <= ($now - RINGBUFLENGTH/1000.0) ) { # Snapshot start falls outside the ring buffer
+		error("MSnapshot command $m_uuid misses ringbuffer\n");
+		return (0, "snapshot command $m_uuid misses ringbuffer\n");
+	    }
+	    # Convert to sample indices
+	    $first = int($begin * $rate + 0.5);
+	}
+    };
+    do {
+    	local $! = 0;
+	if( $duration =~ m/^#(.+)$/ ) {				 # Sample-based duration
+	    my $d = POSIX::strtoul($1);
+	    if( $! ) {
+		error("MSnapshot duration illegal");
+		return (0, "snapshot duration '$duration' illegal: $!\n");
+	    }
+	    $length = $d;
+	    if( $length > $rate*MAXSNAPSHOT/1000 ) {
+		error("MSnapshot command $m_uuid is too long ($length samples)\n");
+		return (0, "snapshot command $m_uuid is too long ($length samples)\n");
+	    }
+	} else {						 # Wall-clock-based duration
+	    my $d = POSIX::strtod($duration);
+	    if( $! ) {
+		error("MSnapshot duration '$duration' illegal");
+		return (0, "snapshot duration '$duration' illegal: $!\n");
+	    }
+	    if( $d > MAXSNAPSHOT/1000.0 ) {
+		error("MSnapshot command $m_uuid is too long ($d seconds)\n");
+		return (0, "snapshot command $m_uuid is too long ($d seconds)\n");
+	    }
+	    $length = int($rate*$d + 0.5);
+	}
+    };
+    do {
+    	local $! = 0;
+	my $c = $count;
+	$c =~ s/^#//;						 # Optional #
+    	$c = POSIX::strtol($c);					 # Always a number!
+    	if( $! ) {
+     	    error("MSnapshot repeat count '$count' illegal");
+    	    return (0, "snapshot repeat count '$count' illegal: $!\n");
+    	}
+	$count = $c;
+    };
+    return do_snapshot($first, $length, $count, $m_uuid);
+}
+

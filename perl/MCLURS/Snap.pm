@@ -17,6 +17,7 @@ use ZMQ::Poller;
 sub new {
     my $snap = bless({}, shift);
     if( $snap->_init(@_) ) {
+	$snap->{_busy} = 0;
 	return $snap;
     }
     return undef;
@@ -80,6 +81,7 @@ sub _read {
 	$self->{_estr} = "Read failed: $!";
 	return;
     }
+    $self->{_busy} = 0;
     
     my $d = $m->data();
     $m->close();
@@ -104,8 +106,9 @@ sub _write {
 	$self->{_estr} = "Write failed: $!";
 	return;
     }
-    
+
     $m->close();
+    $self->{_busy} = 1;
     $self->{_estr} = '';
     return 1;
 }
@@ -331,6 +334,16 @@ sub _do_status_reply {
 ### other calls on the object have been run.  Successful methods
 ### return 1 unless otherwise noted.
 
+# Query whether the object is busy -- i.e. has a message been written
+# but a reply not yet received.
+#
+# Returns the value of the _busy variable.
+
+sub busy {
+    my $self = shift;
+    return $self->{_busy};
+}
+
 # Query whether an error has occurred; in some cases (e.g. parse
 # errors the reply() method can also return useful information).
 #
@@ -455,6 +468,53 @@ sub update {
     return $self->_do_status_reply();
 }
 
+# Probe to check that the snapshotter is running
+#
+# No arguments
+#
+# If the object is not busy, attempt a z command.  If that succeeds, set _run.
+# If the transaction times out, then _busy should be set, in which case return
+# without setting the error string.
+#
+# If the object is busy, that means no one was listening last time;
+# maybe they are now.  Therefore attempt a reset.  Set _run if it works.
+
+sub probe {
+    my $self = shift;
+
+    # Are we busy?  If so, see if the reply is here yet
+    if( $self->{_busy} ) {
+	my $s = $self->reset();
+	$self->{_run} = 1 if($s);
+	return $s;
+    }
+
+    # Not busy, so try a status command
+    unless( $self->_transact(cmd => 'z') ) {
+	$self->{_run} = 0;
+	return if( $self->{_busy} ); # Waiting for reply
+
+	$self->{_estr} = "Cannot talk to snapshotter";
+	return;
+    }
+
+    # Status succeeded, so other end is running
+    $self->{_run} = 1;
+    return $self->_do_status_reply();
+}
+
+# Reset the communications after a failure
+#
+# No arguments
+
+sub reset {
+    my $self = shift;
+
+    return 1 unless( $self->{_busy} );
+    $self->_read();		# Read anything that is pending
+    return $self->_waitw(0);	# Check if we can now write
+}
+
 # Set up snapshotter: ends in init state
 #
 # Initialise the snapshotter.  Sends specified parameters, then init
@@ -463,14 +523,7 @@ sub update {
 sub setup {
     my $self = shift;
 
-    # First, get status, check if running
-    unless( $self->_transact(cmd => 'z') ) {
-	$self->{_estr} = "Cannot talk to snapshotter";
-	$self->{_run} = 0;
-	return;
-    }
-    $self->{_run} = 1;
-    return unless( $self->_do_status_reply() );
+    return unless( $self->probe() );
 
     # Check snapshotter is not already collecting data
     if( $self->{state} eq 'armed' || $self->{state} eq 'run' ) {
@@ -535,8 +588,8 @@ sub snap {
 	return;
     }
 
-    unless( $self->{state} eq 'armed' || $self->{state} eq 'run' ) {
-	$self->{_estr} = "Snap command before capture started";
+    unless( $self->{state} eq 'armed' || $self->{state} eq 'run' || $self->{state} eq 'active') {
+	$self->{_estr} = "Snap command before capture started, state " . $self->{state};
 	return;
     }
 
@@ -660,14 +713,6 @@ sub clear {
     return 1 if( $snap->{state} eq 'fin' );
     $self->{_estr} = $snap->{emsg};
     return 0;
-}
-
-# Destroy the object after last reference drops.
-
-sub DESTROY {
-    my $self = shift;
-
-    $self->{_poll}->unregister($self->{skt});
 }
 
 # Evaluate true as final step
