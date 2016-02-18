@@ -2,54 +2,75 @@
 
 # Simple script to start and stop the MCLURS array software
 
+RUN=
+if svstat /home/suas/Services/command | grep -wq up; then
+	RUN=yes
+fi
+
 case "x$1" in
 
-    xsetup)
-	echo Setting up the array control software
-	sudo sv o /home/suas/Services/command
-	sudo sv o /home/suas/Services/snapshot
-	echo Waiting for the software to be ready...
-	snapchat -s tcp://127.0.0.1:2468 status
-	exit 0
-	;;
+	xsetup)
+		echo Setting up the array control software
+		sudo sv o /home/suas/Services/command
+		sudo sv o /home/suas/Services/snapshot
+		echo Waiting for the software to be ready...
+		snapchat -s tcp://127.0.0.1:2468 status
+		exit 0
+		;;
 
     xstop)
-	echo Stopping the array control software
-	snapchat -s tcp://127.0.0.1:2468 quit
-	exit 0
-	;;
+		if [ "x$RUN" = "x" ]; then
+			echo Must run setup before $1
+			exit 1
+		fi
+		echo Stopping the array control software
+		snapchat -s tcp://127.0.0.1:2468 quit
+		exit 0
+		;;
 
-    xstart)
-	echo Starting the capture system
-	snapchat -s tcp://127.0.0.1:2468 start
-	echo To take snapshots, use the "'trig'" command
-	exit 0
-	;;
+	xstart)
+		if [ "x$RUN" = "x" ]; then
+			echo Must run setup before $1
+			exit 1
+		fi
+		echo Starting the capture system
+		snapchat -s tcp://127.0.0.1:2468 start
+		echo To take snapshots, use the "'trig'" command
+		exit 0
+		;;
 
-    xchan|xchans)
-	snapchat -s tcp://127.0.0.1:2468 status chan
-	exit 0
-	;;
+	xchan|xchans)
+		if [ "x$RUN" = "x" ]; then
+			echo Must run setup before $1
+			exit 1
+		fi
+		snapchat -s tcp://127.0.0.1:2468 status chan
+		exit 0
+		;;
 
-    xsnap|xsnapshot)
-	snapchat -s tcp://127.0.0.1:2468 status snap
-	exit 0
-	;;
+	xsnap|xsnapshot)
+		if [ "x$RUN" = "x" ]; then
+			echo Must run setup before $1
+			exit 1
+		fi
+		snapchat -s tcp://127.0.0.1:2468 status snap
+		exit 0
+		;;
 
-    xeject)
-	if mount | grep -q /home/suas/Var/samples; then
-	    echo Unmapping the external USB disk...
-	    sudo umount /home/suas/Var/samples
-	    echo You can now unplug and remove the disk.
-	    exit 0
-	else
-	    echo No external disk seems to be present...
-	    exit 1
-	fi
-	;;
+	xeject)
+		if mount | grep -q /home/suas/Var/samples; then
+		    echo Unmapping the external USB disk...
+		    sudo umount /home/suas/Var/samples
+		    echo You can now unplug and remove the disk.
+		    exit 0
+		else
+		    echo No external disk seems to be present...
+		    exit 1
+		fi
+		;;
 
-    xhelp)
-	cat <<\EOF
+	xhelp)
+		cat <<\EOF
 
 Usage:  array "cmd"
 
