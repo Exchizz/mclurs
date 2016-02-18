@@ -603,8 +603,6 @@ undef $zmq_poll;
 
 $zmq_snapshot->close();
 
-$zmq_ctx->term();
-
 close_dac();
 send_pin_output('green', 0);
 
@@ -615,6 +613,8 @@ send_pin_output('yellow', 0);
 if( my $owfs_proc = `pidof owfs` ) {
     kill HUP => $owfs_proc;
 }
+
+$zmq_ctx->term();
 
 sleep(0.5);
 send_pin_output('red', 0);
