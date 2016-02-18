@@ -1777,10 +1777,10 @@ sub channel_list {
     my $msg = "\nbegin channel list\n";
     my $ch = 1;
 
-    for my $i ( 0..NCHANNELS-1 ) {
+    for my $i ( 1..NCHANNELS ) {
 	($ch, $msg) = ( $ch+1,
-			$msg . "ch:$ch:$i:" . $channels[$i]->{gain} . ':' . $channels[$i]->{filt} . ':' . $channels[$i]->{type} . ':' . $channels[$i]->{name} . "\n"
-	    ) if( $channels[$i] );
+			$msg . "stream $ch channel $i: gain " . $channels[$i-1]->{gain} . ' filter ' . $channels[$i-1]->{filt} . ' type ' . $channels[$i-1]->{type} . ' mic ' . $channels[$i-1]->{name} . "\n"
+	    ) if( $channels[$i-1] );
     }
     $msg .= "end channel list\n";
 
