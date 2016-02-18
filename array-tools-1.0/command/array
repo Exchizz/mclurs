@@ -3,7 +3,7 @@
 # Simple script to start and stop the MCLURS array software
 
 RUN=
-if svstat /home/suas/Services/command | grep -wq up; then
+if sudo svstat /home/suas/Services/command | grep -wq up; then
 	RUN=yes
 fi
 
@@ -18,7 +18,7 @@ case "x$1" in
 		exit 0
 		;;
 
-    xstop)
+	xstop)
 		if [ "x$RUN" = "x" ]; then
 			echo Must run setup before $1
 			exit 1
