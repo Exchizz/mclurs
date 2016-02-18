@@ -79,7 +79,7 @@ twos-complement output with a range of +1Vpk to -1Vpk, allowing
 for the chosen ADC range.  If the \fIraw\fP flag is given, no output
 scaling is done and the raw ADC output is emitted.  This comprises
 (for the USBDUXfast) a 12 bit binary value covering the selected
-range; bit 12 is set for out-of-range voltages at the ADC inputs.
+range; bit 13 is set for out-of-range voltages at the ADC inputs.
 .TP
 .B \-f|\-\-freq=<frequency>
 This optional argument indicates the total conversion frequency for
