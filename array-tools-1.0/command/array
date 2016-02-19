@@ -12,9 +12,9 @@ case "x$1" in
 	xsetup)
 		echo Setting up the array control software
 		sudo sv o /home/suas/Services/command
-		sudo sv o /home/suas/Services/snapshot
 		echo Waiting for the software to be ready...
 		snapchat -s tcp://127.0.0.1:2468 status
+		sudo sv o /home/suas/Services/snapshot
 		exit 0
 		;;
 
