@@ -606,21 +606,30 @@ $zmq_snapshot->close();
 close_dac();
 send_pin_output('green', 0);
 
-sleep(0.5);
-send_pin_output('yellow', 0);
-
 # Close the 1-wire FS mount
 if( my $owfs_proc = `pidof owfs` ) {
     kill HUP => $owfs_proc;
 }
 
-$zmq_ctx->term();
+sleep(0.5);
+send_pin_output('yellow', 0);
+
+# Protect this from indefinite delay due to pending messages without active recipient
+my $ok = eval {
+    local %SIG;
+    $SIG{ALRM} = sub { die "Timeout!" };
+
+    alarm(5);
+    $zmq_ctx->term();
+    1;
+};
 
 sleep(0.5);
 send_pin_output('red', 0);
 
 # And exit
-debug(1, "Exiting $$");
+kill '-INT', 0 unless( $ok );	# Force process termination if blocked
+debug(1, "Exiting normally $$");
 exit 0;
 
 #=============== SUBROUTINES ===============
