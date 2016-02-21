@@ -7,6 +7,7 @@ if sudo svstat /home/suas/Services/command | grep -wq up; then
 	RUN=yes
 fi
 
+# Commands one can potentialy run in any situation.
 case "x$1" in
 
 	xsetup)
@@ -15,45 +16,6 @@ case "x$1" in
 		echo Waiting for the software to be ready...
 		snapchat -s tcp://127.0.0.1:2468 status
 		sudo sv o /home/suas/Services/snapshot
-		exit 0
-		;;
-
-	xstop)
-		if [ "x$RUN" = "x" ]; then
-			echo Must run setup before $1
-			exit 1
-		fi
-		echo Stopping the array control software
-		snapchat -s tcp://127.0.0.1:2468 quit
-		exit 0
-		;;
-
-	xstart)
-		if [ "x$RUN" = "x" ]; then
-			echo Must run setup before $1
-			exit 1
-		fi
-		echo Starting the capture system
-		snapchat -s tcp://127.0.0.1:2468 start
-		echo To take snapshots, use the "'trig'" command
-		exit 0
-		;;
-
-	xchan|xchans)
-		if [ "x$RUN" = "x" ]; then
-			echo Must run setup before $1
-			exit 1
-		fi
-		snapchat -s tcp://127.0.0.1:2468 status chan
-		exit 0
-		;;
-
-	xsnap|xsnapshot)
-		if [ "x$RUN" = "x" ]; then
-			echo Must run setup before $1
-			exit 1
-		fi
-		snapchat -s tcp://127.0.0.1:2468 status snap
 		exit 0
 		;;
 
@@ -94,9 +56,21 @@ The "cmd" can be one of the following words (without the " " marks):
   stop
 	The array software shuts down and tidies up after itself.
 
+  scan
+	Ask the hardware to scan and check the set of connected microphones, recalculating
+	the channel status information.
+
   chan
 	Display a status message reporting which channels are connected and what
 	parameters (gain, filter state) are set for each connected channel.
+
+  gain
+
+	Set the parameters for a channel or set of channels.  Once can set the gain and
+	whether the high-pass or all-pass filter is selected.  The command takes 3
+	arguments: the channel('1' to '8', or 'all'), the gain (between 0 and 255) and the
+	filter setting ('hp' or 'ap').  A channel selection of 'all' changes all currently
+	active channels.
 
   snap
 	Display a status message reporting the list of all snapshots completed or in
@@ -114,6 +88,49 @@ The "cmd" can be one of the following words (without the " " marks):
 EOF
 	exit 0
 	;;
+
+	xstop|xstart|xchan*|xsnap*|xgain|xscan)
+		if [ "x$RUN" = "x" ]; then
+			echo Must run setup before $1
+			exit 1
+		fi
+		;;
+esac
+
+case "x$1" in
+	
+	xstop)
+		echo Stopping the array control software
+		snapchat -s tcp://127.0.0.1:2468 quit
+		exit 0
+		;;
+
+	xstart)
+		echo Starting the capture system
+		snapchat -s tcp://127.0.0.1:2468 start
+		echo To take snapshots, use the "'trig'" command
+		exit 0
+		;;
+
+	xchan|xchans)
+		snapchat -s tcp://127.0.0.1:2468 status chan
+		exit 0
+		;;
+
+	xsnap|xsnapshot)
+		snapchat -s tcp://127.0.0.1:2468 status snap
+		exit 0
+		;;
+
+	xscan)
+		snapchat -s tcp://127.0.0.1:2468 scan
+		exit 0
+		;;
+
+	xgain)
+		snapchat -s tcp://127.0.0.1:2468 $*
+		exit 0
+		;;	    
 
     x*)
 	echo Unknown or missing argument $1

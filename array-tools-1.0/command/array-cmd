@@ -1926,7 +1926,7 @@ sub sys_start {
 	    }
 	    debug(2, "Start: slave mode, trigger armed");
 	}
-	send_pin_output('yellow', 1);
+	send_pin_output( (in_mode('single')? 'green' : 'yellow'), 1);
 	return (1, "Completed, system ready\n");
 
     } elsif( in_mode( 'master|single') ) {	# 'Run' command, in Master and Single mode, releases the trigger
