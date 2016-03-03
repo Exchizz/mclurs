@@ -50,6 +50,13 @@ Known bugs, things to do:  random order.
 
 8. Add parameter to indicate group synchronisation and give wait period.
 
+   => 7,8 both done.  (7) data must arrive within 10 seconds of ADC
+      start and within 1 second of last data, otherwise we assume data
+      stagnation and abort.  10 seconds is the default value syncwait.
+      (8) if syncwait is set explicitly, the external start trigger
+      request is made to the ADC driver and the initial wait time uses
+      the actual value of syncwait instead of the default 10 seconds.
+
 9. Check the Param - Init - Go - Halt - Param sequence to find where
    it fails to restore enough...  Second Init - Go fails to collect
    data.
