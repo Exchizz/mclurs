@@ -62,7 +62,9 @@ public adc reader_adc;              /* The ADC object for the READER */
 #define READER_MAX_RBHWMF         0.95   /* Ring buffer maximum high-water mark fraction */
 #define READER_MIN_WINDOW            1   /* Reader minimum capture window [s] */
 #define READER_MAX_WINDOW           30   /* Reader maximum capture window [s] */
-#define ADC_DRY_PERIOD_MAX        1000   /* Maximum Wait for data [ms]: initial default is 10[s] */
+#define READER_MIN_START_DELAY	     5   /* Minimum permitted ADC sync start delay [s] */
+#define READER_MAX_START_DELAY	   120	 /* Maximum permitted ADC sync start delay [s] */
+#define ADC_DRY_PERIOD_DEFAULT    1000   /* Default maximum permitted interruption of flowing data [ms] */
 
 /*
  * READER state machine definitions.
@@ -128,11 +130,13 @@ public const char *reader_state() {
 }
 
 /*
- * READER forward definitions
+ * READER forward declarations
  */
 
 private void drain_reader_chunk_queue();
 private void debug_reader_params();
+
+private uint64_t next_data_before;
 
 /*
  * READER thread comms initialisation.
@@ -287,6 +291,8 @@ private void process_reader_command(void *s) {
       break;
     }
     strbuf_printf(err, "OK Go");
+    next_data_before = rp->r_sync_wait_time*1e9; /* Set up initial data flow timeout to be ... */
+    next_data_before += monotonic_ns_clock();	 /* r_sync_wait_time seconds from now */
     rp_state = READER_ARMED;
     break;
 
@@ -526,12 +532,11 @@ private void drain_reader_chunk_queue(const char *err) {
 
 private int buf_hwm_samples = 0;
 private int buf_window_samples = 0;
-private int adc_dry_period_max = ADC_DRY_PERIOD_MAX;
 private int reader_poll_delay = 100; /* Poll wait time [ms] */
+private uint64_t next_data_before = 0;     /* Deadline for data to arrive if flow is normal */
 
 private void reader_thread_msg_loop() {    /* Read and process messages */
   uint64_t high_water_mark;
-  int      adc_dry_period;
 
   /* Main loop:  read messages and process messages */
   zmq_pollitem_t  poll_list[] =
@@ -548,7 +553,6 @@ private void reader_thread_msg_loop() {    /* Read and process messages */
   rp_state = READER_PARAM;
 
   high_water_mark = adc_ring_tail(reader_adc) + buf_hwm_samples;
-  adc_dry_period  = adc_dry_period_max;
 
   reader_parameters.r_running = true;
 
@@ -562,7 +566,7 @@ private void reader_thread_msg_loop() {    /* Read and process messages */
       if( nb ) {                        /* There was some new data, adc_ring_head has advanced */
         uint64_t head = adc_ring_head(reader_adc);
 
-        adc_dry_period = adc_dry_period_max;
+	next_data_before = adc_capture_head_time(reader_adc) + ADC_DRY_PERIOD_DEFAULT*1000000;
         rp_state = READER_RUN;
 
         /* Once the ADC head pointer has advanced past the READER queue head's end, a chunk is ready */
@@ -583,11 +587,10 @@ private void reader_thread_msg_loop() {    /* Read and process messages */
             high_water_mark = lwm + buf_hwm_samples;
           }
         }
-	else {			/* No data received on this pass through the main loop */
-	  adc_dry_period -= reader_poll_delay;
-	}
       }
-      if(adc_dry_period <= 0) { /* Data capture interrupted or failed to start... */
+
+      /* Check that data arrived within the expected real-time window, otherwise flow stagnation */
+      if(next_data_before < monotonic_ns_clock()) {
         WARNING(READER, "ADC data flow interruption at head %016llx\n", adc_ring_head(reader_adc));
         rp_state = READER_ERROR;
         adc_stop_data_transfer(reader_adc);
@@ -726,7 +729,7 @@ public int verify_reader_params(rparams *rp, strbuf e) {
   /* Test to see whether the window parameter has been set explicitly and check its value */
   if( param_isset(pwin) ) {
     if(rp->r_window < READER_MIN_WINDOW || rp->r_window > READER_MAX_WINDOW) {
-      strbuf_appendf(e, "Specified minimum capture window %d seconds outwith compiled-in range [%d,%d] seconds",
+      strbuf_appendf(e, "Specified minimum capture window %g seconds outwith compiled-in range [%g,%g] seconds",
                      rp->r_window, READER_MIN_WINDOW, READER_MAX_WINDOW);
       return -1;
     }
@@ -818,6 +821,20 @@ public int verify_reader_params(rparams *rp, strbuf e) {
     return -1;
 
   adc_set_device(reader_adc, rp->r_device); /* Record the path, don't open the device */
+
+  /* Determine whether  start synch delay was specified */
+  param_t *psyn = find_param_by_name("syncwait", 8, globals, n_global_params);
+  if( param_isset(psyn) ) {
+    if(rp->r_sync_wait_time < READER_MIN_START_DELAY || rp->r_sync_wait_time > READER_MAX_START_DELAY) {
+      strbuf_appendf(e, "Specified start delay %g seconds outwith compiled-in range [%g,%g] seconds",
+                     rp->r_sync_wait_time, READER_MIN_START_DELAY, READER_MAX_START_DELAY);
+      return -1;
+    }
+    adc_set_start_sync(reader_adc, true);
+  }
+  else {
+    adc_set_start_sync(reader_adc, false);
+  }
   
   /* Determine the READER main loop poll delay from the chunk duration */
   double d = 1e-6 * chunksize * adc_ns_per_sample(reader_adc); /* Length of a chunk in [ms] */

@@ -132,6 +132,11 @@ public param_t globals[] ={
     PARAM_TYPE(double), PARAM_SRC_ENV|PARAM_SRC_ARG|PARAM_SRC_CMD,
     "successive sample correlation coefficient [-1,1]; default 0"
   },
+  { "syncwait",   "10",
+    &reader_parameters.r_sync_wait_time,
+    PARAM_TYPE(double),  PARAM_SRC_ENV|PARAM_SRC_ARG|PARAM_SRC_CMD,
+    "maximum delay from capture start to first data [s]; default 10[s]"
+  },
   { "rtprio",   NULL,
     &schedprio,
     PARAM_TYPE(int32),  PARAM_SRC_ENV|PARAM_SRC_ARG,
@@ -171,11 +176,6 @@ public param_t globals[] ={
     &writer_parameters.w_chunksize,
     PARAM_TYPE(int32), PARAM_SRC_ENV|PARAM_SRC_ARG,
     "size of a transfer chunk [kiB]; default 1[MiB]"
-  },
-  { "syncwait",   "10",
-    &reader_parameters.r_sync_wait_time,
-    PARAM_TYPE(double),  PARAM_SRC_ENV|PARAM_SRC_ARG,
-    "maximum delay from capture start to first data [s]; default 10[s]"
   },
   { "uuid",     NULL,
     &snapshot_uuid,

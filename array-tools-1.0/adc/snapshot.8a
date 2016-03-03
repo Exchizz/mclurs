@@ -269,6 +269,15 @@ data from the hardware and the oldest valid data in the buffer.  If
 this parameter is not explicitly specified, it will be calculated as
 described in the NOTES.
 .TP
+.B \-\-syncwait=\fIduration\fP " (*)"
+determines \fBsnapshot\fP's capture start mode.  If the parameter is
+unset, \fBsnapshot\fP assumes it is working alone; if set, it must
+synchronise with other units using a common trigger wire.  The latter
+has two implications: first, \fBsnapshot\fP must request the ADC
+driver to start capture when externally triggered; and second, it
+changes the initial period the ADC module is prepared to wait for data
+to be at least \fIduration\fP (in seconds).
+.TP
 .B \-P | \-\-rtprio=\fIpri\fP
 If this option is given, the program attempts to set real-time
 scheduling mode for reading data from Comedi and writing to the
@@ -394,6 +403,20 @@ channel from the previously taken sample.  The decorrelation mechanism
 controlled by the \fB\-\-sscorr\fP parameter attempts to deal with
 this by subtracting a given proportion of the previous channel sample
 from the current channel sample during data conversion.
+.PP
+\fBsnapshot\fP attempts to detect data capture failures by monitoring
+the flow of data from the ADC device.  On starting the ADC, it is
+prepared to wait for up to 10 seconds or (if set) the time specified
+by the \fB\-\-syncwait\fP argument for data to arrive.  During this
+wait period the state is reported as "armed".  Once data has been
+seen, the state changes to "running" and \fBsnapshot\fP is prepared to
+wait up to 1 second after the latest data to arrive for more data to
+appear.
+.PP
+If either of these time limits is exceeded, \fBsnapshot\fP
+assumes that ADC capture has failed and resets the capture status and
+hardware.  Snapshots pending when \fBsnapshot\fP performs such a reset
+are aborted with an error "READER ADC ran dry".
 .SH BUGS
 The command sequence \fBInit\fP \- \fBGo\fP \- \fBHalt\fP \-
 \fBParam\fP \- \fBInit\fP \- \fBGo\fP completes successfully but does

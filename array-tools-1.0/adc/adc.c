@@ -70,6 +70,7 @@ struct _adc {
   int         a_intersample_ns;         /* Time between samples [ns] */
   int         a_range;                  /* Current conversion range */
   int         a_raw;                    /* Don't convert the data, deliver it raw */
+  int	      a_ext_trigger;		/* Use external trigger to wait for sync with other Boxes */
   convertfn   a_convert;                /* Current conversion function */
   comedi_cmd  a_command;                /* Comedi command descriptor structure */
   unsigned    a_chans[N_USBDUX_CHANS];  /* Channel descriptors for hardware channels */
@@ -245,6 +246,18 @@ public void adc_set_ssc_coeff(adc a, double coeff) {
 }
 
 /*
+ * Set ADC synchronisation mode.
+ *
+ * If v is false, we are running standalone; if v is true, we are sybchronising with other
+ * Boxes and have to set the ADC command trigger specification for external trigger.
+ */
+
+public void adc_set_start_sync(adc a, int v) {
+  a->a_ext_trigger = v;
+  LOG(READER, 2, "ADC set ext trigger to %d\n", v);
+}
+
+/*
  * Initialise the ADC structure for data capture.
  */
 
@@ -312,6 +325,13 @@ public int adc_init(adc a, strbuf e) {
   a->a_command.stop_arg    = 0;
   a->a_command.convert_arg = a->a_intersample_ns;
 
+  /* If necessary, ask the driver to wait for external trigger */
+  if(a->a_ext_trigger) {
+    a->a_command.start_src = TRIG_EXT;
+    /* a->a_command.start_arg = 0; */ /* USE THIS FOR TRIGGER SENSE TRUE/INVERTED?  FIX DRIVER */
+    LOG(READER, 2, "Comedi command uses external trigger\n");
+  }
+  
   /* Ask the driver to check the command structure and complete any omissions */
   (void) comedi_command_test(a->a_device, &a->a_command);
   ret = comedi_command_test(a->a_device, &a->a_command);
@@ -320,7 +340,7 @@ public int adc_init(adc a, strbuf e) {
     return -1;
   }
 
-  /* Check the timing:  a difference here means a problem with the driver */
+  /* Check the timing:  a difference here means a disagreement with the driver */
   if(a->a_command.convert_arg != a->a_intersample_ns) {
     WARNING(READER, "Comedi driver alters isp from %d[ns] to %d[ns]; new total frequency %g[Hz]\n",
             a->a_intersample_ns, a->a_command.convert_arg, 1e9 / a->a_command.convert_arg);
