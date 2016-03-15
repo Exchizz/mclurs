@@ -1,10 +1,11 @@
 \documentclass[12pt]{article}
+\usepackage{graphicx}
 
 \textwidth=160mm
-\textheight=240mm
+\textheight=250mm
 \oddsidemargin=0mm
 \evensidemargin=0mm
-\topmargin = 0mm
+\topmargin = -20mm
 
 \pagestyle{empty}
 
@@ -29,7 +30,25 @@
   Taped to the inside of the Box there will be a micro-SD card, which
   should be inserted into the appropriate slot on the Raspberry Pi --
   the top circuit board inside the metal box, see
-  picture~\ref{sdcard}.
+  Figure~\ref{fig:sdcard} below.
+
+\begin{figure}[bh]
+  \begin{center}
+    \includegraphics[width=0.9\linewidth]{P3150230}
+
+    \caption{\label{fig:sdcard}
+%
+      Picture of the electronics inside the Box.  The Channel sockets
+      are off the bottom of this image.  On the right is the analog
+      card; the edge of the Raspberry Pi (RPi) is in the middle of the
+      image and the right end of the RPi is at the left of the image.
+      The micro-SD card is inserted into the socket on the RPi board
+      in the middle of its right edge, central in the picture -- the
+      card in the picture is the black object with ``32 GB'' written
+      on it in the metal socket labelled 41029CC.  Your RPi may have a
+      different label.}
+  \end{center}
+\end{figure}
 
 \item[Checking.] ~\\
 
