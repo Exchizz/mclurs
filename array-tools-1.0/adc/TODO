@@ -4,15 +4,14 @@ Known bugs, things to do:  random order.
    logging (via log socket) from debug functionality (to stderr
    directly).
 
-   [Added large strbufs for thread logging; added generic macros for
-    FATAL_ERROR, WARNING and LOG that work in the different threads.
+   => Added large strbufs for thread logging; added generic macros for
+      FATAL_ERROR, WARNING and LOG that work in the different threads.
 
-    Still need to make reporting levels consistent and fix some
-    debugging dumps.
+      Still need to make reporting levels consistent and fix some
+      debugging dumps.
 
-    Added LOG() statements in ADC, READER and WRITER to give a more
-    complete picture of processing.
-   ]
+      Added LOG() statements in ADC, READER and WRITER to give a more
+      complete picture of processing.
 
 2. Add in energy computations into the READER thread data acquisition
    loop, so that average energy over the last interval is always
@@ -20,6 +19,13 @@ Known bugs, things to do:  random order.
 
    [some code added to lut.c as start of this feature]
    [need to change this to take account of decorrelation code]
+
+   [there are 3750 DUXclock ticks per channel in 1ms, so given the
+    DUXclock loop count L for each frequency, we should do the
+    following: initialise S to 0; loop add 3750 to S; accumulate the
+    energy in S div L samples across the 8 channels; set S to be S mod
+    L; endloop -- this will generate 1ms energy samples without
+    excessive timing jitter.]
 
 3. Implement a PUBLISH socket through which the READER can
    periodically publish energy and sample number data; implement the
@@ -64,5 +70,5 @@ Known bugs, things to do:  random order.
 10. Add code to allow conversion to cancel the correlation between
     successive samples from USBDUXfast.
 
-    [done.]
+    => done.
 
