@@ -425,12 +425,16 @@ private sampl_t *adc_sample_to_ring_ptr(adc a, uint64_t sample) {
  */
 
 public void adc_setup_chunk(adc a, chunk_t *c) {
+  uint16_t *ring_ptr;
+  
   if(c->c_first < a->a_tail) {  /* Too late */
     strbuf_appendf(c->c_error, "Chunk was %d [us] too late", (int)((a->a_tail - c->c_first)/1000));
     c->c_ring = NULL;
     return;
   }
-  c->c_ring = adc_sample_to_ring_ptr(a, c->c_first);  
+  /* Make sure ptr[-1] is accessible in the ring buffer, for chunk data decorrelation */
+  ring_ptr  = adc_sample_to_ring_ptr(a, c->c_first-1);  
+  c->c_ring = ring_ptr+1;
   return;
 }
 

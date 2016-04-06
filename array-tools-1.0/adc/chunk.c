@@ -238,18 +238,26 @@ public int map_chunk_to_frame(chunk_t *c) {
 }
 
 /*
- * Copy the data for a chunk from the ring buffer into the frame.
- * Apply the appropriate ADC conversion.  Used by the READER thread.
+ * Copy the data for a chunk from the ring buffer into the frame.  Apply the
+ * appropriate ADC conversion.  Used by the READER thread.
+ *
+ * This routine assumes that when the chunk's ring buffer pointer is computed by
+ * adc_setup_chunk(), it also ensures that the previous sample to the chunk's
+ * first sample is available in the ring buffer at the previous address (the
+ * sample value is needed for decorrelation processing in the LUT module).  Note
+ * the need to handle the edge case where the chunk starts at sample 0.
  */
 
 public void copy_chunk_data(chunk_t *c) {
   convertfn fn = c->c_convert;
+  sampl_t   prev;
 
    LOG(READER, 3, "Copy chunk %s using fn %p from %p to %p size %d[spl]\n", 
        c_nstr(c), fn, c->c_ring, c->c_frame->f_map.b_data, c->c_samples);
 
-   (*fn)((sampl_t *)c->c_frame->f_map.b_data, (sampl_t *)c->c_ring, c->c_samples, (sampl_t)0 );
-  set_chunk_status(c, SNAPSHOT_WRITTEN);
+   prev = c->c_first > 0? ((sampl_t *)c->c_ring)[-1] : 0;
+   (*fn)((sampl_t *)c->c_frame->f_map.b_data, (sampl_t *)c->c_ring, c->c_samples, prev);
+   set_chunk_status(c, SNAPSHOT_WRITTEN);
 }
 
 /*
