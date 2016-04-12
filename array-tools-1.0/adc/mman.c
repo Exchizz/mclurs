@@ -14,7 +14,10 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <assert.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <sys/mman.h>
+#include <fcntl.h>
 #include "mman.h"
 
 /*
@@ -51,6 +54,8 @@ public void *mmap_locate(size_t length, int flags) {
 
 /*
  * Map and lock a region of a file into memory at given fixed address.
+ *
+ * If fd<0, then use anonymous pages.
  */
 
 public void *mmap_and_lock_fixed(int fd, off_t offset, size_t length, int flags, void *fixed) {
@@ -66,12 +71,17 @@ public void *mmap_and_lock_fixed(int fd, off_t offset, size_t length, int flags,
   if( !pflags )
     pflags = PROT_NONE;
 
-  mflags = MAP_SHARED;
+  if(fd < 0)
+    mflags = MAP_PRIVATE|MAP_ANONYMOUS;
+  else
+    mflags = MAP_SHARED;
+
   if(fixed)
     mflags |= MAP_FIXED;
+
   if(flags&MAL_LOCKED)
     mflags |= MAP_LOCKED;
-
+  
   //  fprintf(stderr, "MMLF called map %p fd %d offs %d size %d[B] flags %x\n",
   //      fixed, fd, offset, length, flags);
 
@@ -89,6 +99,10 @@ public void *mmap_and_lock_fixed(int fd, off_t offset, size_t length, int flags,
 
 /*
  * Map and lock a region of a file into memory, don't care where...
+ *
+ * If fd<0, we get anonymous pages for the first call to
+ * mmap_and_lock_fixed(); for the second we then need fd to refer to
+ * /proc/self/mem and offset to be the address in´map'.
  */
 
 public void *mmap_and_lock(int fd, off_t offset, size_t length, int flags) {
@@ -102,6 +116,14 @@ public void *mmap_and_lock(int fd, off_t offset, size_t length, int flags) {
     return NULL;
 
   if( flags & MAL_DOUBLED ) {
+    if(fd < 0) {		/* Original mapping was anonymous... */
+      fd = open("/proc/self/mem", O_RDWR);
+      if(fd < 0) {
+	munmap(map, 2*length);
+	return NULL;
+      }
+      offset = (off_t)map;	/* Map same piece of memory to contiguous location */
+    }
     if( mmap_and_lock_fixed(fd, offset, length, flags, map+length) == NULL ) {
       munmap(map, 2*length);
       return NULL;

@@ -4,7 +4,7 @@ CFLAGS	    = -Wall -Wno-format -Wno-parentheses
 TARGETS     = grab trig snapchat snapshot
 DOCS	    = ${TARGETS:=.pdf}
 OFILES      = snapshot.o reader.o writer.o tidy.o
-LIBOBJS     = util.o lut.o mman.o param.o queue.o rtprio.o strbuf.o chunk.o adc.o
+LIBOBJS     = util.o lut.o mman.o param.o queue.o rtprio.o strbuf.o chunk.o adc.o fifo.o energy.o
 XTRAS       = grab.o snapchat.o trig.o
 LIBRARY     = utilities.a
 ARGTAB_SRCS = argtab-int16.c argtab-int64.c
@@ -61,6 +61,10 @@ strbuf.o:	strbuf.c queue.h strbuf.h general.h
 param.o:	param.c param.h argtab.h assert.h general.h
 
 queue.o:	queue.c queue.h general.h
+
+fifo.o:		fifo.c fifo.h mman.h assert.h general.h
+
+energy.o:	energy.c energy.h fifo.h adc.h lut.h strbuf.h assert.h general.h
 
 argtab-int64.o:	argtab-int64.c argtab-int64.h general.h
 
