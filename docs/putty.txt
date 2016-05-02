@@ -3,31 +3,29 @@
 communication:
 
 1. Go to http://www.chiark.greenend.org.uk/~sgtatham/putty/download.html
-   and download PuTTY, Plink and PuTTYgen and install them on your
-   machine.  You may need to be administrator to do this.
+   and download PuTTY to your computers Desktop. 
 
-2. Start PuTTYgen.  If you get a pop-up warning about starting a
-   downloaded program, you need to unblock the three you just
-   downloaded.  Exit PuTTYgen; then right-click on it, choose
-   Properties, and select 'Unblock' near the bottom of the panel.
-   Click 'Apply'.  Do this for each of the three downloaded programs.
+2. Start PuTTY.  If you get a pop-up warning about starting a downloaded
+   program, you need to unblock it.  Exit PuTTY; then right-click on it, choose
+   Properties, and select 'Unblock' near the bottom of the panel.  Click
+   'Apply'.
 
 3. Start PuTTY.  On the 'Session' tab, set hostname as [BOXNAME] enter
    'batpi3' or 'batpi4' into the name box in the save panel, and then
    click 'Save'.
 
-   Now click the SSH item to the left, click 'Auth', and set the
-   login password to 'funfunfun'.   Click on the 'Data' item (on the
-   right under 'Connection' and above 'SSH') and set 'Auto login user'
-   to be 'bbu'.  Go back to 'Session' and Save again.
+   Now click on the 'Data' item (on the right under 'Connection' and above
+   'SSH') and set 'Auto login user' to be 'bbu'.  Go back to 'Session' and
+   click Save.
 
    You can do this step for each of the two Boxes, if you plan to
    connect to each of them at some point.
 
-4. Choose the session named for the Box you are connecting to, from
-   the list under the Session tab, and click 'open'.  If all is well,
-   you should connect to the Box, getting a black window containing
-   (after a moment) some text looking something like this:
+4. Choose the session named for the Box you are connecting to, from the list
+   under the Session tab, and click 'open', accept the offered public key (this
+   is only needed on the first connection), type in the password 'funfunfun'.
+   If all is well, you should connect to the Box, getting a black window
+   containing (after a moment) some text looking something like this:
 
    [PROMPT]   
 
