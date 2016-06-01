@@ -56,7 +56,11 @@ public fifo *fifo_create(int slots, int stride, int flags) {
     f->ff_flags  = FIFO_EMPTY;	/* New FIFO is empty */
 
     /* Allocate the ff_map data area */
-    
+    f->ff_map = mmap_and_lock(-1, 0, bsize, PROT_RDWR|PREFAULT_RDWR|MAL_LOCKED|MAL_DOUBLED);
+    if( !f->ff_map ) {		/* Failed to get data space */
+      free( (void *)f );
+      f = NULL;
+    }
   }
   return f;
 }
@@ -127,6 +131,33 @@ public void fifo_ins_close(fifo *f) {
   return;
 }
 
+/*
+ * Open the FIFO for insertion and force space
+ */
+
+public void *fifo_ins_forced_open(fifo *f, int n) {
+  if( n <= 0 ) {
+    errno = EINVAL;
+    return NULL;
+  }
+  if(f->ff_flags & FIFO_INSPENDING) { /* Insertions don't nest */
+    errno = EBUSY;
+    return NULL;
+  }
+
+  int s = fifo_space(f);
+  if( n > s ) {		/* There is insufficient space for the data -- remove some items */
+    if( fifo_rem_open(f, n-s) == NULL ) { /* Can't remove any -- busy or no space */
+      return NULL;
+    }
+    fifo_rem_close(f);			  /* Else remove the reserved items */
+  }
+  f->ff_insnum = n;
+  f->ff_flags |= FIFO_INSPENDING;
+  /* Obtain a pointer to the position the n items will occupy */
+  return f->ff_map + f->ff_insptr*f->ff_stride;
+}
+ 
 /*
  * Open the FIFO for removing n data
  */

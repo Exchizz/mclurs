@@ -1,2 +1,7 @@
 *.[oa]
 *~
+*.changes
+*.dsc
+*.deb
+*.xz
+*.gz

@@ -1,0 +1,33 @@
+Source: mclurs
+Section: unknown
+Priority: optional
+Maintainer: John Hallam <sw@j.hallam.dk>
+Build-Depends: debhelper (>= 9)
+Standards-Version: 3.9.5
+#Homepage: 
+#Vcs-Git: git://anonscm.debian.org/collab-maint/array-tools.git
+#Vcs-Browser: http://anonscm.debian.org/?p=collab-maint/array-tools.git;a=summary
+
+Package: mclurs-base
+Architecture: all
+Description: Basic configuration for a MCLURS array box
+ This package creates the /etc/mclurs directory and organises hardware probing on
+ boot via the /sbin/mclurs-probe.sh script.
+
+Package: mclurs-cmd
+Architecture: all
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: Command script for MCLURS array
+ The package provides array-cmd, a PERL script which offers a network interface
+ through which a Box can be controlled.  The script handles hardware setup and
+ interrogation and liaises with snapshot (from mclurs-adc) for capture of data.
+
+Package: mclurs-adc
+Architecture: i386 amd64 armhf
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: ADC tools for MCLURS array
+ The package installs tools such as grab and snapshot, for capturing adc output,
+ and trig and snapchat for communicating with snapshot.  The basic package assumes
+ a USBDUXfast ADC which interfaces through Comedi.
+
+

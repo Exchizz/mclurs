@@ -3,10 +3,10 @@ DOCS	= array-cmd.pdf
 build:  array-cmd.8a
 
 install:
-	install -D array-cmd	${DESTDIR}/usr/sbin
-	install -D array-cmd.8a	${DESTDIR}/usr/share/man/man8
+	install -D array-cmd	${DESTDIR}/usr/sbin/array-cmd
+	install -D array-cmd.8a	${DESTDIR}/usr/share/man/man8/array-cmd.8a
 	install -d		${DESTDIR}/usr/share/doc/array-cmd
-	for A in docs/*; do install $A ${DESTDIR}/usr/share/doc/array-cmd; done
+	for A in docs/*; do install -D $$A ${DESTDIR}/usr/share/doc/array-cmd/$$A; done
 
 clean:
 	rm -f array-cmd.8a ${DOCS} print.pdf

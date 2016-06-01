@@ -85,10 +85,10 @@ install:	build
 	install -D snapchat	 ${DESTDIR}/usr/bin/snapchat
 	install -D trig	   	 ${DESTDIR}/usr/bin/trig
 	install -D grab	   	 ${DESTDIR}/usr/bin/grab
-	install -D snapshot.8a	 ${DESTDIR}/usr/share/man/man8
-	install -D snapchat.1a	 ${DESTDIR}/usr/share/man/man1
-	install -D trig.1a	 ${DESTDIR}/usr/share/man/man1
-	install -D grab.1a	 ${DESTDIR}/usr/share/man/man1
+	install -D snapshot.8a	 ${DESTDIR}/usr/share/man/man8/snapshot.8a
+	install -D snapchat.1a	 ${DESTDIR}/usr/share/man/man1/snapchat.1a
+	install -D trig.1a	 ${DESTDIR}/usr/share/man/man1/trig.1a
+	install -D grab.1a	 ${DESTDIR}/usr/share/man/man1/grab.1a
 
 clean:
 	rm -f ${TARGETS} ${DOCS} ${XTRAS} ${OFILES} ${LIBRARY} ${LIBOBJS} argtab.a argtab.h ${ARGTAB_OBJS} *~

@@ -27,7 +27,7 @@
 
 /*
  * Update the energy_calc structure to be ready to compute the next sample and store
- * it into the output FIFO.
+ * it into the output FIFO.  Ensure there is space for the new sample.
  */
 
 private void energy_calc_prepare_sample(energy_calc *e) {
@@ -35,7 +35,7 @@ private void energy_calc_prepare_sample(energy_calc *e) {
   e->e_clock   += e->e_period;
   e->e_next     = e->e_current + NCHANNELS*(e->e_clock / e->e_rate);
   e->e_clock   %= e->e_rate;
-  e->e_sample   = (energy_sample *) fifo_ins_open(e->e_fifo, 1);
+  e->e_sample   = (energy_sample *) fifo_ins_forced_open(e->e_fifo, 1);
 
   bzero((void *)e->e_sample, sizeof(energy_sample));
   e->e_sample->ec_timestamp = e->e_next;
