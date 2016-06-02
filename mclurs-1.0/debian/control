@@ -31,3 +31,10 @@ Description: ADC tools for MCLURS array
  and trig and snapchat for communicating with snapshot.  The basic package assumes
  a USBDUXfast ADC which interfaces through Comedi.
 
+Package: mclurs-tools
+Architecture: all
+Depends: mclurs-cmd, mclurs-adc, runit | daemontools
+Description: Operating tools for MCLURS array
+ The package comprises the 'array' tool, used for settting up, starting and stopping
+ the capture system, and the 'pack' tool, used for retrieving snapshots of the audio
+ input in useful format.
