@@ -1,0 +1,12 @@
+Package: libmclurs-snap-perl
+Version: 1.0
+Architecture: all
+Maintainer: John Hallam <sw@j.hallam.dk>
+Installed-Size: 51
+Depends: libzmq-libzmq3-perl, perl
+Section: unknown
+Priority: optional
+Homepage: <insert the upstream URL, if relevant>
+Description: Perl module for interface to snapshot program
+ The MCLURS::Snap module handles interaction with a running snapshot program
+ (from mclurs-adc) using the 0MQ message-passing system.

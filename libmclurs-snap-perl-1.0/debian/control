@@ -1,0 +1,17 @@
+Source: libmclurs-snap-perl
+Section: unknown
+Priority: optional
+Maintainer: John Hallam <sw@j.hallam.dk>
+Build-Depends: debhelper (>= 9)
+Standards-Version: 3.9.5
+Homepage: <insert the upstream URL, if relevant>
+#Vcs-Git: git://anonscm.debian.org/collab-maint/libmclurs-snap-perl.git
+#Vcs-Browser: http://anonscm.debian.org/?p=collab-maint/libmclurs-snap-perl.git;a=summary
+
+Package: libmclurs-snap-perl
+Architecture: all
+Depends:  libzmq-libzmq3-perl, ${misc:Depends}, ${perl:Depends}
+Description: Perl module for interface to snapshot program
+ The MCLURS::Snap module handles interaction with a running snapshot program
+ (from mclurs-adc) using the 0MQ message-passing system.
+
