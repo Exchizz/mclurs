@@ -17,7 +17,7 @@ Description: Basic configuration for a MCLURS array box
 
 Package: mclurs-cmd
 Architecture: all
-Depends: mclurs-base, owfs-fuse, libuuid-perl, libzmq-libzmq3-perl, libmclurs-snap-perl, ${shlibs:Depends}, ${misc:Depends}, ${perl:Depends}
+Depends: mclurs-base, owfs-fuse, libuuid-perl, libzmq-perl, libzmq-libzmq3-perl, libmclurs-snap-perl, ${shlibs:Depends}, ${misc:Depends}, ${perl:Depends}
 Description: Command script for MCLURS array
  The package provides array-cmd, a PERL script which offers a network interface
  through which a Box can be controlled.  The script handles hardware setup and
@@ -31,3 +31,10 @@ Description: ADC tools for MCLURS array
  and trig and snapchat for communicating with snapshot.  The basic package assumes
  a USBDUXfast ADC which interfaces through Comedi.
 
+Package: mclurs-tools
+Architecture: all
+Depends: mclurs-cmd, mclurs-adc, runit | daemontools
+Description: Operating tools for MCLURS array
+ The package comprises the 'array' tool, used for settting up, starting and stopping
+ the capture system, and the 'pack' tool, used for retrieving snapshots of the audio
+ input in useful format.
