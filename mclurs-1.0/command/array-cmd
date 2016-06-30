@@ -1984,9 +1984,10 @@ sub cmd_help {
 quit - shut down snapshotter and exit
 ping <args> - generate a pong <args> reply
 
-chan - report presence and set up of connected channels
-scan - initiate a 1-wire scan and channel initialisation
-time - report the current time at the command server
+scan        - initiate a 1-wire scan and channel initialisation
+time        - report the current time at the command server
+status      - report if command server is running or not
+status chan - report presence and set up of connected microphones
 
 hold - pull the trigger line low, stopping the ADC 
 free - release the trigger line high, allowing the ADC to start
