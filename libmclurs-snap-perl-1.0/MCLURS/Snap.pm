@@ -17,8 +17,8 @@ use ZMQ::Poller;
 sub new {
     my $snap = bless({}, shift);
     if( $snap->_init(@_) ) {
-	$snap->{_busy} = 0;
-	return $snap;
+        $snap->{_busy} = 0;
+        return $snap;
     }
     return undef;
 }
@@ -35,27 +35,27 @@ sub _init {
 
     @{$self}{ keys %args } = ( values %args );
     for my $a ( @req ) {
-	next if( defined $self->{$a} );
-	# Error -- missing mandatory element
-	return;
+        next if( defined $self->{$a} );
+        # Error -- missing mandatory element
+        return;
     }
     unless( ref($self->{skt}) =~ /ZMQ::Socket/ ) {
-	# Error -- $skt should be a ZMQ socket
-	return;
+        # Error -- $skt should be a ZMQ socket
+        return;
     }
 
     $self->{_estr} = '';
     $self->{_snap} = $self->{skt}->getsockopt(ZMQ_LAST_ENDPOINT);
     unless( $self->{_snap} ) {
-	# Error -- $skt is not connected
-	$self->{_estr} = "Socket is not connected";
-	return 1;
+        # Error -- $skt is not connected
+        $self->{_estr} = "Socket is not connected";
+        return 1;
     }
-    
+
     my $p = ZMQ::Poller->new();
     unless($p) {
-	$self->{_estr} = "Could not create Poller";
-	return 1;
+        $self->{_estr} = "Could not create Poller";
+        return 1;
     }
 
     $self->{_poll} = $p;
@@ -78,11 +78,11 @@ sub _read {
 
     my $m = $s->recvmsg(0);
     unless($m) {
-	$self->{_estr} = "Read failed: $!";
-	return;
+        $self->{_estr} = "Read failed: $!";
+        return;
     }
     $self->{_busy} = 0;
-    
+
     my $d = $m->data();
     $m->close();
     $self->{_estr} = '';
@@ -103,8 +103,8 @@ sub _write {
 #    print STDERR "Message send returns $ret\n";
 
     unless($ret >= 0) {
-	$self->{_estr} = "Write failed: $!";
-	return;
+        $self->{_estr} = "Write failed: $!";
+        return;
     }
 
     $m->close();
@@ -121,8 +121,8 @@ sub _waitr {
 
     my ($s) = $self->{_poll}->poll($time);
     unless($s and $s->{events}&ZMQ_POLLIN != 0) {
-	$self->{_estr} = "Poll Timeout on Read";
-	return;
+        $self->{_estr} = "Poll Timeout on Read";
+        return;
     }
     return $self->{skt};
 }
@@ -135,8 +135,8 @@ sub _waitw {
 
     my ($s) = $self->{_poll}->poll($time);
     unless($s and $s->{events}&ZMQ_POLLOUT != 0) {
-	$self->{_estr} = "Poll Timeout on Write";
-	return;
+        $self->{_estr} = "Poll Timeout on Write";
+        return;
     }
     return $self->{skt};
 }
@@ -160,52 +160,52 @@ sub _transact {
 #    print STDERR "Step 4\n";
     my $r = $self->_read();
     return unless($r);
-    
+
     $self->{_reply} = $r;
 
     if( $r !~ /^((?:OK|NO\:))\s+(.*)$/ ) {
-	$self->{_estr} = "Reply format unexpected";
-	return;
+        $self->{_estr} = "Reply format unexpected";
+        return;
     }
 
     if( $1 eq 'OK' ) {
-	$self->{_estr} = '';
-	$self->{_reply} = $2;
-	return 1;
+        $self->{_estr} = '';
+        $self->{_reply} = $2;
+        return 1;
     } else {
-	$self->{_estr} = $2;
-	$self->{_reply} = '';
-	return 0;
+        $self->{_estr} = $2;
+        $self->{_reply} = '';
+        return 0;
     }
 }
 
 # Check parameter formats
 
-my %Params = ( freq	=> qr/[\d\.]+/,
-	       range 	=> qr/500|750/,
-	       bufsz 	=> qr/\d+/,
-	       window 	=> qr/[\d\.]+/,
-	       sscorr 	=> qr/-?(1|0.\d+)/,
-	       bufhwm	=> qr/0\.\d+/,
-    );
+my %Params = ( freq     => qr/[\d\.]+/,
+    range    => qr/500|750/,
+    bufsz    => qr/\d+/,
+    window   => qr/[\d\.]+/,
+    sscorr   => qr/-?(1|0.\d+)/,
+    bufhwm   => qr/0\.\d+/,
+);
 
 sub _paramcheck {
     my $self = shift;
 
     for my $p ( keys %Params ) {
-	if( defined($self->{$p}) ) {
-	    my $v = $Params{$p};
-	    
-	    if( ref($v) =~ /CODE/i ) {
-		&{$v}($self, $p);
-	    } else {
-		$self->{_estr} .= "Bad '$p' parameter value '$self->{$p}'\n" if( $self->{$p} !~ m/^$v$/ );
-	    }
-	}
+        if( defined($self->{$p}) ) {
+            my $v = $Params{$p};
+
+            if( ref($v) =~ /CODE/i ) {
+                &{$v}($self, $p);
+            } else {
+                $self->{_estr} .= "Bad '$p' parameter value '$self->{$p}'\n" if( $self->{$p} !~ m/^$v$/ );
+            }
+        }
     }
     if( $self->{_estr} ) {
-	chomp( $self->{_estr} );
-	return;
+        chomp( $self->{_estr} );
+        return;
     }
     return 1;
 }
@@ -220,7 +220,7 @@ my %snapshot_state =(
     '>>>' => 'wri',
     '+++' => 'wtn',
     'FIN' => 'fin',
-    );
+);
 
 # Parse a snapshot status line
 sub _parse_snapshot_status {
@@ -231,60 +231,60 @@ sub _parse_snapshot_status {
 
     # Completed snapshot
     if( m!^OK\s+Snap\s+(?:[Ss]:)?([\dA-Fa-f]+):\s+FIN\s+(\d+)/(\d+)\s+files$! ) {
-	my ($sn,$done,$count) = ("s:" . lc($1), $2, $3);
+        my ($sn,$done,$count) = ("s:" . lc($1), $2, $3);
 
-	my $snap = $self->{_snapshots}->{$sn};
-	unless( $snap ) {
-	    $self->{_estr} = "Cannot locate history for snapshot $sn";
-	    return;
-	}
+        my $snap = $self->{_snapshots}->{$sn};
+        unless( $snap ) {
+            $self->{_estr} = "Cannot locate history for snapshot $sn";
+            return;
+        }
 
-	unless( $count == 1 || $count == $snap->{count} ) {
-	    $self->{_estr} = "Finished snapshot $sn has inconsistent count $count vs. $snap->{count}";
-	    return;
-	}
-	$snap->{count}   = $count;
-	$snap->{done}    = $done;
-	$snap->{state}   = 'fin';
-	$snap->{pending} = 0;
-	return 1;
+        unless( $count == 1 || $count == $snap->{count} ) {
+            $self->{_estr} = "Finished snapshot $sn has inconsistent count $count vs. $snap->{count}";
+            return;
+        }
+        $snap->{count}   = $count;
+        $snap->{done}    = $done;
+        $snap->{state}   = 'fin';
+        $snap->{pending} = 0;
+        return 1;
     }
 
     # In progress snapshot
     if( m!^Snap\s+(?:[Ss]:)?([\dA-Fa-f]+):\s+([^\s]+)\s+(\d+)/(\d+)/(\d+)$! ) {
-	my $sn = "s:" . lc($1);
+        my $sn = "s:" . lc($1);
 
-	my $snap = $self->{_snapshots}->{$sn};
-	unless( $snap ) {
-	    $self->{_estr} = "Cannot locate history for snapshot $sn";
-	    return;
-	}
+        my $snap = $self->{_snapshots}->{$sn};
+        unless( $snap ) {
+            $self->{_estr} = "Cannot locate history for snapshot $sn";
+            return;
+        }
 
-	$snap->{state}   = $snapshot_state{$2};
-	my ($done,$pending,$count) = ($3,$4,$5);
-	unless( $count == 1 || $count == $snap->{count} ) {
-	    $self->{_estr} = "Snapshot $sn has inconsistent count $count vs. $snap->{count}";
-	    return;
-	}
-	$snap->{count}   = $count;
-	$snap->{done}    = $done;
-	$snap->{pending} = $pending;
-	return 1;
+        $snap->{state}   = $snapshot_state{$2};
+        my ($done,$pending,$count) = ($3,$4,$5);
+        unless( $count == 1 || $count == $snap->{count} ) {
+            $self->{_estr} = "Snapshot $sn has inconsistent count $count vs. $snap->{count}";
+            return;
+        }
+        $snap->{count}   = $count;
+        $snap->{done}    = $done;
+        $snap->{pending} = $pending;
+        return 1;
     }
 
     # Failed snapshot
     if( m!^NO:\s+Snap\s+(?:[Ss]:)?([\dA-Fa-f]+)\s+(.*)$! ) {
-	my $sn = "s:" . lc($1);
+        my $sn = "s:" . lc($1);
 
-	my $snap = $self->{_snapshots}->{$sn};
-	unless( $snap ) {
-	    $self->{_estr} = "Cannot locate history for snapshot $sn";
-	    return;
-	}
+        my $snap = $self->{_snapshots}->{$sn};
+        unless( $snap ) {
+            $self->{_estr} = "Cannot locate history for snapshot $sn";
+            return;
+        }
 
-	$snap->{state} = 'err';
-	$snap->{emsg}  = $2;
-	return 1;
+        $snap->{state} = 'err';
+        $snap->{emsg}  = $2;
+        return 1;
     }
 
     # Unknown reply line
@@ -306,10 +306,10 @@ sub _do_status_reply {
 
     # Running snapshotter always supplies at least 1 status line
     unless($l1) {
-	$self->{_estr} = "Zstatus reply line missing";
-	return;
+        $self->{_estr} = "Zstatus reply line missing";
+        return;
     }
-    
+
 #    print STDERR "Zstatus reply has ", scalar(@lines), " lines\n";
 
     # Process the first (general) status line
@@ -319,8 +319,8 @@ sub _do_status_reply {
     # Process the pending-snapshot reports
     my $n = 2;
     for my $l ( @lines ) {
-	return unless( $self->_parse_snapshot_status($l) );
-	$n++;
+        return unless( $self->_parse_snapshot_status($l) );
+        $n++;
     }
     return 1;
 }
@@ -374,8 +374,8 @@ sub set {
 
     $self->{_estr} = '';
     for my $p (keys %params) {
-	$self->{_estr} .= "Unknown parameter '$p'\n", next unless( defined $Params{$p} );
-	$self->{$p} = $params{$p};
+        $self->{_estr} .= "Unknown parameter '$p'\n", next unless( defined $Params{$p} );
+        $self->{$p} = $params{$p};
     }
     return $self->_paramcheck();
 }
@@ -400,14 +400,14 @@ sub start {
     my $self = shift;
 
     unless( $self->{_run} ) {
-	$self->{_estr} = "Go command when not running";
-	return;
+        $self->{_estr} = "Go command when not running";
+        return;
     }
 
     $self->_transact(cmd => 'go');
     return if( $self->{_estr} );
     $self->{state} = 'armed';
-    $self->{_snapshots} = {};	# Create the snapshot status hash
+    $self->{_snapshots} = {};   # Create the snapshot status hash
     return 1;
 }
 
@@ -419,15 +419,15 @@ sub stop {
     my $self = shift;
 
     unless( $self->{_run} ) {
-	$self->{_estr} = "Halt command when not running";
-	return;
+        $self->{_estr} = "Halt command when not running";
+        return;
     }
 
     $self->_transact(cmd => 'halt');
     return if( $self->{_estr} );
     $self->{state} = 'halt';
     for my $p ( qw(nchan isp sfreq) ) { 
-	delete $self->{$p};
+        delete $self->{$p};
     }
     return 1;    
 }
@@ -440,14 +440,14 @@ sub quit {
     my $self = shift;
 
     unless( $self->{_run} ) {
-	$self->{_estr} = "Quit command when not running";
-	return;
+        $self->{_estr} = "Quit command when not running";
+        return;
     }
 
     $self->_transact(cmd => 'Q', timeout => 3000);
     return if( $self->{_estr} );
     for my $p ( qw(nchan isp sfreq dir _snapshots ) ) { 
-	delete $self->{$p};
+        delete $self->{$p};
     }
     $self->{_run} = 0;
     return 1;
@@ -461,8 +461,8 @@ sub update {
     my $self = shift;
 
     unless( $self->{_run} ) {
-	$self->{_estr} = "Ztatus command when not running";
-	return;
+        $self->{_estr} = "Ztatus command when not running";
+        return;
     }
     $self->_transact(cmd => 'Z');
     return $self->_do_status_reply();
@@ -484,18 +484,18 @@ sub probe {
 
     # Are we busy?  If so, see if the reply is here yet
     if( $self->{_busy} ) {
-	my $s = $self->reset();
-	$self->{_run} = 1 if($s);
-	return $s;
+        my $s = $self->reset();
+        $self->{_run} = 1 if($s);
+        return $s;
     }
 
     # Not busy, so try a status command
     unless( $self->_transact(cmd => 'z') ) {
-	$self->{_run} = 0;
-	return if( $self->{_busy} ); # Waiting for reply
+        $self->{_run} = 0;
+        return if( $self->{_busy} ); # Waiting for reply
 
-	$self->{_estr} = "Cannot talk to snapshotter";
-	return;
+        $self->{_estr} = "Cannot talk to snapshotter";
+        return;
     }
 
     # Status succeeded, so other end is running
@@ -511,8 +511,8 @@ sub reset {
     my $self = shift;
 
     return 1 unless( $self->{_busy} );
-    $self->_read();		# Read anything that is pending
-    return $self->_waitw(0);	# Check if we can now write
+    $self->_read();             # Read anything that is pending
+    return $self->_waitw(0);    # Check if we can now write
 }
 
 # Set up snapshotter: ends in init state
@@ -527,29 +527,29 @@ sub setup {
 
     # Check snapshotter is not already collecting data
     if( $self->{state} eq 'armed' || $self->{state} eq 'run' ) {
-	$self->{_estr} = "Cannot set up snapshot during capture";
-	return;
+        $self->{_estr} = "Cannot set up snapshot during capture";
+        return;
     }
 
     # Next, set all parameters from local structure
     my $pcmd = '';
     for my $p (sort keys %Params) {
-	$pcmd .= "$p=$self->{$p}, " if( defined $self->{$p} );
+        $pcmd .= "$p=$self->{$p}, " if( defined $self->{$p} );
     }
     $pcmd =~ s/,\s+$//;
     unless( $self->_transact(cmd => "P $pcmd") ) {
-	return;
+        return;
     };
 
     # Now execute Init command
     # Expect reply like 'Init -- nchan 8 isp 400[ns]'
     unless( $self->_transact(cmd => "I") ) {
-	return;
+        return;
     }
     if( $self->reply() !~ m/nchan\s+(\d+)\s+isp\s+(\d+)/ ) {
-	$self->{_estr} = "Init reply format unexpected";
-	$self->{state} = 'init';
-	return;
+        $self->{_estr} = "Init reply format unexpected";
+        $self->{state} = 'init';
+        return;
     }
 
     # Next, store the data from the Init reply
@@ -560,7 +560,7 @@ sub setup {
 
     # Last, reset the writer's working directory
     unless( $self->_transact(cmd => 'd') ) {
-	return;
+        return;
     }
     $self->{dir} = '';
 
@@ -584,13 +584,13 @@ sub snap {
     my %SP;
 
     unless( $self->{_run} ) {
-	$self->{_estr} = "Snap command when not running";
-	return;
+        $self->{_estr} = "Snap command when not running";
+        return;
     }
 
     unless( $self->{state} eq 'armed' || $self->{state} eq 'run' || $self->{state} eq 'active') {
-	$self->{_estr} = "Snap command before capture started, state " . $self->{state};
-	return;
+        $self->{_estr} = "Snap command before capture started, state " . $self->{state};
+        return;
     }
 
     # Copy the _necessary_ parameters; the %arg hash may contain
@@ -600,17 +600,17 @@ sub snap {
     my $sargs = '';
     @SP{@SnapParams} = ();
     for my $a ( keys %args ) {
-	$sargs .= "$a=$args{$a}, " if( exists $SP{$a} );
+        $sargs .= "$a=$args{$a}, " if( exists $SP{$a} );
     }
     $sargs =~ s/,\s+$//;
 
     # Request the snapshot from the snapshotter
-        
+
     $self->_transact(cmd => "S $sargs");
     return if( $self->{_estr} );
     if( $self->reply() !~ m/Snap (?:[Ss]:)?([0-9a-fA-F]+)/ ) {
-	$self->{_estr} = "Snap reply format unexpected";
-	return;
+        $self->{_estr} = "Snap reply format unexpected";
+        return;
     }
 
     # NOT WITH THE CODE BELOW; IT DOESN'T
@@ -642,16 +642,16 @@ sub dir {
 
     # Instruct the snapshotter to change directory if necessary
     if(defined $dir) {
-	return $old if($dir eq $self->{dir});
+        return $old if($dir eq $self->{dir});
 
-	unless( $self->{_run} ) {
-	    $self->{_estr} = "Dir set command when not running";
-	    return;
-	}
-	$self->{dir} = '';
-	$self->_transact(cmd => "D path=$dir");
-	return if( $self->{_estr} );
-	$self->{dir} = $dir;
+        unless( $self->{_run} ) {
+            $self->{_estr} = "Dir set command when not running";
+            return;
+        }
+        $self->{dir} = '';
+        $self->_transact(cmd => "D path=$dir");
+        return if( $self->{_estr} );
+        $self->{dir} = $dir;
     }
     return $old;
 }
@@ -672,17 +672,17 @@ sub status {
     $self->{_reply} = '';
     $self->{_estr}  = '';
     if( defined $name ) {
-	my $snap = $self->{_snapshots}->{$name};
-	unless( $snap ) {
-	    $self->{_estr} = "Cannot locate history for snapshot $name";
-	    return;
-	}
-	my $ans = { %{$snap} };
-	return wantarray? ( $ans ) : $ans;
+        my $snap = $self->{_snapshots}->{$name};
+        unless( $snap ) {
+            $self->{_estr} = "Cannot locate history for snapshot $name";
+            return;
+        }
+        my $ans = { %{$snap} };
+        return wantarray? ( $ans ) : $ans;
     }
     return ( map {
-	( { %{$self->{_snapshots}->{$_}} } );
-	     } keys %{$self->{_snapshots}}
+        ( { %{$self->{_snapshots}->{$_}} } );
+        } keys %{$self->{_snapshots}}
     );
 }
 
@@ -700,14 +700,14 @@ sub clear {
     $self->{_reply} = '';
     $self->{_estr}  = '';
     unless( $name ) {
-	$self->{_estr} = "Clear command without named snapshot";
-	return;
+        $self->{_estr} = "Clear command without named snapshot";
+        return;
     }
 
     my $snap = $self->{_snapshots}->{$name};
     unless( $snap->{state} eq 'fin' or $snap->{state} eq 'err' ) {
-	$self->{_estr} = "Clear of unfinished snapshot $name";
-	return;
+        $self->{_estr} = "Clear of unfinished snapshot $name";
+        return;
     }
     delete $self->{_snapshots}->{$name};
     return 1 if( $snap->{state} eq 'fin' );
