@@ -1,0 +1,5 @@
+TRIG_EXT should be the scan_begin_src and the scan_begin_arg is the parameter, so inverted or true.
+CHange the driver so as CR_INVERT is not being used for this purpose...
+
+Check in the cmd_test function that it permits the necessary trigger conditions.
+Change the cmd activate function to condition the compilation of the state machine on the arg.
