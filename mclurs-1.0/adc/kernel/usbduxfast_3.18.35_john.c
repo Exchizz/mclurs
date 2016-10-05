@@ -105,8 +105,8 @@
  * size of the input-buffer IN USB Bulk Packet Buffers (512)
  * -- the default for the urbsz module parameter.
  */
-#define URBSZINBUF	8
-#define MAX_URBSZINBUF	16	/* Limit max buffer size for kernel's sake! */
+#define SIZEINBUF	8
+#define MAX_SIZEINBUF	16	/* Limit max buffer size for kernel's sake! */
 
 /*
  * 16 bytes
@@ -174,7 +174,7 @@ static const struct comedi_lrange range_usbduxfast_ai_range = {
 struct usbduxfast_private {
 	struct urb *urb[MAX_NUM_URBS];	/* BULK-transfer handling: urb */
         int8_t *inbuf[MAX_NUM_URBS];
-	int8_t *insnbuf;
+	int urb_active[MAX_NUM_URBS];	/* True when URB has been submitted */
 	uint8_t *duxbuf;
 	short int ai_cmd_running;	/* asynchronous command is running */
 	short int ai_continous;	/* continous acquisition */
@@ -206,7 +206,7 @@ MODULE_PARM_DESC(paired, "Use InURBs in pairs if non-zero (default 1);  implies 
 
 /*
  * URB request buffer size, as a multiple of 512 bytes
- * The default is set in the probe function from URBSZINBUF
+ * The default is set in the probe function from SIZEINBUF
  */
 static int urbsz = 0;
 module_param(urbsz, int, S_IRUGO);
@@ -260,9 +260,12 @@ static int usbduxfast_ai_stop(struct comedi_device *dev, int do_unlink)
 
 	if (do_unlink && devpriv->urb[0]) {
 		/* kill the running transfer */
-	  for(i=0; i<max_num_urbs; i++)
-	    if( devpriv->urb[i] )
+	  for(i=0; i<max_num_urbs; i++) {
+	    if( devpriv->urb[i] && devpriv->urb_active[i] ) {
 	      usb_kill_urb(devpriv->urb[i]);
+	      devpriv->urb_active[i] = 0;
+	    }
+	  }
 	}
 
 	return 0;
@@ -287,16 +290,16 @@ static int usbduxfast_ai_cancel(struct comedi_device *dev,
 /*
  * Paired URB helper function -- assumes not too many URBs.
  */
-static struct urb *paired_urb(struct usbduxfast_private *udfp, struct urb *urb)
+static int urb_index(struct usbduxfast_private *udfp, struct urb *urb)
 {
   int i;
 
   for(i=0; i<max_num_urbs; i++) {
     if( udfp->urb[i] == urb )
-      return udfp->urb[i^1];
+      return i;
   }
   dev_err(urb->context, "cannot locate urb %p's pair\n", urb);
-  return NULL;
+  return -1;
 }
 
 /*
@@ -310,7 +313,7 @@ static void usbduxfast_ai_interrupt(struct urb *urb)
 	struct comedi_async *async = s->async;
 	struct usb_device *usb = comedi_to_usb_dev(dev);
 	struct usbduxfast_private *devpriv = dev->private;
-	int n, err;
+	int n, err, idx;
 
 	/* are we running a command? */
 	if (unlikely(!devpriv->ai_cmd_running)) {
@@ -322,6 +325,11 @@ static void usbduxfast_ai_interrupt(struct urb *urb)
 		return;
 	}
 
+	idx = urb_index(devpriv, urb);
+	if( idx < 0 )
+	  return;
+	devpriv->urb_active[idx] = 0;
+	
 	/* first we test if something unusual has just happened */
 	switch (urb->status) {
 	case 0:
@@ -358,24 +366,24 @@ static void usbduxfast_ai_interrupt(struct urb *urb)
 	 * If pairing, submit the paired urb now, if not resubmit this one at end
 	 */
 	if (paired) {
-	  struct urb *next_urb = paired_urb(devpriv, urb);
+	  int pair = idx ^ 1;
+	  struct urb *next_urb = devpriv->urb[pair];
 
-	  if (next_urb) {
-	    next_urb->dev = usb;
-	    next_urb->status = 0;
-	    err = usb_submit_urb(next_urb, GFP_ATOMIC);
-	  }
-	  if (!next_urb || err < 0)
+	  next_urb->dev = usb;
+	  next_urb->status = 0;
+	  err = usb_submit_urb(next_urb, GFP_ATOMIC);
+	  if (err < 0) {
 	    /*
 	     * Fixme: This throws away a valid URB (the current one) if pair submission fails
 	     */
 	    dev_err(dev->class_dev, "paired urb submit failed: %d", err);
-	    async->events |= COMEDI_CB_EOA;
-	    async->events |= COMEDI_CB_ERROR;
+	    s->async->events |= COMEDI_CB_EOA;
+	    s->async->events |= COMEDI_CB_ERROR;
 	    comedi_event(dev, s);
 	    usbduxfast_ai_stop(dev, 0);
 	    return;
 	  }
+	  devpriv->urb_active[pair]++;
 	}
 
 	if (!devpriv->ignore) {
@@ -432,6 +440,7 @@ static void usbduxfast_ai_interrupt(struct urb *urb)
 	    comedi_event(dev, s);
 	    usbduxfast_ai_stop(dev, 0);
 	  }
+	  devpriv->urb_active[idx]++;
 	}
 }
 
@@ -457,6 +466,7 @@ static int usbduxfast_submit_urb(struct comedi_device *dev)
 	    dev_err(dev->class_dev, "usb_submit_urb[%d] error %d\n", j, ret);
 	    return ret;
 	  }
+	  devpriv->urb_active[j]++;
 	  if (paired) j++;	/* Only submit the first of each pair now */
 	}
 	return 0;
@@ -891,6 +901,7 @@ static int usbduxfast_ai_cmd(struct comedi_device *dev,
 					      (0xff - 0x02) & rngmask, 0x00);
 			}
 		} else {				     /* No trigger, start at once */
+
 			  /* State 0 */
 			  /* branch to state 2 unconditionally */ 
 			  /* 33ns reset pulse */
@@ -1032,7 +1043,7 @@ static int usbduxfast_ai_insn_read(struct comedi_device *dev,
 
 	for (i = 0; i < PACKETS_TO_IGNORE; i++) {
 		ret = usb_bulk_msg(usb, usb_rcvbulkpipe(usb, BULKINEP),
-				   devpriv->insnbuf, SIZEINSNBUF,
+				   devpriv->inbuf, InURB_buf_size,
 				   &actual_length, 10000);
 		if (ret < 0) {
 			dev_err(dev->class_dev, "insn timeout, no data\n");
@@ -1043,7 +1054,7 @@ static int usbduxfast_ai_insn_read(struct comedi_device *dev,
 
 	for (i = 0; i < insn->n;) {
 		ret = usb_bulk_msg(usb, usb_rcvbulkpipe(usb, BULKINEP),
-				   devpriv->insnbuf, SIZEINSNBUF,
+				   devpriv->inbuf, InURB_buf_size,
 				   &actual_length, 10000);
 		if (ret < 0) {
 			dev_err(dev->class_dev, "insn data error: %d\n", ret);
@@ -1057,7 +1068,7 @@ static int usbduxfast_ai_insn_read(struct comedi_device *dev,
 			return -EINVAL;
 		}
 		for (j = chan; (j < n) && (i < insn->n); j = j + 16) {
-			data[i] = ((uint16_t *) (devpriv->insnbuf))[j];
+			data[i] = ((uint16_t *) (devpriv->inbuf))[j];
 			i++;
 		}
 	}
@@ -1211,6 +1222,7 @@ static int usbduxfast_auto_attach(struct comedi_device *dev,
 	    dev_err(dev->class_dev, "Could not alloc. urb[%d]\n", j);
 	    return -ENOMEM;
 	  }
+	  devpriv->urb_active[j] = 0;
 	}
 
 	for(j=0; j<nurbs; j++) {
@@ -1219,10 +1231,6 @@ static int usbduxfast_auto_attach(struct comedi_device *dev,
 	    return -ENOMEM;
 	}
 
-	devpriv->insnbuf = kmalloc(SIZEINSNBUF, GFP_KERNEL);
-	if (!devpriv->insnbuf)
-	  return -ENOMEM;
-	
 	ret = comedi_load_firmware(dev, &usb->dev, FIRMWARE,
 				   usbduxfast_upload_firmware, 0);
 	if (ret)
@@ -1257,12 +1265,11 @@ static void usbduxfast_detach(struct comedi_device *dev)
 
 	    if( devpriv->urb[j] )
 	      usb_free_urb(devpriv->urb[j]);
+	    devpriv->urb_active[j] = 0;
 	    devpriv->urb[j] = NULL;
 	  }
 	}
 
-	kfree(devpriv->insnbuf);
-		
 	kfree(devpriv->duxbuf);
 	devpriv->duxbuf = NULL;
 
@@ -1295,12 +1302,12 @@ static int usbduxfast_usb_probe(struct usb_interface *intf,
 	}
 
 	if (urbsz <= 0) {
-	  urbsz = URBSZINBUF;
+	  urbsz = SIZEINBUF;
 	}
 
-	if (urbsz > MAX_USBSZINBUF) {
-	  printk(KERN_WARNING "usbduxfast module: urbsz %d exceeds compiled maximum %d\n", urbsz, MAX_URBSZINBUF);
-	  urbsz = URBSZINBUF;
+	if (urbsz > MAX_SIZEINBUF) {
+	  printk(KERN_WARNING "usbduxfast module: urbsz %d exceeds compiled maximum %d\n", urbsz, MAX_SIZEINBUF);
+	  urbsz = SIZEINBUF;
 	}
 
 	printk(KERN_INFO "usbduxfast module: using %d %s URB(s) of size %d*512 bytes for bulk transfer\n",
@@ -1326,6 +1333,6 @@ static struct usb_driver usbduxfast_usb_driver = {
 module_comedi_usb_driver(usbduxfast_driver, usbduxfast_usb_driver);
 
 MODULE_AUTHOR("Bernd Porr, BerndPorr@f2s.com, John Hallam sw@j.hallam.dk");
-MODULE_DESCRIPTION("USB-DUXfast, BerndPorr@f2s.com, John Hallam sw@j.hallam.dk");
+MODULE_DESCRIPTION("USB-DUXfast, BerndPorr@f2s.com,, John Hallam sw@j.hallam.dk");
 MODULE_LICENSE("GPL");
 MODULE_FIRMWARE(FIRMWARE);
