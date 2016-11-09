@@ -1,0 +1,1000 @@
+mv array-cmd_1.2.* Build
+cd Build
+dpkg-source -x array-cmd_1.2.dsc
+cd array-cmd-1.2
+dpkg-buildpackage -us -uc
+ls -l ..
+rm -rf array-cmd-1.2 array-cmd_1.2_a*
+rm array-cmd_1.2_all.deb
+rm array-slave_1.2_all.deb
+echo $TERM
+sudo apt-get install quilt
+rm trig.o
+touch *ch]
+touch *.[ch]
+touch Makefile
+make clean all
+ls /var/tmp
+ls /var/tmp/snap/test
+rm -rf /var/tmp/snap
+more test.sh
+mg test.sh
+sh test.sh
+rm test.sh??
+more ./trig
+file trig
+./trig -v
+./trig -v test
+ls -l /var/tmp/snap/tes/000000000e37d798.s16
+./trig -v test1
+ls -l /var/tmp/snap/test/0000000016243908.s16
+mg trig.c
+make trig
+./trig -w test1
+ls -l /var/tmp/snap/
+ls -l /var/tmp/snap/test/00000000*
+./trig -r
+ls -l /var/tmp/snap/000*
+echo quit | nc -q1 -u 169.254.255.1 2468
+tar xf snapshot.tar
+touch Makefile *.[ch]
+make all
+cat test.sh
+cp test.sh inga.sh
+mg inga.sh
+rm -f /var/tmp/snap/*
+rm -rf /var/tmp/snap/*
+ls -l /var/tmp/snap/*
+echo chan | nc -q1 -u localhist 2468
+echo gain 4 0 lp | nc -q1 -u localhost 2468
+more /usr/sbin/array-cmd
+echo gain 4 32 lp | nc -q1 -u localhost 2468
+echo gain 4 32 lo | nc -q1 -u localhost 2468
+trig -wa
+./trig -wa
+mv /var/tmp/snap/0000008395b1f55b/0000000003832370.s16 ~/test.s16
+ls bat
+rm test.s16
+rm -rf /var/tmp/snap/0000008395b1f55b
+trig
+./trig -w
+./trig -w inga
+cd /var/tmp/snap/inga
+./trig -wr
+./trig -vh
+echo chan | nc -q1 -u localhost 2468 > inga-setup.txt
+mv inga-setup.txt ~
+echo gain all 128 lo | nc -q1 -u localhost 2468
+cat >> ../inga-setup.txt
+rm -rf inga
+tar cf ~/calib-inga.tar .
+tar tf ~/calib-inga.tar .
+rm -rf 00000*
+./trig -r --pre 5000 --pst 25000
+./trig -r --pre 5000 --pst 2500
+echo gain all 128 hp | nc -q1 -u localhost 2468
+ls -l /var/tmp/snap/000000ef37e20d70/0000000059602f80.s16
+pushd /var/tmp/snap
+mkdir run1 run2
+mv 000000ef37e20d70 run1
+mv 000001* run2
+mv 0000016c0fc60c0b run2
+mkdir run3
+mv 000001b799f5d292 run3
+mkdir run4
+mv 000001f128ab9eb2 run4
+mkdir run5
+mv 00000206* run5
+mv snap first
+cd ~/Snapshot
+sh inga.sh .
+mkdir run1 run2 run3 run4 run5
+rm -rf 00000a998dd5558d
+mv 00000ab35c9f91b9 run1
+mv 00000acddeb97848 run2
+mv 00000ae* run3
+mkdir run6
+mv 00000b1* run4
+mv 00000b4a80b05abf run5
+mv 00000b681557b167 run6
+mkdir relgain
+ls run8
+echo chan | nc -q1 -u localhost 2468 > inga-micgain1.txt
+mv inga-micgain1.txt /var/tmp/snap/relgain
+echo gain all 32 lo | nc -q1 -u localhost 2468
+ls run6
+mv 00000d2[02]* relgain
+mv 00000d3[59]* relgain
+ls relgain
+mv inga-micgain2.txt /var/tmp/snap/relgain
+echo chan | nc -q1 -u localhost 2468 > inga-micgain2.txt
+more inga-setup.txt
+cd /var/tmp/snap
+rm -rf 00000d*
+mv snap second
+mv first 2015-07-13-1
+mv second 2015-07-13-2
+cd ~pi/
+mv calib-inga.tar calib-2015-07-13.tar
+gzip calib-2015-07-13.tar&
+echo scan | nc -q1 -u localhost 2468
+echo gain all 192 lo | nc -q1 -u localhost 2468
+trig -r --pre 500 --pst 500
+./trig -r --pre 500 --pst 500
+pushd /var/tmp
+ls -l snap
+mkdir calib
+mv snap/* calib
+history | fgrep trig
+ls -l 0000020c86ac5bbc
+rm -rf 0000020c86ac5bbc
+mv 000002* run1
+mv 000002f3635e7da2 run2
+mv 00* run3
+ls run2
+mv 00000363509d45a6 run4
+ls run3
+mv 000003* run5
+mv 0000040f05ee5d68 run6
+mkdir run7
+mv 0000048be280864c run1/
+mv run1/0000048be280864c run7
+ls -l *
+mv mkdir 2015-07-14-1
+mkdir 2015-07-14-1
+mv snap/* 2015-07-14-1
+mv calib calib-14
+df -H .
+cd snap
+echo gain all 160 hp | nc -q1 -u localhost 2468
+sh inga.sh
+./trig -r --pre 6000 --pst 1000
+mkdir run1 run2 run3 run4 run5 run6
+rm -rf 00000c63920109fa
+mv 00000c6bd9e3cfe2 run1
+mv 00000cab3b9994e8 run2
+mv 00000cc3bbc17cb6 run3
+mv 00000cf9db67f0b2 run4
+mv 00000d* run5
+mkir run7 run8
+mkdir run7 run8
+mv 00000d* run6
+rm -rf 00000d77b35aee81
+ls run7
+rmdir run7 run8
+mkdir 2015-07-14-2
+mv snap/* 2015-07-14-2
+ls snap
+./snapchat quit
+tar cf snapshot.tar ./Snapshot
+more trig.c
+rm snapshot.tar
+mv Snapshot Snapshot1
+mkdir Snapshot
+tar xf snap.tar
+sudo apt-get install libargtable2-dev
+apt-file find capability.h
+sudo apt-get install linux-libc-dev libcap-dev
+sudo snapshot --snapshot tcp://localhost:7777 --user john
+sudo ./snapshot --snapshot tcp://localhost:7777 --user john
+sudo ./snapshot --snapshot tcp://localhost:7777 --user pi
+sudo ./snapshot -vv --snapshot tcp://127.0.0.1:7777 --user suas
+./snapchat --snapshot tcp://127.0.0.1:7777 Quit
+sudo adduser pi iocard
+ls -l /dev/comedi0
+man comedi-config
+man -k comedi
+sudo comedi_config /dev/comedi0 --read-buffer 65536
+sudo ./snapshot -vvvv --snapshot tcp://127.0.0.1:7777 --user pi
+./snapchat --snapshot tcp://127.0.0.1:7777 Param
+./snapchat --snapshot tcp://127.0.0.1:7777 Param freq=312.5e3
+sudo ./snapshot -vvv --snapshot tcp://127.0.0.1:7777 --user pi
+cd ../Snapshot1
+more ring.c
+sudo ./snapshot --snapshot tcp://127.0.0.1:7777 --user pi
+watch dmesg
+sudo ./snapshot -vv --snapshot tcp://127.0.0.1:7777 --user pi --rdprio 20
+while dmesg | tail; do sleep 10; done
+sudo ./snapshot -vv --snapshot tcp://127.0.0.1:7777 --user pi --rdprio 75
+./snapchat --snapshot tcp://127.0.0.1:7777 Init
+while echo; dmesg | tail; do sleep 10; done
+./snapchat --snapshot tcp://127.0.0.1:7777 quit
+sudo ./snapshot -vv --snapshot tcp://127.0.0.1:7777 --user pi
+sudo ./snapshot -vv --snapshot tcp://127.0.0.1:7777 --user pi --bufsz 96
+sudo ./snapshot -vv --snapshot tcp://127.0.0.1:7777 --user pi --bufsz 96 --rdprio 25
+emacs reader.c writer.c
+fgrep CAP_SYS_ADMIN *.c
+./snapchat --snapshot tcp://127.0.0.1:7777 param freq=312.5e3
+mke
+./snapchat --snapshot tcp://127.0.0.1:7777 dir path=test
+./trig --snapshot tcp://127.0.0.1:7777 --pre 200 --pst 500
+./trig -wa --snapshot tcp://127.0.0.1:7777 --pre 200 --pst 500
+ls -l /tmp/snap/test/1970-01-01T05:45:33.708378/0000000c10eaccd8.s16
+ls -l /tmp/snap/test/1970-01-01T05:41:54.606914/0000000bf0fbd920.s16
+./snapchat --snapshot tcp://127.0.0.1:7777 Z name=1
+tar cf snap.tar ./*.[ch]
+type git
+mkdir .ssh
+rmdir .ssh
+pushd ~
+cd .ssh
+more authorized_keys2
+rm authorized_keys2
+cat > config
+chmod 600 config
+chmod 600 known_hosts
+ls -la
+nano .ssh
+mg .ssh/config
+git clone gitcbr:MCLURS
+git clone gitcbr:mclurs
+ls Snapshot
+mv Snapshot Snapshot0
+ln -s mclurs/array-tools-1.0/adc Snapshot
+cd Snapshot0
+for A in *; do diff $A ../Snapshot/$A; done
+rm snap.tar
+type emacs
+./snapchat --snapshot tcp://127.0.0.1:7777 Halt
+./snapchat --snapshot tcp://127.0.0.1:7777 Z
+./trig -wa --snapshot tcp://127.0.0.1:7777 --pre 5000 --pst 2500
+man ar
+rm -rf Snapshot0
+git config --global user.email "sw@j.hallam.dk"
+git config --global user.name "John Hallam"
+git commit -m "Debugging code added"
+git config --global push.default simple
+ls /tmp
+man btrfs
+man -k btrfs
+cd /lib/modules/3.18.11-v7+/kernel
+cd fs
+ls btrfs
+sudo lsusb
+cat reader.c
+./snapchat --multi=OK --snapshot tcp://127.0.0.1:7777 "param freq=3.75e5" init go
+./snapchat --multi=OK --snapshot tcp://127.0.0.1:7777 param freq=3.75e5
+git commit -m "Fixed frequency limit to allow full speed"
+kill -HUP 3139
+kill -15 3139
+kill -9 3139
+kill -HUP 3108
+kill -HUP 3107
+reset
+git reset
+git commit -m "Synchronise with external"
+git commit
+git commit -m "Fixed ADC frequency limit to allow max rate"
+sudo ./snapshot -v --snapshot tcp://127.0.0.1:7777 --user pi --bufsz 64 --rdprio 25
+date --format=%s
+man date
+date +%s
+iostat
+free
+man vmstat
+vmstat 5
+sudo ./snapshot -vv --snapshot tcp://127.0.0.1:7777 --user pi --bufsz 64 --rdprio 25
+sudo ./snapshot -vvv --snapshot tcp://127.0.0.1:7777 --user pi --bufsz 64 --rdprio 25
+./trig -w --pre 500 --post 500 test
+e chunk.c
+./trig -w --snapshot tcp://127.0.0.1:7777 --pre 500 --post 500 test
+fgrep -l mmap_and_lock *.c
+sudo ./snapshot -v --snapshot tcp://127.0.0.1:7777 --user pi --rdprio 25
+limits
+limit
+man rusage
+man limit
+man -k limit
+man getrlimit
+prlimit
+man ulimit
+prlimit -l 262144
+prlimit -l=262144 sh
+prlimit -l soft:hard
+e TODO
+prlimit --memlock 262144:262144 prlimit
+prlimit --memlock=262144:262144 prlimit
+sudo prlimit --memlock=262144:262144 prlimit
+rm /tmp/snap/test*
+rm -f /tmp/snap/test*
+sudo prlimit --memlock=262144:262144 ./snapshot -vvv --snapshot tcp://127.0.0.1:7777 --user pi --rdprio 25
+man comedi_set_buffer_size
+man prlimit
+man 3 prlimit
+sudo ./snapshot -vvv --snapshot tcp://127.0.0.1:7777 --user pi --rdprio 25
+man mmap
+man mlock
+comedi_config --write-buf
+man comedi_config
+./snapchat --multi=OK --snapshot tcp://127.0.0.1:7777 init go q
+sudo ./snapshot -vvv --snapshot tcp://127.0.0.1:7777 --user pi --rdprio 25 --bufsz 32 --window 5
+ls /tmp/snap/test7
+ls /tmp/snap/test?
+./trig -w --snapshot tcp://127.0.0.1:7777 --pre 500 --post 500 test7
+./snapchat --multi=OK --snapshot tcp://127.0.0.1:7777 q
+sudo prlimit --memlock=262144:262144 ./snapshot -v --snapshot tcp://127.0.0.1:7777 --user pi --rdprio 25
+emacs chunk.c
+man msync
+sudo prlimit --memlock=262144:262144 /bin/sh
+pushd /proc/sys/vm
+sudo ./snapshot -v --snapshot tcp://127.0.0.1:7777 --user root --rdprio 25 --bufsz 32 --window 5
+sudo ./snapshot -v --snapshot tcp://127.0.0.1:7777 --rdprio 25 --bufsz 32 --window 5
+sudo chmod pi /dev/comedi0
+sudo chown pi /dev/comedi0
+./snapchat --multi=OK --snapshot tcp://127.0.0.1:7777 'param freq=3.75e5' init go
+./snapchat --multi=OK --snapshot tcp://127.0.0.1:7777 init go
+./trig -w --snapshot tcp://127.0.0.1:7777 --pre 500 --post 500 test10
+./trig -w --snapshot tcp://127.0.0.1:7777 --pre 500 --post 500 test12
+./trig -w --snapshot tcp://127.0.0.1:7777 --pre 500 --post 500 test13
+git commit -m "Book-keeping fixes and minor edits;  still a problem with mlock()"
+sudo prlimit --memlock=268435456:268435456 ./snapshot -v --snapshot tcp://127.0.0.1:7777 --user pi --rdprio 25
+man setrlimit
+fgrep -l 'Calling complete' *.c
+fgrep convertfn *.[ch]
+rm -rf /tmp/snap/test*
+man -k PAGESIZE
+man getpagesize
+ls /tmp/snap
+./snapchat --multi=OK --snapshot tcp://127.0.0.1:7777 z
+ls -l /tmp/snap/test1/00000000012ab4c8.s16 
+./trig -w --snapshot tcp://127.0.0.1:7777 --pre 500 --post 500 test1
+./snapchat --multi=OK --snapshot tcp://127.0.0.1:7777 z 
+sudo ./snapshot -v --snapshot tcp://127.0.0.1:7777 --user pi --rdprio 25 --bufsz 32 --window 5
+./trig -w --snapshot tcp://127.0.0.1:7777 --pre 500 --post 500 test2
+man cap_free
+man pthreads
+man capabilities
+man cap_get_proc
+man cap_set_pid
+man cap_set_proc
+./trig -w --snapshot tcp://127.0.0.1:7777 --pre 500 --post 500 test3
+./snapchat --multi=OK --snapshot tcp://127.0.0.1:7777 z q
+./trig -w --snapshot tcp://127.0.0.1:7777 --pre 500 --post 500 test4
+fgrep 's->s_status =' *.c
+fgrep 'f->f_status    =' *.c
+./snapchat --multi=OK --snapshot tcp://127.0.0.1:7777 init go z
+./trig -w --snapshot tcp://127.0.0.1:7777 --pre 500 --post 500 test5
+./snapchat --multi=OK --snapshot tcp://127.0.0.1:7777 z  z q
+git commit -m "Updated TODO to reflect present status"
+./snapshot --help
+./snapshot -v --help
+./snapshot -vv --help
+sudo shtudown -h now
+more /etc/group
+e snapshot.c
+sudo ./snapshot -v --snapshot tcp://127.0.0.1:7777 --user pi --wrprio 26 --rdprio 25 --bufsz 32 --window 5
+emacs snapshot.c
+echo $?
+fgrep 'fprintf(stderr' *.c
+git commit -m "Fixed sequence error in new logging code"
+sudo ./snapshot -vvv --snapshot tcp://127.0.0.1:7777 --user pi --wrprio 26 --rdprio 25 --bufsz 32 --window 5
+sudo ./snapshot -vvv --snapshot tcp://127.0.0.1:7777 --user pi --wrprio 26 --rdprio 25 --bufsz 32
+sudo ./snapshot -vvv --snapshot tcp://127.0.0.1:7777 --user pi --wrprio 26 --rdprio 25 --bufsz 48
+sudo ./snapshot -vvv --snapshot tcp://127.0.0.1:7777 --user pi --wrprio 26 --rdprio 25 --bufsz 64
+sudo ./snapshot -vvv --snapshot tcp://127.0.0.1:7777 --user pi --wrprio 26 --rdprio 25 --bufsz 128
+git commit -m "Fixed parenthesis bug in buffer HWM computation"
+./snapchat --snapshot tcp://127.0.0.1:7777 h
+./snapchat --snapshot tcp://127.0.0.1:7777 param freq=3.75e5
+./snapchat --snapshot tcp://127.0.0.1:7777 param freq=3.125e5
+./snapchat --snapshot tcp://127.0.0.1:7777 param freq=3.125e5,window=8
+./snapchat --snapshot tcp://127.0.0.1:7777 p window=8
+./snapchat --snapshot tcp://127.0.0.1:7777 param window=5
+nano BUGS
+./snapchat --snapshot tcp://127.0.0.1:7777 param freq=256000
+./snapchat --snapshot tcp://127.0.0.1:7777 param freq=312500
+git commit -m "Write problems solved: WRITER capability code not executed because of a typo.  Capture works for simple trig now."
+fgrep '$s' *.c
+./trig --snapshot tcp://127.0.0.1:7777 --pre 500 --pst 500 test1
+./trig --snapshot tcp://127.0.0.1:7777 --pre 500 --pst 500 test2
+./trig -w --snapshot tcp://127.0.0.1:7777 --pre 500 --pst 500 test1
+./trig -w --snapshot tcp://127.0.0.1:7777 --pre 500 --pst 500 test2
+./trig -w --snapshot tcp://127.0.0.1:7777 --pre 500 --pst 5000 test3
+cd /tmp/snap
+ls -lR
+./snapchat --snapshot tcp://127.0.0.1:7777 snap start=0,length=524288,count=10,path=test1
+./snapchat --snapshot tcp://127.0.0.1:7777 snap start=0,finish=524288,count=10,path=test1
+./snapchat --snapshot tcp://127.0.0.1:7777 snap start=0,finish=5242880,count=10,path=test1
+ls -lR /tmp/snap/test1
+sudo ./snapshot -vvv --snapshot tcp://127.0.0.1:7777 --user pi --wrprio 26 --rdprio 25
+rm /tmp/snap/test1/00000000012ab4c8.s16
+rm /tmp/snap/test1/*
+rmdir /tmp/snap/test1
+sudo ./snapshot -v --snapshot tcp://127.0.0.1:7777 --user pi --wrprio 26 --rdprio 25
+sudo ./snapshot -v --snapshot tcp://127.0.0.1:7777 --user pi --wrprio 24 --rdprio 26
+dmesq
+./snapchat --snapshot tcp://127.0.0.1:7777 snap start=0,finish=10485760,count=128,path=test1
+ls -l /tmp/snap/test1
+sudo ./snapshot -vv --snapshot tcp://127.0.0.1:7777 --user pi --wrprio 24 --rdprio 26 --bufsz 64 --bufhwm 0.8
+sudo ./snapshot -v --snapshot tcp://127.0.0.1:7777 --user pi --wrprio 24 --rdprio 26 --bufsz 64 --bufhwm 0.8
+e BUGS
+rm -rf /tmp/snap/*
+dmesg | fgrep sd 
+ls _mnt
+sudo chown pi.pi /mnt
+sudo ./snapshot -v --snapshot tcp://127.0.0.1:7777 --snapdir /mnt/snap --user pi --wrprio 24 --rdprio 26 --bufsz 64 --bufhwm 0.8
+./snapchat --snapshot tcp://127.0.0.1:7777 snap start=0,finish=10485760,count=64,path=test1
+./snapchat --snapshot tcp://127.0.0.1:7777 snap start=0,finish=10485760,count=640,path=test2
+la
+git commit -m "Able to write 640 x 20MiB files, WRITER runs at 100%, avoid v>1 for long term run"
+./snapchat --snapshot tcp://127.0.0.1:7777 snap start=0,finish=10485760,count=64,path=test5
+ls -l /mnt/snap/*
+sudo ./snapshot -vv --snapshot tcp://127.0.0.1:7777 --snapdir /mnt/snap --user pi --wrprio 10 --rdprio 26 --bufsz 64 --bufhwm 0.8
+./snapchat --snapshot tcp://127.0.0.1:7777 snap start=0,finish=10485760,count=200,path=test7
+ls /mnt/snap/test7/00000000* | wc -l
+git commit -m "Fixed WRITER borrowedtime bug and removed 100% utilisation;  fixed ADC module to correct run-dry detection in READER"
+./snapchat --snapshot tcp://127.0.0.1:7777 snap start=0,finish=10485760,count=200,path=test9
+./snapchat --snapshot tcp://127.0.0.1:7777 snap start=0,finish=10485760,count=2000,path=test9
+cat adc.c
+sudo cat /etc/modules
+cat >> modules-needed.txt
+mg modules-needed.txt
+pushd ../mclurs/array-tools-1.0/command
+git commit -m "Saved module list for array-cmd use"
+popd
+emacs TODO
+emacs Makefile
+uptime
+ethtool
+./snapchat --snapshot tcp://127.0.0.1:7777 snap start=0,finish=10485760,count=8192,path=test13
+date
+sudo ls /sys/class/gpio
+dpkg --get-selections > ../packages.txt
+more mclurs/array-tools-1.0/packages.txt
+rm mclurs/array-tools-1.0/packages.txt
+more TODO
+git commit -m "First long-term stable version"
+make snapchat
+ls -l /tmp/snap
+ls -l /mnt/snap/
+./snapchat -m --snapshot tcp://127.0.0.1:7777 init go "snap start=0,finish=10485760,count=16384,path=test15" z
+./snapchat --snapshot tcp://127.0.0.1:7777 z
+man watch
+watch -n60 -x ./snapchat --snapshot tcp://127.0.0.1:7777 z
+watch -n900 -x ./snapchat --snapshot tcp://127.0.0.1:7777 z
+./snapchat --snapshot tcp://127.0.0.1:7777 "p "
+./snapchat --snapshot tcp://127.0.0.1:7777 p freq=375e3
+./snapchat --snapshot tcp://127.0.0.1:7777 p freq=312.5e3
+more reader.c
+more param.c
+sudo ./snapshot -v --snapshot tcp://127.0.0.1:7777 --snapdir /mnt/snap --user pi --wrprio 10 --rdprio 26 --bufsz 64 --bufhwm 0.8
+./snapchat --snapshot tcp://127.0.0.1:7777 p foo=7
+./snapchat --snapshot tcp://127.0.0.1:7777 halt
+./snapchat --snapshot tcp://127.0.0.1:7777 p
+./snapchat --snapshot tcp://127.0.0.1:7777 init
+./snapchat --snapshot tcp://127.0.0.1:7777 go
+./snapchat --snapshot tcp://127.0.0.1:7777 q
+ls -l /mnt
+ls -l /mnt/snap
+expand writer.c > writer.x
+mv writer.x writer.c
+git commit -m "Fixed over-logging in WRITER service queue"
+./trig --pre 500 --pst 5000 test1
+./snapchat -m init go "snap start=0,finish=10485760,count=1024,path=test2" z
+git commit -m "Minor changes to logging in ADC and READER, fixing spelling errors"
+./snapchat  z q
+git commit -m "Improved range reporting in ADC module logging"
+type tvservice
+man tvservice
+./trig --pre 500 --pst 5000 test3
+./trig --pre 500 --pst 5000 test4
+./trig --pre 0 --pst 5000 test5
+ls /mnt/snap/test*
+ e writer.c
+e reader.c
+emacs reader.c
+./snapchat -m halt p init go z
+cd /proc/14127
+cd fd
+sudo modprobe -r comedi
+man comedi_close
+e adc.c
+git commit -m "Investigating re-init bug; problem is apparently in Comedilib"
+git add BUGS
+git commit -m "Observed clock skew between trig and snapshot sufficient to kill snapshots; updated BUGS"
+more array-cmd.patch
+more array-cmd
+diff array-cmd /usr/sbin/array-cmd
+ls Snapshot1
+cd Snapshot1
+more inga.sh
+cd ../Snapshot
+make docs
+./snapchat init go z
+z
+./snapchat p
+./snapchat init
+./snapchat go
+./snapchat halt
+modprobe usbduxfast
+./snapchat -m p init go z
+emacs snapshot.8a
+sudo modprobe -r usbduxfast
+sudo modprobe usbduxfast
+git commit -m "new observations on the re-init bug"
+./trig --pre 500 --post 500 test5
+./trig --pre 500 --post 500 test6
+ls -l /mnt/snap/test6/00a3d70c718de898.s16
+screen
+./trig --pre 500 --post 500 test7
+emacs adc.c
+sudo ./snapshot -vv --snapdir /mnt/snap --user pi --wrprio 10 --rdprio 26 --bufsz 64 --bufhwm 0.8
+./trig --pre 500 --post 500 test8
+rmdir /mnt/snap/test[3457]
+git stash adc.c
+cp adc.c adc.c:x
+git pop
+git stash pop
+diff adc.c adc.c:x
+mv adc.c:x adc.c
+git stash save adc.c
+git stash drop
+git add adc.c
+git commit -m "Updated adc.c to include fixed unsigned arithmetic computation"
+rm xx.ps
+more adc.c
+sudo ./snapshot -v --snapdir /mnt/snap --user pi --wrprio 10 --rdprio 26 --bufsz 64 --bufhwm 0.8
+./snapchat -m init go z
+./trig --pre 500 --pst 500 test4
+./trig --pre 500 --pst 500 test3
+ls -l /mnt/snap/test3
+screen -r
+fgrep late *.c
+man isnumber
+man atoi
+man strtol
+man sscanf
+./snapchat -vv 3 3 3
+emacs snapchat.c
+./trig --pre 500 --pst 500 test7
+./snapchat -m -vv 3 3 3
+./snapchat -m -vv z 3 z 3 z 3 z
+./snapchat -m z 3 z 3 z 3 z
+more snapshot.1a
+more snapchat.1a
+emacs snapchat.1a
+man zmq
+make clean
+git add snapchat.c snapchat.1a
+git commit -m "Added pause option to snapchat multiple message mode"
+./trig --pre 5000 --post 5000 test8
+./trig --pre 5000 --post 5000 test9
+ls -l /mnt/snap/test9
+./trig --pre 5000 --post 5000 test10
+ls -l /mnt/snap/test10
+cd snapshot
+./trig --pre 5000 --post 5000 test11
+emacs BUGS
+git add BUGS snapshot.8a
+git commt -m "New time <-> sample regime fixes clock skew problem with trig"
+git commit -m "New time <-> sample regime fixes clock skew problem with trig"
+./trig --pre 500 --post 500 test12
+man Time::HiRes
+perl -m Time::HiRes
+perl -mTime::HiRes
+perl 'use Time::HiRes qw( clock_gettime CLOCK_MONOTONIC );'
+perl -e 'use Time::HiRes qw( clock_gettime CLOCK_MONOTONIC );'
+./snapcat z
+./trig --pre 500 --post 500 test13
+./trig --pre 500 --post 500 test14
+./trig --pre 500 --post 500 test15
+./trig --pre 500 --post 500 test16
+./trig --pre 500 --post 500 test17
+ls -l /mnt/snap/test*
+./trig --pre 500 --post 500 test18
+netcat -q1 -u 127.0.0.1 2468 ping
+echo gain 4 160 ap | netcat -q1 -u 127.0.0.1 2468
+echo gain 5 160 ap | netcat -q1 -u 127.0.0.1 2468
+./trig --pre 500 --post 500 test19
+./trig --pre 5000 --post 5000 test20
+./trig --pre 500 --post 500 test21
+./trig --pre 500 --post 5000 test22
+./trig --pre 500 --post 5000 test23
+df -H
+ls /dev/mmcblk0
+ls -l /dev/mmcblk0
+ssh root@raphael.sconet
+./trig --pre 500 --post 5000 test24
+./trig --p: 1446491121:0;cd Snapshot
+mg BUGS
+mg array-cmd
+pushd /usr/share/perl/
+cd 5.20.2/
+perl 'print @INC;'
+perl -e 'print @INC;'
+ls 5.20
+more Socket.pm
+ls ZMQ
+perl -m "ZMQ::LibZMQ3"
+perl -mZMQ::LibZMQ3
+c
+cd /usr/lib/arm-linux-gnueabihf/perl5/5.20
+find /usr -name LibZMQ3 -print
+cd /usr/local/lib/arm-linux-gnueabihf/perl/5.20.2/auto/ZMQ/LibZMQ3
+mg test.pm
+perl test.pm
+rm test.pm
+pushd 
+man perlio
+echo ping | nc -q1 -u 127.0.0.1 2468
+git commit -m "Preamble code runs correctly;  ZMQ::Poller module code appears to be nonsense..."
+cd /usr/local/share/perl/5.20.2/ZMQ/
+cp Poller.pm ~
+dpkg -l perl*
+dpkg -l 'perl*'
+sudo apt-get install perldoc
+sudo apt-get install perl-doc
+sudo apt-get update
+sudo apt-get dist-upgrade
+man IO::Socket
+man IO
+man IO::Handle
+man perlfunc
+chmod 644 Poller.pm
+mg Poller.pm
+history | fgrep Poll
+more Poller.pm
+history | fgrep Poller
+perl -MZMQ::Poller
+echo ping | nc -q -u1 localhost 2468
+ps aux | fgrep pi
+emacs Poller.pm
+echo ping | nc -q1 -u localhost 2468
+echo ping test | nc -q3 -u localhost 2468
+echo ping test | nc -q1 -u localhost 2468
+echo chan | nc -q1 -u localhost 2468
+echo pong test | nc -q1 -u localhost 2468
+echo quit | nc -q1 -u localhost 2468
+git add array-cmd Poller.pm
+git commit -m "Basic reply loop working;  note changes to Poller module to make it work"
+cal 1 2016
+git add array-cmd
+git commit -m "Corrected command argument count limits"
+man i2cdump
+man i2cset
+i2cdetect -l
+man i2cdetect
+cd mclurs/array-tools-1.0/hardware
+more debian.txt
+more boxes.txt
+e chips-present.txt
+mg chips-present.txt
+lsmod
+more /etc/owfs.conf
+more /etc/owfs.conf~
+git add chips-present.txt
+git commit -m "Added list of I2C chips to hardware info"
+cat /proc/cpuinfo
+fgrep processor /proc/cpuinfo | wc -l
+git add mclurs-probe.sh
+git commit -m "Made mclurs-probe.sh executable"
+dh-make-perl
+sudo apt-get install dh-make-perl
+mkdir Perl
+man dh-make-perl
+cpan2deb Device::SMBus
+sudo apt-get install pristine-tar
+cpan2deb ZMQ
+cpan2deb ZMQ::Constants
+cpan2deb ZMQ::LibZMQ3
+rm -rf libzmq-constants-perl*
+more control
+cat compat
+cat libzmq-perl
+ls libzmq-perl
+ls source
+cat source/format
+ls lib
+ls lib/ZMQ
+mg debian/control
+mg libdevice-smbus-perl/debian/control
+cpan2deb Moo
+rm -rf libmoo-perl*
+mg libzmq-libzmq3-perl/debian/control
+cd debian
+more changelog
+mg changelog
+mg libzmq-libzmq3-perl/debian/changelog
+mg libdevice-smbus-perl/debian/changelog
+tar cfz perl.tgz ./Perl
+perl -MMoo
+sudo shutdown -h
+cd array-tools-1.0/hardware
+sh mclurs-probe.sh
+sudo mclurs-probe.sh
+sudo ./mclurs-probe.sh
+man ZMQ::Poller
+cd Perl
+cd libzmq-perl
+cd lib
+more ZMQ.pm
+cd ZMQ
+more Context.pm
+git add array-tools-1.0/command/array-cmd
+git commit -m "Minor changes to Pi version of array-cmd"
+perl -I. -MSnap
+history | fgrep snap
+sudo ./snapshot 
+sudo ./snapshot --user pi 
+netstat -utlnp
+cd Snapshot
+./snapchat i
+./snapchat g
+top
+cd 
+git commit -m "Nothing done"
+more Snap.pm
+pwd
+perl -I.. test
+e Snap.pm
+man zmq_sendmsg
+../../../Snapshot/snapchat i
+../../../Snapshot/snapchat h
+../../../Snapshot/snapchat p
+more snapshot.c
+more writer.c
+emacs writer.c
+../../../Snapshot/snapchat d path=test
+../../../Snapshot/snapchat z
+../../../Snapshot/snapchat q
+rm -r /tmp/snap/*
+git commit -m "Most of Snap module written and tested"
+git commit -m "Most of Snap module implemented, snapshot status queries still to go"
+cd perl/MCLURS
+more test
+e test
+emacs test
+cd mclurs/array-tools-1.0/adc
+sudo ./snapshot -v -v -v -v --user pi --rtprio 25
+sudo ./snapshot -v -v -v --user pi --rtprio 25
+perl -e 'my $n=4; print ref($n);'
+perl -e 'print ref({});'
+../../array-tools-1.0/adc/snapchat z
+../../array-tools-1.0/adc/snapchat q
+cat > /dev/null
+git commit -m "Snap module snapshot status code finished and tested"
+git commit -m "Snap module status and clear methods implemented and tested"
+perl -e 'print join(":",@INC);'
+rm -rf /tmp/snap/test1/testing/
+netstat -utln
+netcat -u 127.0.0.1:2468 quit
+netcat -u 127.0.0.1 2468 quit
+cd ../../array-tools-1.0/adc
+pushd -
+sudo ./snapshot --user pi --rtprio 25
+cd ../command
+echo quit | netcat -u 127.0.0.1 2468
+dir
+dirs
+pushd
+git commit -m "Integration of Snap and array-cmd in progress"
+cd array-tools-1.0/adc/
+make
+cd mclurs/perl/MCLURS
+history | fgrep snapshot
+rm -r /tmp/snap/test1/testing/
+emacs Snap.pm
+perl test
+git commit -m "Added probe startup code to module to allow snapshotter to start after comms start"
+echo ping | netcat -u 127.0.0.1 2468
+git commit -m "Basic integration of Snap module with array-cmd done"
+su
+sudo ./snapshot --rtprio=25 --user=pi
+bg
+more ../../perl/MCLURS/test
+./snapchat q
+sudo kill -HUP 4122
+sudo ./snapshot --rtprio=25 --user=pi &
+echo ping | netcat -q1 -u 127.0.0.1 2468
+echo start | netcat -q1 -u 127.0.0.1 2468
+./snapchat z
+man array-cmd
+echo quit | netcat -q1 -u 127.0.0.1 2468
+git commit -m "Integrated quit and start interactions in array-cmd, fixed $freq ambiguity, made list returns explicit"
+cd array-tools-1.0/adc
+more Makefile
+nano Makefile
+mg Makefile
+r *~
+make install
+sudo make install
+type snapshot
+type snapchat
+cd ../../array-tools-1.0/command
+echo ping | nc -u -q1 127.0.0.1 2468
+man snapchat
+e array-cmd
+man ZMQ::Socket
+perl array-cmd
+sudo sv d /home/suas/Services/command 
+sudo kill -HUP 3207
+sudo sv o /home/suas/Services/command 
+snapchat -s tcp://127.0.0.1:2468 ping
+cd ../..
+find . -name \*~
+git commit -m "Adapted array-cmd and Snap module code to interact properly with snapshot"
+ls /
+snapchat -s tcp://127.0.0.1:2468 ping 1 2 3
+snapchat z
+ls /tmp/
+ls /var/tmp/snap
+ls /var/tmp/
+ls /var/tmp/*
+git pull
+sudo tail -f /home/suas/Logs/command/current
+sudo tail -f /home/suas/Logs/snapshot/current
+snapchat -s tcp://127.0.0.1:2468 status chan
+snapchat -s tcp://127.0.0.1:2468 status channel
+snapchat q
+sudo sv force-stop /home/suas/Services/snapshot
+sudo sv o /home/suas/Services/snapshot
+cat > run
+cd -
+sudo rm -rf '/home/suas/Var/samples/single/*'
+snapchat -s tcp://127.0.0.1:2468 snap start=0, finish=1000000, path=master-uuid-1
+sh ~/run
+snapchat -s tcp://127.0.0.1:2468 status
+man trig
+snapchat -s tcp://127.0.0.1:2468 start
+trig -s tcp://127.0.0.1:2468 -w master-test-2
+snapchat -s tcp://127.0.0.1:2468 status snap
+snapchat -s tcp://127.0.0.1:2468 quit
+cd array-tools-1.0
+cd command
+mv ~/run array
+ls -l
+chmod +x array
+emacs array
+sh array setup
+array start
+sh array start
+sh array stop
+sh array foo
+sh array z
+sh array help
+mount
+sh array eject
+rm *~
+cd ../../
+git add .
+git commit -m "Basic status replies implemented, array manager command written"
+cd mclurs
+cd array-tools-1.0/command
+more deleted
+dmesg | grep sdb
+dmesg | grep sd
+sudo fdisk /dev/sda
+sudo mount /dev/sda1 /mnt
+ls /mnt
+cd /mnt/snap/test13
+cd ..
+cd
+umount /mnt
+sudo umount /mnt
+sudo -i
+array help
+array chan
+cd mclurs/array-tools-1.0/command
+emacs array-cmd
+git add array-cmd array
+git commit -m "Updated channel status listing to give more intuitive output"
+git push
+shutdown -h now
+sudo shutdown -h now
+passwd
+ping 169.254.255.2
+sudo chown suas:suas ../suas/Var/samples
+sudo adduser suas sudo
+sudo visudo
+ping 169.254.255.1
+sudo vim /etc/hosts
+pt 
+sudo vim /etc/resolv.conf 
+pt i lsof
+sudo lsof | grep samples
+grab
+sox
+echo gain all 100 hp | netcat -q1 -u 127.0.0.1 2468
+dmesg -w
+sudo vim =array_cmd
+sudo vim =array-cmd
+sudo vim /usr/bin/array-cmd
+sudo vim /usr/sbin/array-cmd
+tmux
+sudo ifdown -a && sleep 1 && sudo ifup -a
+ip addr show
+cat /etc/resolv.conf
+ping google.com
+netstat -nr
+ip route add default via 169.254.255.1 
+sudo ip route add default via 169.254.255.1 
+ping 8.8.8.8
+pt i socat
+socat
+socat udp-l:2469 exec:cat
+socat -v -v -v udp-l:2469 exec:cat
+chmod +x bin/ela-exp.zsh
+socat -v -v -v udp-l:2469 exec:bin/ela-exp.zsh
+socat udp-l:2469 exec:bin/ela-exp.zsh
+socat udp-l:2469 open:bin/ela-exp.zsh
+man socat
+fg %1
+socat udp-l:2469 system:bin/ela-exp.zsh
+gh
+id
+sudo vim id
+sudo umount /mnt/disk
+sudo umount /dev/sda1
+sudo muont /mnt/disk
+sudo mount /mnt/disk
+mkdir /mnt/disk/ela
+socat udp-l:2469,fork,reuseaddr system:bin/ela-exp.zsh
+ls 
+ls -ltr
+ls /mnt/disk/ela/
+jobs
+man tmux
+reboot
+ps aux
+cat /etc/rc.local
+sudo mount -a
+ls -l /mnt/disk/ela
+sudo touch /mnt/disk/ela/dims
+sync
+sudo rm /mnt/disk/ela/dims
+sudo tmux attach
+ls /mnt/disk/
+sudo vim /etc/fstab
+ifconfi
+sudo su - 
+ps aux | less
+sudo reboot
+su - suas
+ps aux | grep runs
+sudo grab | sox -c8 -r312500 -t s16 - -t wavpcm out.wav trim 0 1 spectrogram
+tmux new -s srv 'socat udp-l:2469,fork,reuseaddr system:/home/pi/bin/ela-exp.zsh'
+cat bin/ela-exp.zs
+vim bin/ela-exp.zsh
+mkdir ela-data
+fg
+dmesg
+cat /etc/fstab
+sudo vi /etc/fstab
+sudo vim /etc/network/interfaces
+sudo ifdown -a
+sudo ifup -a
+ip addr show eth0
+arp -a
+tmux new -s ela
+tmux attach
+cd ela-data
+cat ../bin/ela-exp.zsh
+socat udp-l:2469,fork,reuseaddr system:/home/pi/bin/ela-exp.zsh
+socat udp-l:2470,fork,reuseaddr exec:'sudo pkill grab'
+sudo pkill grab
+ifconfig
+history
+cat bin/ela-exp.zsh
+df -h .
+ls
+ps aux | grep array-cmd
+ps aux | grep array
+sudo vim /etc/rc.local
+ps aux | grep socat
+cd bin
+grep socat *
+grep socat /etc/init.d/*
+cat ela-exp.zsh
+sudo halt
+sudo sv o /home/suas/Services/command
+echo chans | netcat -q1 -u 127.0.0.1 2468
+echo help | netcat -q1 -u 127.0.0.1 2468
+socat - udp:localhost:2468
+echo chan | netcat -q1 -u 127.0.0.1 2468
+echo scan | netcat -q1 -u 127.0.0.1 2468
+ps aux | grep snapshot
+sudo su - suas
+ps aux | grep gra
+ps aux | grep grab
+echo gain all 80 hp | netcat -q1 -u 127.0.0.1 2468
+echo gain all 160 hp | netcat -q1 -u 127.0.0.1 2468
+: 1463711560:0;sudo halt

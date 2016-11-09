@@ -1,0 +1,28 @@
+As there was limited time when setting up the experiment, I used the
+following workaround to make the system work quickly.
+
+First, I exposed array-cmd's udp port (2468) to external addresses.  In
+addition, I added two more ports with socat(1), one to start recording
+(port 2469) and one to make sure we stopped recording (2470).
+
+The start-recording commands were as follows, on the Pi run:
+
+    socat udp-listen:2469,fork,reuseaddr exec:/home/pi/bin/ela-exp.zsh
+
+Where ela-exp.zsh contains:
+
+    #!/bin/zsh
+
+    read expname duration
+
+    sudo grab | 
+    sox -c8 -r312500 -t s16 - -t wavpcm /home/pi/ela-data/$expname.wav trim 0 $duration
+
+This above script should terminate recording after $duration seconds,
+but I added a second port with socat(1) that ran `sudo pkill grab`,
+i.e.:
+
+    socat udp-listen:2470,fork,reuseaddr exec:'sudo pkill grab'
+
+See example1.m and the other m-scripts to see how this was used from
+Matlab.
