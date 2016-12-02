@@ -1195,7 +1195,7 @@ sub send_gain_to_dac {
     }
     return unless( send_to_dac(0x30+$chan, $gain, 0x00) );
     if( $adc_board_rev ne 'default' && defined $filt ) {
-	return unless( send_pin_output('filter' . $chan, ($filt eq 'hp' ? 1 : 0)) );
+	return unless( send_pin_output('filter' . $chan, ($filt eq 'hp' ? 0 : 1)) );
     } elsif( defined $filt && $filt ne 'hp' ) {
 	    error("Cannot turn the filter off in analog hw [$adc_board_rev]");
 	    $filt = 'hp';
@@ -1215,7 +1215,7 @@ sub gain_reset_in_dac {
     return unless( send_to_dac(0x2F, 0x00, 0x00) );
     unless( $adc_board_rev eq 'default' ) {
 	for my $c ( 0..NCHANNELS-1 ) {
-	    return unless( send_pin_output( 'filter' . $c, 1) );
+	    return unless( send_pin_output( 'filter' . $c, 0) );
 	}
     }
     debug(2, "Gain reset completed");
