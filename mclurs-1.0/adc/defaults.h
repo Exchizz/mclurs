@@ -17,5 +17,6 @@
 
 #define SNAPSHOT_COMMAND "tcp://127.0.0.1:7777"
 #define SNAPSHOT_MONITOR "tcp://127.0.0.1:7778"
+#define TRIG_COMMAND     "tcp://127.0.0.1:2468"
 
 #endif /* _DEFAULTS_H */

@@ -686,6 +686,11 @@ sub status {
     );
 }
 
+sub actual_status {
+    my $self = shift;
+    return $self->{state}
+}
+
 # Clear a snapshot's status history
 #
 # ARG (mandatory) the snapshot name

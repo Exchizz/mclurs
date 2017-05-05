@@ -1706,7 +1706,7 @@ sub channel_gain {
 	    return (0, $msg);
 	}
     }
-    if( $gain && $gain !~ m/^(hi(gh)?|low?|hp|ap|on|off)$/ ) {
+    if( defined $gain && $gain !~ m/^(hi(gh)?|low?|hp|ap|on|off)$/ ) {
 	local $! = 0;
 	my $g = POSIX::strtol($gain);
 	if( $! ) {
@@ -1815,14 +1815,16 @@ sub snapshot_list {
 
 # Respond to a status request
 sub do_status {
-    if( @_ > 0 && $_[0] =~ m/chan(nels?)?/ ) {
-	return channel_list();
+    if( @_ > 0 && $_[0] =~ m/chan(nels?)?/  ) {
+            return channel_list();
     } elsif( @_ > 0 && $_[0] =~ m/snap(shots?)?/ ) {
-	return snapshot_list();
+        return snapshot_list();
+    } elsif( @_ > 0 && $_[0] =~ m/isready/ ) {
+        return (1, ": Snapshotter: " . $SNAP->actual_status() );
     } elsif( @_ > 0 ) {
-	return (0, "unexpected status argument $_[0]");
+        return (0, "unexpected status argument $_[0]\n");
     } else {
-	return general_status();
+        return general_status();
     }
 }
 

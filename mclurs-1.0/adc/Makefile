@@ -22,7 +22,7 @@ snapchat:	snapchat.o ${LIBRARY}
 	gcc -o snapchat snapchat.o ${LIBRARY} -lzmq -largtable2
 
 trig:	trig.o ${LIBRARY}
-	gcc -o trig trig.o ${LIBRARY} -lzmq -largtable2
+	gcc -o trig trig.o ${LIBRARY} -lzmq -largtable2 -lm
 
 grab:		grab.o ${LIBRARY}
 	gcc -o grab grab.o ${LIBRARY} -lcomedi -largtable2 -lm
@@ -85,10 +85,10 @@ install:	build
 	install -D snapchat	 ${DESTDIR}/usr/bin/snapchat
 	install -D trig	   	 ${DESTDIR}/usr/bin/trig
 	install -D grab	   	 ${DESTDIR}/usr/bin/grab
-	install -D snapshot.8a	 ${DESTDIR}/usr/share/man/man8/snapshot.8a
-	install -D snapchat.1a	 ${DESTDIR}/usr/share/man/man1/snapchat.1a
-	install -D trig.1a	 ${DESTDIR}/usr/share/man/man1/trig.1a
-	install -D grab.1a	 ${DESTDIR}/usr/share/man/man1/grab.1a
+	install -D snapshot.8a	 ${DESTDIR}/usr/share/man/man8
+	install -D snapchat.1a	 ${DESTDIR}/usr/share/man/man1
+	install -D trig.1a	 ${DESTDIR}/usr/share/man/man1
+	install -D grab.1a	 ${DESTDIR}/usr/share/man/man1
 
 clean:
 	rm -f ${TARGETS} ${DOCS} ${XTRAS} ${OFILES} ${LIBRARY} ${LIBOBJS} argtab.a argtab.h ${ARGTAB_OBJS} *~

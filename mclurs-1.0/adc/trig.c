@@ -30,6 +30,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdint.h>
+#include <math.h>
 #include "assert.h"
 
 #include <zmq.h>
@@ -100,8 +101,8 @@ extern uint32_t    window_pre;
 extern uint32_t    window_pst;
 
 param_t globals[] ={
-  { "snapshot", SNAPSHOT_COMMAND, &snapshot_addr, PARAM_TYPE(string), PARAM_SRC_ENV|PARAM_SRC_ARG,
-    "address of snapshot command socket, default '" SNAPSHOT_COMMAND "'"
+  { "snapshot", TRIG_COMMAND, &snapshot_addr, PARAM_TYPE(string), PARAM_SRC_ENV|PARAM_SRC_ARG,
+    "address of snapshot command socket, default '" TRIG_COMMAND "'"
   },
   { "pre", "1000", &window_pre, PARAM_TYPE(int32), PARAM_SRC_ARG,
     "pre-trigger duration [ms]"
@@ -504,9 +505,11 @@ int main(int argc, char *argv[], char *envp[]) {
     exit(2);
   }
 
+  uint32_t maximum_window_size = 8000;    /* in ms */
+
   /* Look at the parameters to construct the snap command */
-  if(window_pre > 10000) {
-    fprintf(stderr, "%s: Error -- maximum allowed capture window is 10[s]\n", program);
+  if(window_pre > maximum_window_size || window_pre + window_pst > maximum_window_size) {
+    fprintf(stderr, "%s: Error -- maximum allowed capture window is 8[s]\n", program);
     exit(3);
   }
 
@@ -556,5 +559,11 @@ int main(int argc, char *argv[], char *envp[]) {
   /* Clean up ZeroMQ sockets and context */
   zmq_close(snapshot);
   zmq_ctx_term(zmq_main_ctx);
+
+  uint32_t slp_us = round(window_pst * 1000)+1000000;
+
+  printf("Waiting %.1f second%s for snapshot to complete\n", (float) slp_us / 1e6, slp_us > 1000000 ? "s" : "");
+  usleep(slp_us);
+
   exit(0);
 }
