@@ -1,0 +1,19 @@
+diff --git a/mclurs-1.0/adc/writer.c b/mclurs-1.0/adc/writer.c
+index 4f79d99..757e606 100644
+--- a/mclurs-1.0/adc/writer.c
++++ b/mclurs-1.0/adc/writer.c
+@@ -698,10 +698,10 @@ private snap_t *build_snapshot_descriptor(strbuf c) {
+     goto FAIL;
+   }
+
+-  if(ret->s_last <= ret->s_first) { /* Parameter error:  end before start */
+-    strbuf_appendf(e, "end %016llx before start %016llx", ret->s_last, ret->s_first);
+-    goto FAIL;
+-  }
++  // if(ret->s_last <= ret->s_first) { /* Parameter error:  end before start */
++  //   strbuf_appendf(e, "end %016llx before start %016llx", ret->s_last, ret->s_first);
++  //   goto FAIL;
++  // }
+   
+   /* Path may not already exist */
+   ret->s_dirfd = test_directory(wp_snap_curfd, path);

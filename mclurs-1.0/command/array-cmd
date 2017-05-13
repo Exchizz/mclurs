@@ -66,14 +66,14 @@ my %gpio_config = (		# Default is the numbering for Pi rev. 2 and ADC board vn. 
 		hwver2 =>	# hwver2 is ADC board vn. 2 (2014/2015 version with RS232 console port for Pi)
 				{ sense  => { pin => 23,  mode => 'in',  sense => 'neg', init => 0, }, # Trigger sense (input, active low=blocked high=free)  [currently reversed]
 				  rtclock=> { pin => 24,  mode => 'in',  sense => 'neg', init => 0, }, # MCP79410 RTC multifunction pin
-				  filter0=> { pin => 504, mode => 'out', sense => 'pos', init => 1, }, # HP/AP filter for channel 0, HP is on
-				  filter1=> { pin => 505, mode => 'out', sense => 'pos', init => 1, }, # HP/AP filter for channel 0, HP is on
-				  filter2=> { pin => 506, mode => 'out', sense => 'pos', init => 1, }, # HP/AP filter for channel 0, HP is on
-				  filter3=> { pin => 507, mode => 'out', sense => 'pos', init => 1, }, # HP/AP filter for channel 0, HP is on
-				  filter4=> { pin => 508, mode => 'out', sense => 'pos', init => 1, }, # HP/AP filter for channel 0, HP is on
-				  filter5=> { pin => 509, mode => 'out', sense => 'pos', init => 1, }, # HP/AP filter for channel 0, HP is on
-				  filter6=> { pin => 510, mode => 'out', sense => 'pos', init => 1, }, # HP/AP filter for channel 0, HP is on
-				  filter7=> { pin => 511, mode => 'out', sense => 'pos', init => 1, }, # HP/AP filter for channel 0, HP is on
+				  filter0=> { pin => 504, mode => 'out', sense => 'pos', init => 0, }, # HP/AP filter for channel 0, HP is on
+				  filter1=> { pin => 505, mode => 'out', sense => 'pos', init => 0, }, # HP/AP filter for channel 0, HP is on
+				  filter2=> { pin => 506, mode => 'out', sense => 'pos', init => 0, }, # HP/AP filter for channel 0, HP is on
+				  filter3=> { pin => 507, mode => 'out', sense => 'pos', init => 0, }, # HP/AP filter for channel 0, HP is on
+				  filter4=> { pin => 508, mode => 'out', sense => 'pos', init => 0, }, # HP/AP filter for channel 0, HP is on
+				  filter5=> { pin => 509, mode => 'out', sense => 'pos', init => 0, }, # HP/AP filter for channel 0, HP is on
+				  filter6=> { pin => 510, mode => 'out', sense => 'pos', init => 0, }, # HP/AP filter for channel 0, HP is on
+				  filter7=> { pin => 511, mode => 'out', sense => 'pos', init => 0, }, # HP/AP filter for channel 0, HP is on
 				},
 );
 
