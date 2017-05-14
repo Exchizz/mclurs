@@ -1,0 +1,145 @@
+#!/bin/zsh
+
+# Author:      Thor Andreassen <ta@toggle.be>
+# Description: Easily do long-term recordings with mclurs
+
+usage() {
+  echo "
+usage: $progname [OPTIONS] [Recording session name]
+
+Easily do long-term recordings with mclurs
+
+OPTIONS
+  -d TIME   Delay start of recording (default: $delay)
+  -i SECS   Run a recording every SECS (default: $interval)
+  -h        Show this usage information
+  -l TIME   Recording length in seconds or in MM:SS or HH:MM:SS (default: $length)
+  -n N      Set number of interval recordings to do (N=-1 means infinite) (default: $num_intervals)
+" >&2
+  exit 1
+}
+
+setopt nullglob
+zmodload zsh/mathfunc
+
+basedir=/home/suas/Var/samples/long_term
+progname=${0##*/}
+
+delay=0
+interval=0
+length=00:10
+num_intervals=-1
+
+while getopts ":d:hi:l:n:" opt; do
+  case "$opt" in
+    (d)  delay=$OPTARG                               ;;
+    (h)  usage                                       ;;
+    (i)  interval=$OPTARG                            ;;
+    (l)  length=$OPTARG                              ;;
+    (n)  num_intervals=$OPTARG                       ;;
+    (\?) echo "Invalid option: -$OPTARG"; usage      ;;
+    (\:) echo "Argument missing";         usage      ;;
+  esac
+done
+shift $(( OPTIND - 1 )); OPTIND=1
+
+expname=${1:-longterm}
+
+if snapchat -s tcp://127.0.0.1:2468 status isready | grep -q active; then
+  echo "AD converter occupied by short-term recorder.  Run 'array stop'"
+  echo "and 'array setup' to prepare system for long-term recording."
+  exit 1
+fi
+
+export TZ=America/Panama
+d=$(date +%Y_%m_%d_%H%M%S%z)
+last_seqnum=$(ls -d $basedir/*${expname}_* | rev | cut -d_ -f1 | rev | sort -n | tail -n1)
+
+seqnum=01
+if [[ $last_seqnum =~ ^[0-9]+$ ]] && [[ -n $last_seqnum ]]; then
+  seqnum=$(printf "%02d\n" $(( last_seqnum + 1 )))
+fi
+
+sequence_name=${d}_${expname}_$seqnum
+sudo mkdir $basedir/$sequence_name
+
+snapchat -s tcp://127.0.0.1:2468 status chans |
+awk -v q='"' -v FS='[ :]+' '
+$1 ~ /^stream/ {
+  print "CHAN" $2 "=" q $4 q
+  print "GAIN" $2 "=" q $6 q
+  print "FILT" $2 "=" q $8 q
+  print "MIC"  $2 "=" q $NF q
+  remix_arg = remix_arg " " $4
+}
+END { print "sox_remix=" q remix_arg q }
+' | sudo tee $basedir/$sequence_name/vars.sh | tail -n1 | sed 's/^[^"]*\|"//g' | read sox_remix
+
+sox_cmd_pre="sudo sox -c8 -r312.5k -t s16 - -t wavpcm $basedir/$sequence_name"
+sox_cmd_pst="remix $sox_remix"
+
+if (( interval == 0 )); then
+  echo "====>>>  Starting long-term recording '$sequence_name', delay=$delay, length=$length"
+  sudo grab | 
+  sox -c8 -r312.5k -t s16 - -t s16 - trim $delay $length | 
+  split -a5 -d -b20MB --filter="${sox_cmd_pre}/\$FILE.wav ${sox_cmd_pst}" - ${sequence_name}_
+  echo "====>>>  Done '$sequence_name'"
+else
+  while (( num_intervals == -1 || num_intervals-- > 0 )); do
+    t0=$(date +%s)
+
+    echo "====>>>  Starting long-term recording '$sequence_name'"
+    echo "====>>>  delay=$delay, length=$length, interval=$interval, num_intervals=$num_intervals"
+
+    sudo grab | 
+    sox -c8 -r312.5k -t s16 - -t s16 - trim $delay $length | 
+    split -a5 -d -b20MB --filter="${sox_cmd_pre}/\$FILE.wav ${sox_cmd_pst}" - ${sequence_name}_
+
+    echo "====>>>  Done '$sequence_name'"
+
+    sudo array stop
+    sudo rmmod    usbduxfast
+    sudo modprobe usbduxfast
+    sleep 10
+    sudo array setup
+
+    t1=$(date +%s)
+
+    if (( num_intervals == 0 )); then
+      break
+    fi
+
+    t_next_trigger=$(( interval - (t1 - t0) ))
+    echo "====>>>  Remaining time before next trigger: $t_next_trigger seconds"
+    sleep $t_next_trigger
+
+    # Generate next sequence number
+    d=$(date +%Y_%m_%d_%H%M%S%z)
+    last_seqnum=$(ls -d $basedir/*${expname}_* | rev | cut -d_ -f1 | rev | sort -n | tail -n1)
+
+    seqnum=01
+    if [[ $last_seqnum =~ ^[0-9]+$ ]] && [[ -n $last_seqnum ]]; then
+      seqnum=$(printf "%02d\n" $(( last_seqnum + 1 )))
+    fi
+
+    sequence_name=${d}_${expname}_$seqnum
+    sudo mkdir $basedir/$sequence_name
+
+    snapchat -s tcp://127.0.0.1:2468 status chans |
+    awk -v q='"' -v FS='[ :]+' '
+    $1 ~ /^stream/ {
+      print "CHAN" $2 "=" q $4 q
+      print "GAIN" $2 "=" q $6 q
+      print "FILT" $2 "=" q $8 q
+      print "MIC"  $2 "=" q $NF q
+      remix_arg = remix_arg " " $4
+    }
+    END { print "sox_remix=" q remix_arg q }
+    ' | sudo tee $basedir/$sequence_name/vars.sh | tail -n1 | sed 's/^[^"]*\|"//g' | read sox_remix
+
+    sox_cmd_pre="sudo sox -c8 -r312.5k -t s16 - -t wavpcm $basedir/$sequence_name"
+    sox_cmd_pst="remix $sox_remix"
+  done
+fi
+
+exit 0
