@@ -150,6 +150,7 @@ my %commands = (
     adc    => [ \&set_adc_board, check_arg_fn(1, 1), ],
     start  => [ \&sys_start, check_arg_fn(0, 1), ],
     help   => [ \&cmd_help, check_arg_fn(0, 0), ],
+    addch  => [ \&addch, check_arg_fn(1, 2), ],
     );
 
 # Parameter store for parameters set using 'set' command
@@ -1073,7 +1074,7 @@ sub mount_1w {
 # Scan the 1-wire bus filesystem representation and locate devices
 sub scan_1w {
     my $base = shift;
-    my @channels;
+    my @channels_local;
     my %devices;
 
     unless( -d $base . "/settings" ) {
@@ -1083,7 +1084,7 @@ sub scan_1w {
 
     debug(1, "Scanning 1-wire bus filesystem at $base" );
 
-    @channels[0..NCHANNELS-1] = undef;
+    @channels_local[0..NCHANNELS-1] = undef;
 
     # N.B. Assumes microphones are all 43- devices, on bus.1-8;  there appear to be some others...
     # Maybe this can be expanded to search all busses safely?
@@ -1119,7 +1120,7 @@ sub scan_1w {
 	debug(2, "Unexpected device type '$type' on channel $chan" )
 	    unless( $type =~ /DS28EC20/ );
 
-	$channels[$chan] = {
+	$channels_local[$chan] = {
 	    ok   => 0,
 	    name => $device,
 	    bus  => $bus,
@@ -1130,12 +1131,12 @@ sub scan_1w {
 	    data => $base . "/43.$device/pages/",
 	} if( defined($chan) );
 
-	$channels[$chan]->{ok} = 1 if( -d $channels[$chan]->{data} );
+	$channels_local[$chan]->{ok} = 1 if( -d $channels_local[$chan]->{data} );
 	debug(1, "Found $device on channel ", $chan+1,
-	      " showing $type at ", $channels[$chan]->{data}
+	      " showing $type at ", $channels_local[$chan]->{data}
 	    );
     }
-    return @channels;
+    return @channels_local;
 }
 
 ## Communication over I2C with the LTC2637 octal DAC for gain setting
@@ -1390,7 +1391,9 @@ sub do_command {
 	    my $r = "OK $name";
 	    if($m) {
 		chomp $m;
-		$r .= " " . $m;
+		$r .= " " . $m . "\n";
+	    } else {
+		$r .= "\n";
 	    }
 	    &{$reply}($r);
 	    $n_cmds++;
@@ -1680,6 +1683,13 @@ sub rescan1w {
 		$rescan_channels[$i]->{filt} = $channels[$i]->{filt};
 	    }
 	}
+	elsif( defined($channels[$i]) and $channels[$i]->{name} eq "addch" ) {
+	    # If the channels have been manually enabled, keep it so
+	    $rescan_channels[$i]->{name} = $channels[$i]->{name};
+	    $rescan_channels[$i]->{gain} = $channels[$i]->{gain};
+	    $rescan_channels[$i]->{filt} = $channels[$i]->{filt};
+	    $rescan_channels[$i]->{type} = $channels[$i]->{type};
+	}
     }
     @channels = @rescan_channels;
     # Now reinitialise the ADC hardware settings, even for unchanged channels
@@ -1772,6 +1782,17 @@ sub channel_gain {
 	$m ||= sprintf("Gain set to %s on all active channels", $gainval);
 	return (1, $m . "\n");
     }
+}
+
+# Allow microphones that do not contain a memory chip
+sub addch {
+  debug(1, "Adding channel $_[0]");
+  $channels[$_[0] - 1]->{name} = "addch";
+  $channels[$_[0] - 1]->{gain} = 0;
+  $channels[$_[0] - 1]->{filt} = 0;
+  $channels[$_[0] - 1]->{type} = ( defined($_[1]) ) ? $_[1] : "NA";
+
+  return "Successfully added channel $_[0]";
 }
 
 # Send back a 'pong' response to a 'ping', for testing
