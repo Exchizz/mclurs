@@ -12,7 +12,7 @@ ARGTAB_XTRA = argtab-helper.h
 ARGTAB_OBJS = ${ARGTAB_SRCS:.c=.o}
 ARGTAB_HDRS = ${ARGTAB_SRCS:.c=.h} ${ARGTAB_XTRA}
 
-all: build docs
+all: build
 .PHONY: all
 
 build:	${TARGETS}
