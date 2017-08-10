@@ -446,16 +446,16 @@ private int main_drop_privileges(uid_t uid, gid_t gid, int ngroups, const gid_t 
     return -1;
   }
 
-  c = cap_get_proc();
-  if(c) {
-    cap_set_flag(c, CAP_PERMITTED, sizeof(vs)/sizeof(cap_value_t), &vs[0], CAP_CLEAR);
-    if( cap_set_proc(c) < 0 ) {
-      cap_free(c);
-      FATAL_ERROR("MAIN thread keeps setuid/gid capabilities: %s\n", strerror(errno));
-      return -1;
-    }
-    cap_free(c);    
-  }
+  //c = cap_get_proc();
+  //if(c) {
+  //  cap_set_flag(c, CAP_PERMITTED, sizeof(vs)/sizeof(cap_value_t), &vs[0], CAP_CLEAR);
+  //  if( cap_set_proc(c) < 0 ) {
+  //    cap_free(c);
+  //    FATAL_ERROR("MAIN thread keeps setuid/gid capabilities: %s\n", strerror(errno));
+  //    return -1;
+  //  }
+  //  cap_free(c);    
+  //}
   
   /* Now check we still have the required permitted capabilities */
   if( check_permitted_capabilities_ok() < 0 ) {
