@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 # Simple script to start and stop the MCLURS array software
 
@@ -16,6 +16,12 @@ case "x$1" in
 		echo Waiting for the software to be ready...
 		snapchat -s tcp://127.0.0.1:2468 status
 		sudo sv o /home/suas/Services/snapshot
+		exit 0
+		;;
+
+	# Tail the command and snapshot log-files
+	xlog)
+		sudo tail -f /home/suas/Logs/{command,snapshot}/current | tai64nlocal
 		exit 0
 		;;
 
